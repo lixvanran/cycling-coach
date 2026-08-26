@@ -161,30 +161,18 @@ export function Dashboard() {
         <PMCChart series={pmc?.series || []} height={300} />
       </section>
 
+      {/* 训练洞察告警 (V0.7 新增) — 高严重度优先 */}
+      <InsightsBanner />
+
       {/* 累计 */}
       <section>
         <h2 className="text-sm uppercase tracking-wider text-text-secondary mb-3">累计</h2>
-        <div className="grid grid-cols-4 gap-3">
-          <MetricCard
-            label="总训练"
-            value={overview.total_activities}
-            unit="次"
-          />
-          <MetricCard
-            label="总距离"
-            value={overview.total_distance_km}
-            unit="km"
-          />
-          <MetricCard
-            label="总时长"
-            value={overview.total_duration_h}
-            unit="h"
-          />
-          <MetricCard
-            label="总 TSS"
-            value={overview.total_tss}
-            accent="warning"
-          />
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <MetricCard label="总训练" value={overview.total_activities} unit="次" />
+          <MetricCard label="总距离" value={overview.total_distance_km} unit="km" />
+          <MetricCard label="总时长" value={overview.total_duration_h} unit="h" />
+          <MetricCard label="总 TSS" value={overview.total_tss} accent="warning" />
+          <InsightsHealthCard />
         </div>
       </section>
 

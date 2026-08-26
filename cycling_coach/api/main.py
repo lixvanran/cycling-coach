@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from cycling_coach.config.config import settings
 from cycling_coach.config.logging import setup_logging
 from cycling_coach.data.sqlite import init_db
-from .routers import activities, athlete, dashboard, diagnose, dev, coach, pmc, plans, calendar, workouts, kb, trends, phases, ftp
+from .routers import activities, athlete, dashboard, diagnose, dev, coach, pmc, plans, calendar, workouts, kb, trends, phases, ftp, insights
 from .routers.frontend import mount_frontend
 
 
@@ -122,3 +122,4 @@ app.include_router(kb.router)
 app.include_router(trends.router)
 app.include_router(phases.router)
 app.include_router(ftp.router)
+app.include_router(insights.router)

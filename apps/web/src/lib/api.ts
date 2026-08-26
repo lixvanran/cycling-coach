@@ -163,6 +163,10 @@ export const api = {
     }>(`/activities/${id}/cp-estimate`),
 
   // V0.6.1 — ACWR 急慢性负荷比
+  // V0.7 自动训练洞察 (Friel + Gabbett)
+  insightsToday: () => jsonFetch<import("./types").InsightsToday>("/insights/today"),
+  insightsWeekly: () => jsonFetch<import("./types").WeeklyReview>("/insights/weekly"),
+
   // V0.6.1 FTP 测试 (4 种协议)
   ftpMethods: () => jsonFetch<{ methods: Record<string, any> }>("/ftp/methods"),
 
