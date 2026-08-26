@@ -8,6 +8,7 @@ import { ComparePage } from "./pages/ComparePage";
 import { TrendsPage } from "./pages/TrendsPage";
 import { PhasesPage } from "./pages/PhasesPage";
 import { FTPTestPage } from "./pages/FTPTestPage";
+import { InsightsPage } from "./pages/InsightsPage";
 import { ActivityDetail } from "./pages/ActivityDetail";
 import { ImportPage } from "./pages/ImportPage";
 import { Profile } from "./pages/Profile";

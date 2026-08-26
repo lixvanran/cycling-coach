@@ -406,3 +406,51 @@ export interface FTPRecommend {
   last_test_date?: string;
   avg_if_last_14d?: number | null;
 }
+
+export interface Insight {
+  id: string;
+  category: "load" | "recovery" | "race" | "phase" | "ftp" | "distribution";
+  severity: "info" | "warning" | "alert";
+  title: string;
+  description: string;
+  recommendation: string;
+  metric_value: string | null;
+  academic_source: string | null;
+}
+
+export interface InsightsToday {
+  generated_at: string;
+  athlete_id: number;
+  summary: {
+    total: number;
+    alert: number;
+    warning: number;
+    info: number;
+    health_score: number;
+    health_label: string;
+  };
+  pcm: { ctl: number; atl: number; tsb: number; ramp_rate: number };
+  insights: Insight[];
+}
+
+export interface WeeklyReview {
+  this_week: {
+    tss: number;
+    distance_km: number;
+    duration_h: number;
+    count: number;
+    avg_rpe: number | null;
+    zone_pct: Record<string, number>;
+    total_zone_seconds: number;
+  };
+  last_week: {
+    tss: number;
+    distance_km: number;
+    duration_h: number;
+    count: number;
+    avg_rpe: number | null;
+  };
+  comparison: { tss_change: number; tss_change_pct: number | null };
+  next_week_advice: string;
+  ftp_used: number;
+}
