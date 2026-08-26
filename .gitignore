@@ -1,0 +1,83 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+.vite/
+dist/
+*.log
+.npm/
+.pnpm-store/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Workspace (runtime data)
+workspace/input/*
+!workspace/input/.gitkeep
+workspace/output/*
+!workspace/output/.gitkeep
+workspace/.logs/*
+!workspace/.logs/.gitkeep
+workspace/*.sqlite
+workspace/*.db
+workspace/.sidecar-port
+workspace/.sidecar.pid
+workspace/.nfs*
+
+# Frontend build
+frontend/dist/
+
+# OS
+.DS_Store
+desktop.ini
+
+# Coverage
+.coverage
+htmlcov/
+
+# Sandbox 残留
+diagnose.txt
+cc-desktop-debug.log
+cc-desktop.log
+
+# Build artifacts (顶层)
+cycling-coach-*.zip
+cycling-coach-*.tar.gz
+*.exe
+
+# PyInstaller 输出
+dist-electron/
+apps/desktop/dist-electron/
+apps/desktop/build-resources/backend/
+
+# Vite build 软链 (PyInstaller 用)
+cycling_coach/static/
+
+# 旧的根目录启动/停止/诊断脚本 (中文文件名)
+启动.bat
+停止.bat
+诊断.bat
+启动.sh
+停止.sh
