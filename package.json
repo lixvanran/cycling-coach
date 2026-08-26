@@ -1,0 +1,22 @@
+{
+  "name": "cycling-coach-workspace",
+  "version": "0.5.3",
+  "private": true,
+  "description": "Cycling Coach - 公路自行车 AI 教练 (pnpm monorepo root)",
+  "scripts": {
+    "build:win": "cd apps/desktop && npx electron-builder --win nsis --x64",
+    "dev:web": "cd apps/web && pnpm dev",
+    "dev:desktop": "cd apps/desktop && npx electron .",
+    "clean": "node -e \"const fs=require('fs');for(const d of ['dist','build','apps/web/dist','apps/desktop/dist-electron','apps/desktop/build-resources/backend','cycling_coach/static']){try{fs.rmSync(d,{recursive:true,force:true});console.log('cleaned',d)}catch(e){}}\""
+  },
+  "devDependencies": {
+    "electron": "^26.15.0",
+    "electron-builder": "^24.13.0",
+    "electron-log": "^5.0.0",
+    "wait-on": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=8"
+  }
+}
