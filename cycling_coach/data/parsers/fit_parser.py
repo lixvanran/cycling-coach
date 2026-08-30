@@ -68,13 +68,34 @@ class FitParser:
     def parse_file(self, path: str | Path) -> Activity:
         path = Path(path)
         logger.info(f"开始解析 FIT: {path.name}")
-        fitfile = fitparse.FitFile(str(path))
+        try:
+            fitfile = fitparse.FitFile(str(path))
+        except fitparse.utils.FitHeaderError as e:
+            # V0.7.4.2: iGPSport 等国产码表常出现 FIT 头异常, 友好错误
+            raise ValueError(
+                f"FIT 文件头错误 (设备: {path.name}): {e}. "
+                "可能原因: 1) 文件损坏 2) 不支持的码表固件版本 3) 导出中断"
+            ) from e
+        except Exception as e:
+            raise ValueError(
+                f"FIT 解析失败 (设备: {path.name}): {type(e).__name__}: {e}"
+            ) from e
         return self._build_activity(fitfile, path=path)
 
     def parse_bytes(self, data: bytes, source_name: str = "uploaded.fit") -> Activity:
         """直接从字节流解析(上传场景)"""
         import io
-        fitfile = fitparse.FitFile(io.BytesIO(data))
+        try:
+            fitfile = fitparse.FitFile(io.BytesIO(data))
+        except fitparse.utils.FitHeaderError as e:
+            raise ValueError(
+                f"FIT 文件头错误 ({source_name}): {e}. "
+                "可能原因: 1) 文件损坏 2) iGPSport/行者等国产码表固件版本 3) 导出中断"
+            ) from e
+        except Exception as e:
+            raise ValueError(
+                f"FIT 解析失败 ({source_name}): {type(e).__name__}: {e}"
+            ) from e
         return self._build_activity(fitfile, source_name=source_name)
 
     def _build_activity(
@@ -144,13 +165,31 @@ class FitParser:
             calories = _to_int(msg.get_value("total_calories")) or 0
             break  # 通常只有一个 session
 
-        # 4) Device info
+        # 4) Device info (V0.7.4.2 改: 兼容 iGPSport/行者 等国产码表)
         for msg in fitfile.get_messages("device_info"):
-            # fitparse 1.2.0: get_value 不接受 default 参数,用 _gv helper
-            device = (
-                f"{_gv(msg, 'manufacturer', '')} {_gv(msg, 'product_name', '')}".strip()
-                or _gv(msg, "serial_number")
-            )
+            # fitparse 1.2.0: get_value 不接受 default 参数
+            # 国产码表 (iGPSport/行者/IGPSPORT) 可能用字符串而非 enum, 需 try-except
+            try:
+                manufacturer_raw = msg.get_value("manufacturer")
+            except Exception:
+                manufacturer_raw = None
+            try:
+                product_raw = msg.get_value("product_name") or msg.get_value("product")
+            except Exception:
+                product_raw = None
+            try:
+                serial_raw = msg.get_value("serial_number")
+            except Exception:
+                serial_raw = None
+            # 字符串化 (兼容字符串 + 数字 enum)
+            parts = []
+            if manufacturer_raw is not None:
+                parts.append(str(manufacturer_raw))
+            if product_raw is not None:
+                parts.append(str(product_raw))
+            if serial_raw is not None and not parts:
+                parts.append(str(serial_raw))
+            device = " ".join(parts).strip() or None
             if device:
                 break
 

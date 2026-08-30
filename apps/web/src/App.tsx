@@ -15,6 +15,7 @@ import { Profile } from "./pages/Profile";
 import { ChatPage } from "./pages/ChatPage";
 import { LibraryPage } from "./pages/LibraryPage";
 import { BuilderPage } from "./pages/BuilderPage";
+import { DiaryPage } from "./pages/DiaryPage";
 import { KnowledgeBasePage } from "./pages/KnowledgeBasePage";
 import { useAppStore } from "./store/useAppStore";
 
@@ -39,6 +40,7 @@ export default function App() {
           {view === "trends" && <TrendsPage />}
           {view === "chat" && <ChatPage />}
           {view === "import" && <ImportPage />}
+          {view === "diary" && <DiaryPage />}
           {view === "profile" && <Profile />}
         </main>
       </div>

@@ -9,7 +9,7 @@
 //   6. 总时长 + TSS 实时统计 + 预估 IF
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
-  Plus, Trash2, Save, Sparkles, Layers, Copy, X, ChevronUp, ChevronDown,
+  Plus, Trash2, Save, Sparkles, Layers, Copy, ClipboardPaste, BookmarkPlus, X, ChevronUp, ChevronDown,
   Repeat, Flame, Zap, Mountain, Activity, GripVertical, Undo2, Redo2,
   Play, Settings, Type, Clock, Target, Pencil, Search, ChevronRight,
   Hash, Heart, Gauge, BookOpen, Wand2,
@@ -69,6 +69,13 @@ const KIND_COLOR: Record<StepKind, {
     lightBg: "bg-slate-100",
     accent: "#94a3b8",
   },
+};
+
+const KIND_LABEL: Record<StepKind, string> = {
+  warmup: "热身",
+  main: "主项",
+  recovery: "恢复",
+  cooldown: "放松",
 };
 
 const GOAL_OPTIONS: { key: WorkoutGoal; label: string; color: string; ring: string; chip: string }[] = [
@@ -180,6 +187,21 @@ export function BuilderPage() {
   const [draggedItem, setDraggedItem] = useState<{ kind: "new" | "existing"; block?: Block; stepKind?: StepKind; blockId?: string } | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
 
+  // V0.7.1: 块多选 + 段剪贴板 + 段模板
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [clipboardBlocks, setClipboardBlocks] = useState<Block[]>([]);
+  // 段模板库 (本地存储)
+  const [segmentTemplates, setSegmentTemplates] = useState<Block[]>(() => {
+    try {
+      const saved = localStorage.getItem("cc:segment_templates");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  // 多选最后点击的 id (Shift 范围选)
+  const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
+
   // =============== 撤销/重做 ===============
   const pushHistory = useCallback((newBlocks: Block[]) => {
     setHistory((h) => [...h.slice(-30), blocks]);
@@ -206,11 +228,25 @@ export function BuilderPage() {
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       const isMod = e.metaKey || e.ctrlKey;
+      // 在 input/textarea 里跳过, 避免拦截正常输入
+      const tag = (e.target as HTMLElement)?.tagName;
+      const inEditable = tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable;
+      if (inEditable) return;
+
       if (isMod && e.key === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
       else if (isMod && (e.key === "Z" || (e.key === "z" && e.shiftKey))) { e.preventDefault(); redo(); }
       else if (isMod && e.key === "s") { e.preventDefault(); save(); }
-      else if (e.key === "Delete" && editTarget?.type === "block") {
-        removeBlock(editTarget.blockId);
+      // V0.7.1: Ctrl+C 复制 / Ctrl+V 粘贴 / Ctrl+D 复制选中
+      else if (isMod && (e.key === "c" || e.key === "C")) { e.preventDefault(); copySelected(); }
+      else if (isMod && (e.key === "v" || e.key === "V")) { e.preventDefault(); pasteBlocks(); }
+      else if (isMod && (e.key === "d" || e.key === "D")) { e.preventDefault(); copySelected(); }
+      // Esc 取消多选
+      else if (e.key === "Escape") { setSelectedIds(new Set()); setLastSelectedId(null); }
+      else if (e.key === "Delete" || e.key === "Backspace") {
+        if (selectedIds.size > 0 || editTarget?.type === "block") {
+          e.preventDefault();
+          removeSelected();
+        }
       }
     };
     window.addEventListener("keydown", h);
@@ -308,6 +344,131 @@ export function BuilderPage() {
     const newBlocks = [...blocks];
     [newBlocks[idx], newBlocks[newIdx]] = [newBlocks[newIdx], newBlocks[idx]];
     pushHistory(newBlocks);
+  }
+
+  // V0.7.1: 多选辅助 — Shift 范围选 / Cmd+Click 加选
+  function toggleBlockSelection(id: string, modifiers: { shift?: boolean; meta?: boolean } = {}) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (modifiers.shift && lastSelectedId) {
+        // 范围选: 从 lastSelectedId 到 id 之间全部选中
+        const a = blocks.findIndex((b) => b.id === lastSelectedId);
+        const bIdx = blocks.findIndex((b) => b.id === id);
+        if (a >= 0 && bIdx >= 0) {
+          const [from, to] = a < bIdx ? [a, bIdx] : [bIdx, a];
+          for (let i = from; i <= to; i++) next.add(blocks[i].id);
+        }
+        return next;
+      }
+      if (modifiers.meta) {
+        // Cmd+Click: toggle 单个
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      }
+      // 普通: 单选
+      next.clear();
+      next.add(id);
+      return next;
+    });
+    setLastSelectedId(id);
+    setEditTarget({ type: "block", blockId: id });
+  }
+
+  // V0.7.1: 复制选中块到剪贴板 (in-memory + 系统剪贴板)
+  async function copySelected() {
+    const ids = selectedIds.size > 0 ? selectedIds : (editTarget?.type === "block" ? new Set([editTarget.blockId]) : new Set<string>());
+    if (ids.size === 0) { showToast("err", "未选中任何块"); return; }
+    const blocksToCopy: Block[] = [];
+    for (const b of blocks) {
+      if (ids.has(b.id)) {
+        blocksToCopy.push(b);
+      }
+    }
+    setClipboardBlocks(blocksToCopy);
+    // 写系统剪贴板 (JSON 形式, 其他地方也能用)
+    try {
+      const json = JSON.stringify(blocksToCopy.map((b) => {
+        if (b.kind === "single") return { kind: "single", step: b.step };
+        return { kind: "loop", reps: b.reps, work: b.work, rest: b.rest, label: b.label };
+      }));
+      await navigator.clipboard.writeText(json);
+      showToast("ok", `已复制 ${blocksToCopy.length} 块到剪贴板 (系统剪贴板已同步)`);
+    } catch {
+      showToast("ok", `已复制 ${blocksToCopy.length} 块到内部剪贴板`);
+    }
+  }
+
+  // V0.7.1: 粘贴剪贴板块
+  function pasteBlocks(atIndex?: number) {
+    let source: Block[] = clipboardBlocks;
+    if (source.length === 0) {
+      showToast("err", "剪贴板为空, 先 Ctrl+C 复制");
+      return;
+    }
+    const insertAt = atIndex ?? blocks.length;
+    // 重新生成 id 避免冲突
+    const newBlocks: Block[] = source.map((b) => {
+      if (b.kind === "single") return { id: rid(), kind: "single", step: { ...b.step } };
+      return { id: rid(), kind: "loop", reps: b.reps, label: b.label, work: { ...b.work }, rest: b.rest ? { ...b.rest } : null };
+    });
+    pushHistory([...blocks.slice(0, insertAt), ...newBlocks, ...blocks.slice(insertAt)]);
+    showToast("ok", `已粘贴 ${newBlocks.length} 块`);
+    // 选中新粘贴的块
+    setSelectedIds(new Set(newBlocks.map((b) => b.id)));
+  }
+
+  // V0.7.1: 批量删除选中块
+  function removeSelected() {
+    if (selectedIds.size === 0) {
+      if (editTarget?.type === "block") {
+        removeBlock(editTarget.blockId);
+        return;
+      }
+      showToast("err", "未选中任何块");
+      return;
+    }
+    const newBlocks = blocks.filter((b) => !selectedIds.has(b.id));
+    pushHistory(newBlocks);
+    showToast("ok", `已删除 ${selectedIds.size} 块`);
+    setSelectedIds(new Set());
+  }
+
+  // V0.7.1: 段模板 — 保存选中块
+  function saveAsTemplate() {
+    const ids = selectedIds.size > 0 ? selectedIds : (editTarget?.type === "block" ? new Set([editTarget.blockId]) : new Set<string>());
+    if (ids.size === 0) { showToast("err", "未选中任何块"); return; }
+    const blocksToSave: Block[] = [];
+    for (const b of blocks) {
+      if (ids.has(b.id)) blocksToSave.push(b);
+    }
+    const next = [...segmentTemplates, ...blocksToSave];
+    setSegmentTemplates(next);
+    try {
+      localStorage.setItem("cc:segment_templates", JSON.stringify(next));
+      showToast("ok", `已保存 ${blocksToSave.length} 块到段模板库`);
+    } catch (e) {
+      showToast("err", "保存失败: localStorage 满");
+    }
+  }
+
+  // V0.7.1: 段模板 — 插入模板到末尾
+  function insertTemplate(tpl: Block) {
+    const fresh: Block = tpl.kind === "single"
+      ? { id: rid(), kind: "single", step: { ...tpl.step } }
+      : { id: rid(), kind: "loop", reps: tpl.reps, label: tpl.label, work: { ...tpl.work }, rest: tpl.rest ? { ...tpl.rest } : null };
+    pushHistory([...blocks, fresh]);
+    const tplLabel = tpl.kind === "loop" ? tpl.label : tpl.step.label;
+    const tplKind = tpl.kind === "single" ? tpl.step.kind : tpl.work?.kind;
+    showToast("ok", `已插入模板段 "${tplLabel || tplKind || "段"}"`);
+  }
+
+  function clearTemplates() {
+    if (segmentTemplates.length === 0) return;
+    if (!confirm(`清空 ${segmentTemplates.length} 个段模板?`)) return;
+    setSegmentTemplates([]);
+    localStorage.removeItem("cc:segment_templates");
+    showToast("ok", "段模板已清空");
   }
 
   function updateSingleStep(blockId: string, patch: Partial<WorkoutStep>) {
@@ -434,6 +595,22 @@ export function BuilderPage() {
             <Redo2 size={16} />
           </button>
           <div className="w-px h-6 bg-border mx-1" />
+          {/* V0.7.1: 复制 / 粘贴 / 段模板按钮 */}
+          <button onClick={copySelected} disabled={selectedIds.size === 0 && editTarget?.type !== "block"} className="p-2 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-elevated disabled:opacity-30" title="复制选中 (Ctrl+C / Ctrl+D)">
+            <Copy size={16} />
+          </button>
+          <button onClick={() => pasteBlocks()} disabled={clipboardBlocks.length === 0} className="p-2 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-elevated disabled:opacity-30" title={`粘贴 (Ctrl+V, 剪贴板 ${clipboardBlocks.length} 块)`}>
+            <ClipboardPaste size={16} />
+          </button>
+          <button onClick={saveAsTemplate} disabled={selectedIds.size === 0 && editTarget?.type !== "block"} className="p-2 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-elevated disabled:opacity-30" title="存为段模板">
+            <BookmarkPlus size={16} />
+          </button>
+          {selectedIds.size > 0 && (
+            <span className="text-[10px] text-text-muted px-1.5 py-0.5 rounded bg-accent/10 text-accent">
+              已选 {selectedIds.size} 块
+            </span>
+          )}
+          <div className="w-px h-6 bg-border mx-1" />
           <button onClick={() => setView("library")} className="px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary">
             ← 课程库
           </button>
@@ -449,6 +626,40 @@ export function BuilderPage() {
 
       {/* ============== 主体:三栏 ============== */}
       <div className="flex-1 flex min-h-0">
+
+        {/* === V0.7.1 段模板区 (跨课程复用) === */}
+        {segmentTemplates.length > 0 && (
+          <div className="w-44 border-r border-border bg-gradient-to-b from-indigo-50/40 to-white p-2 flex-shrink-0 overflow-y-auto">
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">段模板</div>
+              <button
+                onClick={clearTemplates}
+                className="text-[10px] text-text-muted hover:text-rose-500"
+                title="清空"
+              >
+                <X size={11} />
+              </button>
+            </div>
+            <div className="space-y-1">
+              {segmentTemplates.map((t, i) => {
+                const label = t.kind === "single"
+                  ? `${KIND_LABEL[t.step.kind] || t.step.kind} ${fmtBigTime(t.step.duration_s)} ${t.step.power_pct_ftp ? `${t.step.power_pct_ftp}% FTP` : ""}`
+                  : `×${t.reps} ${KIND_LABEL[t.work?.kind || "main"]} ${fmtBigTime(t.work?.duration_s || 0)}${t.rest ? `+${fmtBigTime(t.rest.duration_s)} 恢复` : ""}`;
+                return (
+                  <button
+                    key={`tpl-${i}`}
+                    onClick={() => insertTemplate(t)}
+                    className="w-full text-left p-1.5 rounded text-[10px] bg-white border border-indigo-200 hover:border-indigo-500 hover:bg-indigo-50 transition"
+                    title="点击插入到末尾"
+                  >
+                    <div className="font-medium text-slate-700 truncate">{label}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* === 左侧积木库 === */}
         <BlockLibrary
           goal={goal}
@@ -475,7 +686,16 @@ export function BuilderPage() {
         <TimelineArea
           blocks={blocks}
           editTarget={editTarget}
-          onSelectBlock={(id) => setEditTarget({ type: "block", blockId: id })}
+          selectedIds={selectedIds}
+          onSelectBlock={(id, modifiers) => {
+            if (modifiers && (modifiers.shift || modifiers.meta)) {
+              toggleBlockSelection(id, modifiers);
+            } else {
+              setEditTarget({ type: "block", blockId: id });
+              setSelectedIds(new Set([id]));
+              setLastSelectedId(id);
+            }
+          }}
           onSelectLoopPart={(bid, part) => setEditTarget({ type: "loop-part", blockId: bid, part })}
           onMoveUp={(id) => moveBlock(id, -1)}
           onMoveDown={(id) => moveBlock(id, 1)}
@@ -715,7 +935,8 @@ function BlockLibrary(props: {
 function TimelineArea(props: {
   blocks: Block[];
   editTarget: EditTarget;
-  onSelectBlock: (id: string) => void;
+  selectedIds: Set<string>;
+  onSelectBlock: (id: string, modifiers?: { shift?: boolean; meta?: boolean }) => void;
   onSelectLoopPart: (blockId: string, part: "work" | "rest") => void;
   onMoveUp: (id: string) => void;
   onMoveDown: (id: string) => void;
@@ -751,8 +972,9 @@ function TimelineArea(props: {
                   total={props.blocks.length}
                   totalDur={totalDur}
                   isSelected={isBlockSelected(b.id, props.editTarget)}
+                  isMultiSelected={props.selectedIds.has(b.id)}
                   isPartSelected={isPartSelected(b.id, props.editTarget)}
-                  onSelect={() => props.onSelectBlock(b.id)}
+                  onSelect={(modifiers) => props.onSelectBlock(b.id, modifiers)}
                   onSelectPart={(part) => props.onSelectLoopPart(b.id, part)}
                   onMoveUp={() => props.onMoveUp(b.id)}
                   onMoveDown={() => props.onMoveDown(b.id)}
@@ -781,7 +1003,7 @@ function TimelineArea(props: {
             </div>
           </div>
         )}
-        {props.blocks.length === 0 && <EmptyDropZone onAddLoop={props.onAddLoop} />}
+        {props.blocks.length === 0 && <EmptyDropZone onAddLoop={props.onAddLoop} onDrop={props.onDrop} />}
       </div>
     </div>
   );
@@ -814,10 +1036,21 @@ function EmptyState() {
   );
 }
 
-function EmptyDropZone({ onAddLoop }: { onAddLoop: (idx: number) => void }) {
+function EmptyDropZone({
+  onAddLoop,
+  onDrop,
+}: {
+  onAddLoop: (idx: number) => void;
+  onDrop: (e: React.DragEvent, idx: number) => void;
+}) {
   return (
-    <div className="mt-4 max-w-2xl mx-auto p-8 border-2 border-dashed border-border rounded-xl text-center">
+    <div
+      onDragOver={(e) => { e.preventDefault(); }}
+      onDrop={(e) => onDrop(e, 0)}
+      className="mt-4 max-w-2xl mx-auto p-8 border-2 border-dashed border-border rounded-xl text-center hover:border-accent/50 hover:bg-accent/5 transition-all"
+    >
       <div className="text-text-muted text-sm mb-3">从这里开始构建你的课程</div>
+      <div className="text-text-muted text-[10px] mb-3">↑ 从左侧拖入积木, 或点击下方按钮</div>
       <div className="flex justify-center gap-2">
         <button onClick={() => onAddLoop(0)} className="px-4 py-2 bg-gradient-to-r from-amber-400 to-red-500 text-white rounded-md text-sm font-medium hover:opacity-90">
           <Repeat className="w-3.5 h-3.5 inline mr-1" /> 加循环块
@@ -830,8 +1063,8 @@ function EmptyDropZone({ onAddLoop }: { onAddLoop: (idx: number) => void }) {
 // =============== Block 卡片 ===============
 function BlockCard(props: {
   block: Block; index: number; total: number; totalDur: number;
-  isSelected: boolean; isPartSelected: "work" | "rest" | null;
-  onSelect: () => void; onSelectPart: (part: "work" | "rest") => void;
+  isSelected: boolean; isMultiSelected: boolean; isPartSelected: "work" | "rest" | null;
+  onSelect: (modifiers?: { shift?: boolean; meta?: boolean }) => void; onSelectPart: (part: "work" | "rest") => void;
   onMoveUp: () => void; onMoveDown: () => void;
   onRemove: () => void; onDuplicate: () => void;
   onDragStart: (e: React.DragEvent) => void;
@@ -850,12 +1083,14 @@ function SingleBlockCard(props: any) {
 
   return (
     <div
-      onClick={props.onSelect}
+      onClick={(e) => props.onSelect({ shift: e.shiftKey, meta: e.metaKey || e.ctrlKey })}
       className={clsx(
         "group rounded-xl border-2 transition-all cursor-pointer overflow-hidden flex items-stretch h-16",
         props.isSelected
           ? `${c.ring} shadow-md border-current`
-          : "border-border hover:border-text-muted/40 hover:shadow-sm bg-white"
+          : props.isMultiSelected
+            ? "border-accent bg-accent/5"
+            : "border-border hover:border-text-muted/40 hover:shadow-sm bg-white"
       )}
     >
       {/* 拖拽手柄 */}
@@ -904,12 +1139,14 @@ function LoopBlockCard(props: any) {
 
   return (
     <div
-      onClick={props.onSelect}
+      onClick={(e) => props.onSelect({ shift: e.shiftKey, meta: e.metaKey || e.ctrlKey })}
       className={clsx(
         "rounded-xl border-2 transition-all cursor-pointer overflow-hidden",
         props.isSelected
           ? "border-amber-500 ring-2 ring-amber-500/30 shadow-md bg-white"
-          : "border-amber-300/60 hover:border-amber-500 hover:shadow-sm bg-white"
+          : props.isMultiSelected
+            ? "border-accent bg-accent/5"
+            : "border-amber-300/60 hover:border-amber-500 hover:shadow-sm bg-white"
       )}
     >
       {/* 拖拽手柄 + 头部 */}
@@ -1416,26 +1653,49 @@ function computeTSS(blocks: Block[], goal: WorkoutGoal): number {
   return tss * (baseIf / 0.75);
 }
 
-function blocksToStructure(blocks: Block[]): any {
-  return {
-    version: 1,
-    blocks: blocks.map((b) => {
-      if (b.kind === "single") {
-        return { kind: "single", step: b.step };
+function blocksToStructure(blocks: Block[]): any[] {
+  // V0.7.4.2 修: 后端期望 list[StepIn], 不是 {version, blocks}
+  // StepIn: { kind, duration_s, power_pct_ftp, hr_pct_lthr, cadence_rpm, label, repeat }
+  return blocks.map((b) => {
+    if (b.kind === "single") {
+      // flat single step
+      return { ...b.step, repeat: 1 };
+    }
+    // loop: 展开成 N 个 main + recovery
+    const out: any[] = [];
+    for (let i = 0; i < (b.reps || 1); i++) {
+      out.push({ ...b.work, label: b.work?.label || `${b.label} 主项 ${i + 1}`, repeat: 1 });
+      if (i < (b.reps || 1) - 1 || b.rest) {
+        out.push({ ...b.rest, label: b.rest?.label || `${b.label} 间歇 ${i + 1}`, repeat: 1 });
       }
-      return { kind: "loop", reps: b.reps, label: b.label, work: b.work, rest: b.rest };
-    }),
-  };
+    }
+    return out;
+  }).flat();
 }
 
 function structureToBlocks(s: any): Block[] {
   if (!s) return [];
+  // V0.7.4.2 修: 兼容 list / {version, blocks} 两种格式
   const arr = s.blocks || (Array.isArray(s) ? s : []);
   if (!Array.isArray(arr)) return [];
-  return arr.map((b: any) => {
+  return arr.map((b: any): Block | null => {
     if (b.kind === "loop") {
       return { id: rid(), kind: "loop", reps: b.reps, label: b.label, work: b.work, rest: b.rest };
     }
-    return { id: rid(), kind: "single", step: b.step };
-  });
+    if (b.step) {
+      return { id: rid(), kind: "single", step: b.step };
+    }
+    // flat step (新格式)
+    if (b.duration_s) {
+      return { id: rid(), kind: "single", step: {
+        kind: b.kind || "main",
+        duration_s: b.duration_s,
+        power_pct_ftp: b.power_pct_ftp,
+        hr_pct_lthr: b.hr_pct_lthr,
+        cadence_rpm: b.cadence_rpm,
+        label: b.label,
+      }};
+    }
+    return null;
+  }).filter((x): x is Block => x !== null);
 }

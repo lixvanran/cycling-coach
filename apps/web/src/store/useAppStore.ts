@@ -1,7 +1,7 @@
 // Zustand 全局 store
 import { create } from "zustand";
 
-export type View = "dashboard" | "calendar" | "activities" | "activity-detail" | "import" | "profile" | "chat" | "library" | "builder" | "kb" | "kb-search" | "compare" | "trends" | "phases" | "ftp-test" | "insights";
+export type View = "dashboard" | "calendar" | "activities" | "activity-detail" | "import" | "profile" | "chat" | "library" | "builder" | "kb" | "kb-search" | "compare" | "trends" | "phases" | "ftp-test" | "insights" | "diary";
 
 export interface ChatMsg {
   id: string;

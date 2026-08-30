@@ -1,4 +1,5 @@
 // 左侧导航栏(TrainingPeaks 风格)
+import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
   Bike,
@@ -10,6 +11,12 @@ import {
   BookOpen,
   Hammer,
   Library,
+  GitCompare,
+  TrendingUp,
+  Heart,
+  Layers,
+  NotebookPen,
+  Gauge,
   type LucideIcon,
 } from "lucide-react";
 import { useAppStore, type View } from "../store/useAppStore";
@@ -24,6 +31,10 @@ const items: Array<{ view: View; label: string; icon: LucideIcon }> = [
   { view: "activities", label: "训练", icon: Bike },
   { view: "compare", label: "对比", icon: GitCompare },
   { view: "trends", label: "趋势", icon: TrendingUp },
+  { view: "insights", label: "训练洞察", icon: Heart },
+  { view: "phases", label: "周期化", icon: Layers },
+  { view: "diary", label: "训练日记", icon: NotebookPen },
+  { view: "ftp-test", label: "FTP 测试", icon: Gauge },
   { view: "chat", label: "AI 教练", icon: MessageCircle },
   { view: "import", label: "导入", icon: Upload },
   { view: "profile", label: "个人画像", icon: User },
@@ -46,7 +57,9 @@ export function Sidebar() {
           </div>
           <div>
             <div className="text-sm font-semibold text-text-primary leading-none">Cycling Coach</div>
-            <div className="text-xs text-text-muted mt-0.5">v0.5.0</div>
+            <div className="text-xs text-text-muted mt-0.5">
+              <VersionTag />
+            </div>
           </div>
         </div>
       </div>
@@ -75,4 +88,16 @@ export function Sidebar() {
       </div>
     </aside>
   );
+}
+
+// V0.7.1: 版本号从后端 SSOT 拿, 避免前端硬编码
+function VersionTag() {
+  const [v, setV] = useState<string | null>(null);
+  useEffect(() => {
+    fetch("/api/version")
+      .then((r) => r.json())
+      .then((d) => setV(d.version))
+      .catch(() => setV("?.?.?"));
+  }, []);
+  return <span>v{v ?? "..."}</span>;
 }

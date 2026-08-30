@@ -592,4 +592,16 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  // V0.7.4.2 训练日记 (Training Diary)
+  diaryList: (days: number = 30) => jsonFetch<{ items: import("./types").Diary[]; total: number }>(`/diary?days=${days}`),
+  diaryGet: (date: string) => jsonFetch<{ date: string; exists: boolean; item: import("./types").Diary | null }>(`/diary/${date}`),
+  diaryUpsert: (data: Partial<import("./types").Diary> & { date: string }) =>
+    jsonFetch<{ ok: boolean; item: import("./types").Diary }>("/diary", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  diaryDelete: (date: string) => jsonFetch<{ ok: boolean; deleted: string }>(`/diary/${date}`, { method: "DELETE" }),
+  diaryTemplate: () => jsonFetch<import("./types").DiaryTemplate>("/diary/template"),
+
+
 };

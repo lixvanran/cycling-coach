@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cycling-coach"
-version = "0.5.0"
+version = "0.7.5"
 description = "公路自行车 AI 教练 — 本地优先,把 FIT 数据自动解读成可执行训练建议"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -29,6 +29,10 @@ dependencies = [
     "numpy>=1.26",
     "pandas>=2.1",
     "scipy>=1.11",
+    # V0.7.3: PDF 周报
+    "reportlab>=4.0",
+    # V0.7.4: FIT 课程导出 (Garmin/Wahoo)
+    "fit-tool>=0.9.16",
 ]
 
 [project.optional-dependencies]

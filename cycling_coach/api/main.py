@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from cycling_coach import __version__
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -20,21 +21,24 @@ from fastapi.responses import FileResponse, JSONResponse
 from cycling_coach.config.config import settings
 from cycling_coach.config.logging import setup_logging
 from cycling_coach.data.sqlite import init_db
-from .routers import activities, athlete, dashboard, diagnose, dev, coach, pmc, plans, calendar, workouts, kb, trends, phases, ftp, insights
+from .routers import activities, athlete, dashboard, diagnose, dev, coach, pmc, plans, calendar, workouts, kb, trends, phases, ftp, insights, race_prep, hrv, recommendations, reports, sync, diary
 from .routers.frontend import mount_frontend
 
 
 WORKSPACE = Path(settings.workspace_dir).resolve()
 LOG_FILE = WORKSPACE / ".logs" / "sidecar.log"
 
+# V0.7.4 fix: logger 提前到模块级 (dev_mode 警告在 lifespan 外)
+_logger = logging.getLogger("cycling_coach.api.main")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """启动时:配日志 + 建表"""
     setup_logging(settings.log_level, LOG_FILE)
-    logger = logging.getLogger("cycling_coach.api.main")
+    logger = _logger
     logger.info("=" * 50)
-    logger.info(f"Cycling Coach Sidecar v{'0.5.1' if settings.is_desktop else '0.5.0'} 启动")
+    logger.info(f"Cycling Coach Sidecar v{__version__} 启动 (desktop={settings.is_desktop})")
     logger.info(f"Mock 模式: {settings.is_mock}")
     if not settings.is_mock:
         logger.info(f"M3 model: {settings.m3_model}")
@@ -96,7 +100,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Cycling Coach API",
     description="公路自行车 AI 教练 · 后端",
-    version="0.5.0",
+    version=__version__,
     lifespan=lifespan,
 )
 
@@ -112,7 +116,10 @@ app.include_router(activities.router)
 app.include_router(athlete.router)
 app.include_router(dashboard.router)
 app.include_router(diagnose.router)
-app.include_router(dev.router)
+# V0.7.1: dev router 仅在 dev_mode=True 时挂载 (含 generate-mock / repair-db, 生产应关闭)
+if settings.dev_mode:
+    app.include_router(dev.router)
+    _logger.warning("Dev mode ON — dev router 已挂载 (含 generate-mock / repair-db)")
 app.include_router(coach.router)
 app.include_router(pmc.router)
 app.include_router(plans.router)
@@ -123,3 +130,21 @@ app.include_router(trends.router)
 app.include_router(phases.router)
 app.include_router(ftp.router)
 app.include_router(insights.router)
+app.include_router(race_prep.router)
+app.include_router(hrv.router)
+app.include_router(recommendations.router)
+app.include_router(reports.router)
+app.include_router(sync.router)
+app.include_router(diary.router)
+
+
+# ---------- 版本号端点 (前端 SSOT) ----------
+@app.get("/api/version", tags=["meta"])
+def get_version():
+    """返回后端版本号 (前端从 pyproject.toml 单一真相源读)"""
+    from cycling_coach import __version__
+    return {
+        "version": __version__,
+        "service": "cycling-coach-backend",
+        "name": "Cycling Coach",
+    }

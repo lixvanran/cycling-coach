@@ -409,6 +409,8 @@ class TrainingPhase(Base):
 
     # 比赛: 关联特定比赛日
     is_race: Mapped[bool] = mapped_column(Boolean, default=False)
+    race_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)  # TT / road_race / stage_race / gran_fondo / crit / hill_climb / other
+    race_priority: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)  # A (最重要) / B / C
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -445,3 +447,47 @@ class FTPTest(Base):
     w_prime_kj: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class TrainingDiary(Base):
+    """V0.7.4.2: 训练日记 (借鉴 KB 训练百科模板)
+
+    字段设计 (潘震教练训练日记模板):
+    - training_feel: 1-5 (1=很累, 5=很轻松)
+    - mood: 1-5 (心情, 1=很差, 5=很好)
+    - sleep_h: float (睡眠时长, 小时)
+    - sleep_quality: 1-5 (睡眠质量, KB 模板字段)
+    - content: text (markdown 自由笔记)
+    - weather: str (天气, 选填)
+    - equipment_notes: str (装备/补记, 选填)
+    - pain_notes: str (疼痛记录, 选填)
+    - activity_id: int (关联活动, 选填)
+    - 关联 (date, athlete_id) 唯一
+    """
+    __tablename__ = "training_diary"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athletes.id"), index=True)
+    activity_id: Mapped[Optional[int]] = mapped_column(ForeignKey("activities.id"), nullable=True, index=True)
+    date: Mapped[_date] = mapped_column(Date, index=True)
+
+    # KB 模板字段
+    training_feel: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 1=很累 5=很轻松
+    mood: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 1=很差 5=很好
+    sleep_h: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    sleep_quality: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # 自由笔记
+    content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # 选填
+    weather: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    equipment_notes: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    pain_notes: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        Index("ix_diary_athlete_date", "athlete_id", "date", unique=True),
+    )

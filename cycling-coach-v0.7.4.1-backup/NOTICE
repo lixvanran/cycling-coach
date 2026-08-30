@@ -1,0 +1,58 @@
+NOTICE
+=====
+
+Cycling Coach V0.6.0
+公路自行车 AI 教练 V0.6.0
+
+--------------------------------------------------------------------
+
+This product includes two parts under separate licenses:
+
+本产品包含两个部分,采用不同的许可证:
+
+1. SOFTWARE / 软件部分
+   - Files: All source code under cycling_coach/, apps/, tools/, docs/
+   - License: MIT — see [LICENSE](LICENSE) / [LICENSE.zh-CN](LICENSE.zh-CN)
+   - Copyright: (c) 2026 lixvanran
+   - 许可证:MIT — 见 [LICENSE](LICENSE) / [LICENSE.zh-CN](LICENSE.zh-CN)
+   - 版权所有:2026 lixvanran
+
+2. KNOWLEDGE BASE / 知识库
+   - Location: kb_source/
+   - Content: 训练百科 (Training Encyclopedia)
+   - Author: 潘震(公路车教练) (Pan Zhen, Road Cycling Coach)
+   - License: Restricted Use — see [kb_source/LICENSE](kb_source/LICENSE)
+   - 位置:kb_source/
+   - 内容:训练百科
+   - 作者:潘震(公路车教练)
+   - 许可证:受限使用 — 见 [kb_source/LICENSE](kb_source/LICENSE)
+
+--------------------------------------------------------------------
+
+TRAINING ENCYCLOPEDIA (训练百科)
+  Author:         潘震(公路车教练) (Pan Zhen, Road Cycling Coach)
+  Affiliation:    Senior Road Cycling Coach, China
+  Specialty:      Systematic Road Cycling Training
+  Experience:     10+ years of front-line coaching
+
+  Coverage:       训练方法·训练执行·车下训练·运动人体科学
+                  Training Methods·Execution·Off-bike·Physiology
+                  训练工具与装备·常见问题·常用资源
+                  Tools·FAQ·Common Resources
+                  高级训练知识·青少年·执教·随笔·竞技·术语
+                  Advanced·Youth·Coaching·Essays·Competition·Terms
+
+  Usage:          Local RAG retrieval only.
+  Distribution:   PROHIBITED without written permission.
+  Commercial:     PROHIBITED.
+  Attribution:    REQUIRED ("潘震(公路车教练)").
+
+  For licensing inquiries, contact 潘震(公路车教练) directly.
+
+--------------------------------------------------------------------
+
+PROJECT MAINTAINER / 项目维护者
+  Name:           lixvanran
+  Email:          lixvanran@users.noreply.github.com
+  GitHub:         https://github.com/lixvanran/cycling-coach
+  Repository:     cycling-coach

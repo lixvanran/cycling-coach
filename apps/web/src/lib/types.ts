@@ -24,6 +24,10 @@ export interface Sample {
   cadence: number | null;
   speed: number | null;
   elevation: number | null;
+  lat?: number | null;
+  lon?: number | null;
+  position_lat?: number | null;
+  position_long?: number | null;
 }
 
 export interface Lap {
@@ -453,4 +457,39 @@ export interface WeeklyReview {
   comparison: { tss_change: number; tss_change_pct: number | null };
   next_week_advice: string;
   ftp_used: number;
+}
+
+// V0.7.4.2 训练日记
+export interface Diary {
+  id: number;
+  date: string; // YYYY-MM-DD
+  training_feel: number | null; // 1-5
+  mood: number | null; // 1-5
+  sleep_h: number | null;
+  sleep_quality: number | null; // 1-5
+  content: string | null;
+  weather: string | null;
+  equipment_notes: string | null;
+  pain_notes: string | null;
+  activity_id: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface DiaryTemplateField {
+  key: string;
+  label: string;
+  type: "rating" | "number" | "text" | "textarea" | "activity";
+  min?: number;
+  max?: number;
+  scale?: string;
+  tip: string;
+}
+
+export interface DiaryTemplate {
+  title: string;
+  source: string;
+  fields: DiaryTemplateField[];
+  prompts: string[];
+  daily_factors: string[];
 }
