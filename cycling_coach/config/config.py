@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     m3_base_url: str = "https://openrouter.ai/api/v1"
     m3_api_key: Optional[str] = None
     m3_model: str = "minimax/minimax-m3"
+    # V0.7.5.7 A-2: 主模型空响应时的降级模型
+    m3_fallback_model: str = "minimax/minimax-m2.7"
 
     # 后端
     backend_host: str = "127.0.0.1"

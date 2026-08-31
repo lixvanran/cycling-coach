@@ -87,7 +87,10 @@ async def lifespan(app: FastAPI):
                 _setup_fts(_db_engine)
                 logger.info("kb_chunks_fts 重建完成")
     except Exception as e:
-        logger.warning(f"知识库自动导入跳过: {e}")
+        # V0.7.5.7 A-14: 用户首启失败时, 给出明确提示
+        logger.warning(f"知识库自动导入失败: {e}", exc_info=False)
+        # 把"知识库缺失"状态暴露到 /api/diagnose, 前端可查
+        _KB_IMPORT_ERROR = str(e)
     logger.info("=" * 50)
     # V0.5.1 桌面模式: 挂载前端静态资源 (此时 settings.static_dir 已就绪)
     try:

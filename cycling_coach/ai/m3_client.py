@@ -66,7 +66,8 @@ class M3Client:
         self.is_mock = settings.is_mock
         # v0.1.1: minimax-m3 在 OpenRouter AtlasCloud provider 配错,自动降级到 m2.7
         # 用户改 .env 里的 M3_MODEL 就能覆盖
-        self.fallback_model = "minimax/minimax-m2.7"
+        # V0.7.5.7 A-2: 从 settings 读, 不再硬编码
+        self.fallback_model = getattr(settings, "m3_fallback_model", "minimax/minimax-m2.7")
         if not self.is_mock:
             self._client = OpenAI(api_key=self.api_key, base_url=self.base_url)
             logger.info(f"M3 client 初始化: model={self.model}, base={self.base_url}")
