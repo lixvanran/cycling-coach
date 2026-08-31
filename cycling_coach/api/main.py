@@ -23,6 +23,7 @@ from cycling_coach.config.config import settings
 from cycling_coach.config.logging import setup_logging
 from cycling_coach.data.sqlite import init_db
 from .routers import activities, athlete, dashboard, diagnose, dev, coach, pmc, plans, calendar, workouts, kb, trends, phases, ftp, insights, race_prep, hrv, recommendations, reports, sync, diary, race_tactics
+from .routers.chat import router as chat_router  # V0.7.6 通用 chat 持久化
 from .routers.frontend import mount_frontend
 
 
@@ -168,6 +169,8 @@ app.include_router(reports.router)
 app.include_router(sync.router)
 app.include_router(diary.router)
 app.include_router(race_tactics.router)
+# V0.7.6: 通用 chat 持久化 (chat_sessions / chat_messages / 思维树)
+app.include_router(chat_router)
 
 
 # ---------- 版本号端点 (前端 SSOT) ----------
