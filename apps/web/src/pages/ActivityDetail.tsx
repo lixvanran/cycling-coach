@@ -84,7 +84,7 @@ export function ActivityDetail() {
   }
 
   if (loading || !activity) {
-    return <div className="p-6 text-text-muted">加载中…</div>;
+    return <ActivityDetailSkeleton />;
   }
 
   const m = activity.metrics;
@@ -490,7 +490,8 @@ export function ActivityDetail() {
             ) : reportRunning ? (
               <div className="text-text-muted text-sm flex items-center gap-2">
                 <RefreshCw size={14} className="animate-spin" />
-                AI 正在分析中,通常需要 15-30 秒…
+                <span>AI 正在分析中,通常需要 15-60 秒…</span>
+                <ElapsedCounter active={reportRunning} />
               </div>
             ) : reportFailed ? (
               <div className="text-accent-danger text-sm flex items-center gap-2">
@@ -510,6 +511,42 @@ export function ActivityDetail() {
 }
 
 // 轻量 Markdown 渲染
+
+// V0.7.5.5 UX-9: AI 报告生成计时 (让用户知道等了多久)
+
+// V0.7.5.5 UX-11: loading skeleton (灰块闪烁, 避免白屏)
+function ActivityDetailSkeleton() {
+  return (
+    <div className="p-6 space-y-4 animate-pulse">
+      <div className="h-7 bg-bg-elevated rounded w-1/3" />
+      <div className="grid grid-cols-4 gap-3">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="h-20 bg-bg-elevated rounded" />
+        ))}
+      </div>
+      <div className="h-64 bg-bg-elevated rounded" />
+      <div className="grid grid-cols-2 gap-3">
+        <div className="h-40 bg-bg-elevated rounded" />
+        <div className="h-40 bg-bg-elevated rounded" />
+      </div>
+    </div>
+  );
+}
+
+function ElapsedCounter({ active }: { active: boolean }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!active) { setElapsed(0); return; }
+    const start = Date.now();
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [active]);
+  if (!active) return null;
+  const mins = Math.floor(elapsed / 60);
+  const secs = elapsed % 60;
+  return <span className="text-text-muted/70 font-mono text-xs">({mins}:{secs.toString().padStart(2, "0")})</span>;
+}
+
 function Markdown({ text }: { text: string }) {
   const lines = text.split("\n");
   return (

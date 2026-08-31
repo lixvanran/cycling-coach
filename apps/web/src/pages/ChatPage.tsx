@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Send, StopCircle, Trash2, MessageCircle, Sparkles } from "lucide-react";
 import { api } from "../lib/api";
 import { useAppStore } from "../store/useAppStore";
+import { useToast } from "../components/Toast";
 import { ChatMessage } from "../components/ChatMessage";
 
 const SUGGESTIONS = [
@@ -13,6 +14,7 @@ const SUGGESTIONS = [
 ];
 
 export function ChatPage() {
+  const toast = useToast();
   const messages = useAppStore((s) => s.chatMessages);
   const isStreaming = useAppStore((s) => s.isStreaming);
   const addMsg = useAppStore((s) => s.addChatMessage);
@@ -125,6 +127,22 @@ export function ChatPage() {
       abortRef.current = null;
     }
   };
+
+  // V0.7.5.5 UX-8: 30s 慢响应警告 + 120s 硬超时
+  useEffect(() => {
+    if (!isStreaming) return;
+    const slowTimer = setTimeout(() => {
+      toast.warn("AI 响应较慢 (已等 30s), 可点停止按钮取消", 5000);
+    }, 30_000);
+    const hardTimer = setTimeout(() => {
+      abortRef.current?.abort();
+      toast.error("AI 响应超时 (120s), 已自动取消", 5000);
+    }, 120_000);
+    return () => {
+      clearTimeout(slowTimer);
+      clearTimeout(hardTimer);
+    };
+  }, [isStreaming]);
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();

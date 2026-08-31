@@ -582,14 +582,24 @@ function EditPlannedPopover(props: {
 
   async function unlink() {
     setBusy(true);
-    try { await api.unlinkPlanned(props.planned.id); props.onSaved(); }
-    finally { setBusy(false); }
+    try {
+      await api.unlinkPlanned(props.planned.id);
+      toast.success("已解除关联");
+      props.onSaved();
+    } catch (e: any) {
+      toast.error("解除失败: " + e?.message);
+    } finally { setBusy(false); }
   }
 
   async function markDone() {
     setBusy(true);
-    try { await api.updatePlanned(props.planned.id, { status: "done" }); props.onSaved(); }
-    finally { setBusy(false); }
+    try {
+      await api.updatePlanned(props.planned.id, { status: "done" });
+      toast.success("已标记完成 ✓");
+      props.onSaved();
+    } catch (e: any) {
+      toast.error("操作失败: " + e?.message);
+    } finally { setBusy(false); }
   }
 
   return (
