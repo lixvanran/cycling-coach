@@ -493,3 +493,44 @@ export interface DiaryTemplate {
   prompts: string[];
   daily_factors: string[];
 }
+
+// V0.7.5.10 比赛战术规划
+export interface RaceTacticsSession {
+  id: number;
+  race_name: string;
+  race_date: string | null;
+  distance_km: number | null;
+  elevation_gain_m: number | null;
+  race_type: string | null;
+  priority: string | null;
+  weather_forecast: string | null;
+  course_profile: string | null;
+  final_strategy: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+  attachment_count: number;
+  messages?: RaceTacticsMessage[];
+  attachments?: RaceTacticsAttachment[];
+}
+
+export interface RaceTacticsMessage {
+  id: number;
+  role: "user" | "assistant" | "system";
+  content: string;
+  thinking: string | null;
+  rag_sources: Array<{ title: string; path: string; snippet: string }>;
+  created_at: string;
+}
+
+export interface RaceTacticsAttachment {
+  id: number;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  description: string | null;
+  has_extracted_text: boolean;
+  created_at: string;
+  url: string;
+}

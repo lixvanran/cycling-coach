@@ -457,6 +457,9 @@ class FTPTest(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+
+
+
 class TrainingDiary(Base):
     """V0.7.4.2: 训练日记 (借鉴 KB 训练百科模板)
 
@@ -479,23 +482,90 @@ class TrainingDiary(Base):
     activity_id: Mapped[Optional[int]] = mapped_column(ForeignKey("activities.id"), nullable=True, index=True)
     date: Mapped[_date] = mapped_column(Date, index=True)
 
-    # KB 模板字段
-    training_feel: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 1=很累 5=很轻松
-    mood: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 1=很差 5=很好
+    training_feel: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    mood: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     sleep_h: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     sleep_quality: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-
-    # 自由笔记
     content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
-    # 选填
     weather: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     equipment_notes: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     pain_notes: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     __table_args__ = (
         Index("ix_diary_athlete_date", "athlete_id", "date", unique=True),
     )
+
+
+class RaceTacticsSession(Base):
+    """V0.7.5.9: 比赛战术规划会话
+
+    借鉴 TrainingPeaks Race Plan / WKO5 Race Day:
+    - athlete 创建比赛战术会话, 关联具体比赛
+    - 跟教练 (AI) 多轮对话, 商讨战术
+    - 可上传路书 (PDF/PNG/JPG) 作为上下文
+    """
+    __tablename__ = "race_tactics_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athletes.id"), index=True)
+    # 比赛基本信息
+    race_name: Mapped[str] = mapped_column(String(128))
+    race_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    distance_km: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    elevation_gain_m: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    race_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)  # road_race / crit / tt / gran_fondo / hill_climb
+    priority: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)  # A / B / C
+    # 路况/天气
+    weather_forecast: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    course_profile: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 路线描述 (文本)
+    # AI 战术建议 (最终版本)
+    final_strategy: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # 状态
+    status: Mapped[str] = mapped_column(String(16), default="active")  # active / planned / completed
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    # 关联
+    messages: Mapped[list["RaceTacticsMessage"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan", order_by="RaceTacticsMessage.created_at"
+    )
+    attachments: Mapped[list["RaceTacticsAttachment"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan", order_by="RaceTacticsAttachment.created_at"
+    )
+
+
+class RaceTacticsMessage(Base):
+    """比赛战术对话消息 (user / assistant)"""
+    __tablename__ = "race_tactics_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("race_tactics_sessions.id"), index=True)
+    role: Mapped[str] = mapped_column(String(16))  # user / assistant / system
+    content: Mapped[str] = mapped_column(Text)
+    # AI 检索的 KB 引用 (JSON 数组 [{title, path, snippet}])
+    rag_sources: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    thinking: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # AI 思考过程
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    session: Mapped["RaceTacticsSession"] = relationship(back_populates="messages")
+
+
+class RaceTacticsAttachment(Base):
+    """比赛路书附件 (PDF/PNG/JPG)"""
+    __tablename__ = "race_tactics_attachments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("race_tactics_sessions.id"), index=True)
+    file_name: Mapped[str] = mapped_column(String(255))
+    file_path: Mapped[str] = mapped_column(String(512))
+    mime_type: Mapped[str] = mapped_column(String(64))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    # 描述
+    description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # OCR 提取的文本 (PDF 解析后供 RAG 用)
+    extracted_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    session: Mapped["RaceTacticsSession"] = relationship(back_populates="attachments")

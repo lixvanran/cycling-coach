@@ -55,6 +55,7 @@ const QUICK_PLANS: { key: WorkoutIntent; label: string; icon: any; color: string
 ];
 
 export function CalendarPage() {
+  const toast = useToast();
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);

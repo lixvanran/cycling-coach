@@ -24,6 +24,7 @@ import { GPSMap } from "../components/GPSMap";
 import { RPEEditor, RPEBadge } from "../components/RPEEditor";
 
 export function ActivityDetail() {
+  const toast = useToast();
   const selectedId = useAppStore((s) => s.selectedActivityId);
   const setView = useAppStore((s) => s.setView);
   const [activity, setActivity] = useState<ActivityDetailT | null>(null);

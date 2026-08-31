@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
+  Trophy,
   ChevronRight,
   Bike,
   Upload,
@@ -36,6 +37,7 @@ const items: Array<{ view: View; label: string; icon: LucideIcon }> = [
   { view: "insights", label: "训练洞察", icon: Heart },
   { view: "phases", label: "周期化", icon: Layers },
   { view: "diary", label: "训练日记", icon: NotebookPen },
+  { view: "race-tactics", label: "比赛战术", icon: Trophy },
   { view: "ftp-test", label: "FTP 测试", icon: Gauge },
   { view: "chat", label: "AI 教练", icon: MessageCircle },
   { view: "import", label: "导入", icon: Upload },

@@ -16,6 +16,7 @@ import { ChatPage } from "./pages/ChatPage";
 import { LibraryPage } from "./pages/LibraryPage";
 import { BuilderPage } from "./pages/BuilderPage";
 import { DiaryPage } from "./pages/DiaryPage";
+import { RaceTacticsPage } from "./pages/RaceTacticsPage";
 import { KnowledgeBasePage } from "./pages/KnowledgeBasePage";
 import { useAppStore } from "./store/useAppStore";
 import { ToastContainer } from "./components/Toast";

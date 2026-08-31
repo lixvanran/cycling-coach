@@ -24,4 +24,4 @@ except Exception as e:
         __version__ = data.get("project", {}).get("version", "0.0.0")
     except Exception as e2:
         logger.warning(f"读 pyproject.toml 也失败, 用 hardcoded: {e2}")
-        __version__ = "0.7.5.8"  # hardcoded 兜底
+        __version__ = "0.7.5.10"  # hardcoded 兜底
