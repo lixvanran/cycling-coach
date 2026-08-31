@@ -2,16 +2,12 @@
 
 > 把公路车训练从"经验"升级为"数据 + 智能"。
 
-![Version](https://img.shields.io/badge/version-v0.6.1-blue.svg)
-![Status](https://img.shields.io/badge/status-V0.6.1--GC%20Differentiation-green.svg)
+![Version](https://img.shields.io/badge/version-v0.7.6-blue.svg)
+![Status](https://img.shields.io/badge/status-Foundation%201.0-green.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![React](https://img.shields.io/badge/react-18-61dafb)
 ![License: Dual (MIT + KB Restricted)](https://img.shields.io/badge/license-Dual%20(MIT%20%2B%20KB%20Restricted)-blue)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/lixvanran/cycling-coach)
-![GitHub stars](https://img.shields.io/github/stars/lixvanran/cycling-coach)
-![GitHub issues](https://img.shields.io/github/issues/lixvanran/cycling-coach)
-
-## 当前版本: **V0.6.1** — 对标 GoldenCheetah (GC 差异化)
 
 > ⚠️ **双协议 (Dual License)**
 > - **软件代码** (MIT) — [LICENSE](LICENSE) | [LICENSE.zh-CN](LICENSE.zh-CN)
@@ -19,291 +15,322 @@
 >
 > 训练百科内容来源: **潘震(公路车教练)**, 仅供本地 RAG 检索, 禁止再分发/衍生/商用
 
-### V0.6 阶段一览
+## 当前版本: **V0.7.6 Foundation 1.0**
+
+V0.7.6 = **"上大家伙前的地基"**: 给后续自研 LLM 思维扩散器 + 训练回归模型铺路, 全部 8 项 P0 改造无破坏性收口。
+
+### V0.7.x 阶段一览
 
 | 版本 | 重点 | 状态 |
 |------|------|------|
-| V0.6.0 | 7 区功率 + W'bal + CP 3-param + Compare + Trends | ✅ |
-| V0.6.1 | Pa:HR Decoupling + ACWR + GPS + 海拔 + RPE + 周期化 + FTP 4 协议 | ✅ |
+| V0.7.5 | HRV / Phase / Trends / AI Coach / Reports / Sync / Diary | ✅ |
+| V0.7.5.1-5.8 | KB 精准 + P0/P1 修复 + 性能 + UX 批量 (39/40 报告项) | ✅ |
+| V0.7.5.9+10 | 比赛战术规划 (后端 10 端点 + AI 流式 + 路书 + 前端 RaceTacticsPage) | ✅ |
+| **V0.7.6** | **Foundation 1.0**: chat 持久化 + ML 骨架 + WAL + 性能 + 优雅关闭 | ✅ |
 
-### V0.4 → V0.5 升级要点
+## 🎯 核心能力
 
-- 📚 **知识库 — 把教练 10 年经验装进 AI 脑子里**
-  - 来源:**潘震(公路车教练)**(授权转载)
-  - 体量:**8 顶层分类 + 训练百科 1-10 章 + 359 篇文档 + 500 个 RAG 切片 + 252 张训练示意图**
-  - 内容覆盖:训练概述 / 训练方法(功率·心率·室内) / 训练执行(七部曲·规划·误区) / 车下训练(力量·核心) / 运动人体科学(营养·恢复) / 训练工具与装备 / 训练常见问题 / 常用训练资源 / 高级训练知识 / 青少年专题 / 执教知识 / 教练随笔 / 竞技百科 / 专业术语
-- 🔍 **浏览 + 搜索 + AI 检索三件套**
-  - 浏览:左侧分类树 → 右侧 markdown 文档(图片/列表/代码块全支持)
-  - 搜索:SQLite FTS5 全文索引 + `<mark>` 高亮
-  - AI 检索:问 AI 时自动 top-3 chunks 注入 system prompt
-- 🔮 **Embedding 预留** — `kb_chunks.embedding BLOB + embedding_model` 字段已建,V0.5.1 接向量检索时直接填
-- 🛠️ **自动迁移 / 自动导入** — 首次启动自动跑,后续秒起
+### 🚴 训练数据
+- **FIT / TCX / CSV** 解析入库 (1Hz 样本, 自动 NP / IF / TSS / EF / VI / W'bal / MMP)
+- **30+ 算法** 单活动分析: 功率曲线 / 区间分布 / 心率漂移 / 解耦 / 临界事件 / CP 3-param / Hav / Decoupling 趋势
+- **PMC 训练负荷**: CTL 42d / ATL 7d / TSB / ramp_rate (Banister 经典 + Joe Friel 解读)
+- **HRV 状态**: 7d 滑动 vs 30d baseline, Plews/Bellenger 阈值, 疲劳预警
+- **ACWR**: 急慢性负荷比 (Gabbett 2016), 4 区风险 + 周环比建议
+- **周期化**: Friel 框架 base/build/peak/taper/recovery/race, 比赛倒推, Seiler 80/20 极化分布
 
-### V0.1.0-V0.4 累计实现(完整功能集)
+### 🤖 AI 教练
+- **流式对话 (SSE)**: 6 块上下文 (athlete / pmc / acwr / rpe_7d / phase / ftp) + RAG 知识库自动 top-3
+- **思维树持久化** (V0.7.6): `chat_sessions` + `chat_messages` (含 parent_id / node_path / score, 给思维扩散器预留)
+- **AI 报告生成**: 单活动深度解读 (结构化 4 段: 总评/亮点/待改进/下一步)
+- **比赛战术 AI** (V0.7.5.9): 上传路书 PDF + OCR + 多轮对话 + 流式策略建议
+- **训练日记模板** (V0.7.4.2): 训练感受/心情/睡眠/天气/痛点
 
-- FIT 解析(`fitparse` + 1Hz 样本入库)
-- 核心指标:NP / IF / TSS / EF / VI / W'bal / MMP / HR 区间(Karvonen 7 区 / 5 区兜底)/ HR 漂移 / 踏频 4 区 / 功率 Coggan 7 区
-- AI 教练:OpenRouter 兼容协议 + reasoning model 支持 + 5 类错误分类 + m3 → m2.7 fallback + **RAG 知识库自动注入**
-- SSE 流式对话(带思考过程折叠)
-- SQLite 本地存储 + SQLAlchemy 2.0
-- 训练计划 + 课程库(29 系统课 + scratch 搭积木) + 训练日历(自动关联)
-- 功率曲线 (MMP) + 训练多维过滤(日期/距离/TSS/NP/功率/时长/心率) + 排序 + 分页
-- 跨平台一键启动 + GBK 编码兼容
+### 🧠 ML 推理 (V0.7.6 新)
+- **模型注册表**: `core/ml/registry.py` 统一加载 joblib / onnx / torch / mock
+- **特征工程**: 12 维起步 (7 PMC + 5 活动)
+- **FTP 预测端点**: `POST /api/ml/predict/ftp` (无模型时降级 MockFTPModel)
+- **模型版本管理**: `ml_model_meta` 表, is_active 单激活 + 热切换
+- **预测归档**: `ml_predictions` 表, 留 feature_snapshot 1 周可回溯
 
-### V0.5 后端 (Python + FastAPI)
+### 📚 知识库
+- 来源: **潘震(公路车教练)** (授权转载)
+- 体量: **8 顶层分类 + 训练百科 + 359 篇文档 + 500 个 RAG 切片 + 252 个附件**
+- 覆盖: 训练方法 (功率·心率·室内) / 训练执行 (七部曲·规划·误区) / 车下训练 / 运动人体科学 / 工具 / FAQ
+- 检索: SQLite FTS5 全文 + 相邻 chunk 上下文拼接 + 关键词抽句 (单字+2-gram 加权)
+- 增量更新: 启动 1-2s 全量 vs 0.5s 增量
+- Embedding 字段预留: `kb_chunks.embedding BLOB` + `embedding_model`
 
-- [x] **知识库导入器** — `core/kb_importer.py`,自动跑,增量支持
-- [x] **FTS5 全文索引** — SQLite 虚拟表 + unicode61 中文分词
-- [x] **RAG 检索** — `ai/orchestrator.py: _retrieve_kb()` 自动 top-3 chunks
-- [x] **AI 教练** — OpenRouter 兼容协议(minimax M3 + m2.7 fallback)
-  - 支持 reasoning model(`delta.reasoning` 抽取思考过程)
-  - 5 类错误分类(401 / 402 / 5xx / 网络 / 解析)
-- [x] **Embedding 字段预留** — `kb_chunks.embedding BLOB` + `embedding_model`
-- [x] **多场景 prompt** — 解读训练 / 自由对话 / 知识库参考(自动 RAG 注入)
-- [x] **流式响应** — SSE,前端实时渲染
-- [x] **本地数据库** — SQLite + SQLAlchemy 2.0(数据不离开电脑)
-- [x] **10 个 REST 模块** — activities / athlete / dashboard / dev / coach / pmc / plans / calendar / workouts / **kb**
-- [x] **冒烟测试** — `scripts/smoke_test.py` 端到端跑通
+### 🏁 比赛战术 (V0.7.5.9+10)
+- 3 张表: `race_tactics_sessions` / `messages` / `attachments`
+- 10 端点: CRUD + 路书上传 (PDF 解析 pypdf) + 多轮对话 + SSE 流式策略生成
+- 7 种比赛类型 × 3 优先级 (A/B/C)
+- AI prompt: 比赛信息 + 运动员上下文 + 路书 OCR + KB 检索
 
-### V0.5 前端 (React + Vite + Tailwind)
+### 🛠 工程能力 (V0.7.6 增强)
+- **SQLite WAL** + busy_timeout 5000ms (多任务并发不撞锁)
+- **关键索引补齐**: `ix_activities_tss` / `ix_activities_normalized_power` / `ix_act_athlete_start` / `ix_daily_metrics_athlete_date`
+- **samples_json defer**: 单活动 1MB 字段不再吃全表内存
+- **优雅关闭**: SIGTERM 4s 内完成, 现有请求跑完, 日志打点
+- **5+ 派生指标 SQL 聚合** (V0.7.5.2 dashboard.py)
+- **路径遍历防护** (V0.7.5.2): safe_basename + 解析后断言
+- **RAG 抽句精准** (V0.7.5.1): 关键词命中重排, 引用标注路径
+- **Toast 替换 alert** 全局化 (V0.7.5.5): 6 页面统一, 不阻塞
+- **63 个测试**: 41 老 + 15 chat + 7 ml
 
-- [x] **10 个页面** — Dashboard / 日历 / 训练列表 / 训练详情 / 导入 / 个人画像 / AI 教练 / **课程库 / 课程编排 / 知识库**
-- [x] **5+1 类图表** — 功率曲线 / 心率区间 / 功率-心率-海拔时间图 / 周柱状 / 表格 / PMC
-- [x] **AI 教练对话** — 用户/AI 气泡、SSE 流式、停止按钮、思考过程折叠、Markdown 渲染 + RAG 检索结果可点
-- [x] **课程编辑器 (scratch 搭积木)** — 基础积木 + 循环积木 + 快速模板 + 顶部/底部双保存按钮
-- [x] **训练计划** — 周/日训练规划 + 自动关联实际活动 + 完成度统计
-- [x] **5 个 Mock 训练模板** — 无 FIT 文件也能完整体验
-- [x] **知识库浏览** — 树形导航 + 全文搜索 + Markdown 渲染 + 附件网格
-
-### V0.5 工程
-
-- [x] **跨平台一键启动** — Windows `.bat` + macOS/Linux `.sh`(沙盒内验证通过)
-- [x] **GBK 编码兼容** — Windows 启动器自动 UTF-8,无解码错误
-- [x] **直接调 `node_modules/.bin/vite`** — 避免 pnpm + 中文路径兼容性坑
-- [x] **老库自动迁移** — workouts / kb_chunks 表加新列 / 老 schema 兼容(无需重置数据)
 ## 30 秒上手
 
-Windows:解压后双击 `tools\start.bat`,等 1-2 分钟,看到「应用已就绪」后浏览器开 `http://localhost:1420`。
+Windows:
+```cmd
+tools\start.bat
+```
 
 macOS / Linux:
 ```bash
 ./tools/start.sh
 ```
 
-启动脚本会自动装 Python venv + Node 依赖、配 pip / npm 镜像源、起后端 + 前端。
+启动脚本会自动:
+1. 装 Python venv (清华镜像) + Node 依赖 (npmmirror)
+2. 配 `.env` (从 `.env.example` 复制, 没 API key 自动 mock)
+3. 起后端 8765 + 前端 1420 + 浏览器自动开
 
-停止:`tools\stop.bat` 或 `./tools/stop.sh`
+**无桌面安装包**: V0.7.5+ 桌面应用暂用 dev 模式 (V0.5.3 闪退后续优化, 跑 V0.7.5.10 也走 dev + 浏览器)
+
+停止: `tools\stop.bat` 或 `./tools/stop.sh`
 
 ## 第一次体验流程
 
-1. 打开 `http://localhost:1420`
-2. 进入「导入」页面
-3. 点「Z2 长距离 90min」生成一个模拟活动
-4. 自动跳到「训练详情」,看到:
-   - 功率 / 心率 / 海拔 实时图
-   - 功率曲线 (MMP)
-   - HR 区间分布
-   - AI 教练报告(点击「AI 分析」生成)
-5. 切到「AI 教练」直接对话(支持 minimax M3,带推理过程)
+1. 浏览器开 `http://localhost:1420`
+2. 进「导入」, 点「生成模拟活动」3 个 (无 FIT 文件也能完整体验)
+3. 自动跳「训练详情」, 看功率/心率/海拔实时图 + MMP + AI 报告
+4. 切「AI 教练」对话 (支持 minimax M3, 带推理过程折叠)
+5. 进「比赛战术」(V0.7.5.9), 上传路书 PDF + 多轮对话
 6. 「Dashboard」看整体训练负荷
-7. 「个人画像」调整你的 FTP / 最大心率
+7. 「个人画像」调整 FTP / 最大心率
+8. 「训练日记」记录每天感受
 
 ## 架构
 
 ```
-┌──────────────────────────────────────────────────────┐
-│         React 前端 (Vite :1420)                      │
-│   Dashboard · 训练 · 训练详情 · AI教练 · 导入 · 画像   │
-│   苹果毛玻璃风格 · 实时图表 · SSE 流式对话              │
-└────────────────────┬─────────────────────────────────┘
-                     │ HTTP (Vite 代理)
-                     ▼
-┌──────────────────────────────────────────────────────┐
-│        Python Sidecar (FastAPI :8765)                │
-│   FIT 解析 → 指标计算 → 个体画像 → AI 教练 Agent       │
-│   SSE 流式 chat · Mock 数据生成器                      │
-└────────────────────┬─────────────────────────────────┘
-                     │ HTTPS
-                     ▼
+┌──────────────────────────────────────────────────────────────┐
+│  React 前端 (Vite :1420)                                     │
+│  Dashboard · 训练 · 训练详情 · AI教练 · 比赛战术 · 课程库     │
+│  训练日记 · 知识库 · 个人画像 · 日历 · HRV · 周期化            │
+│  苹果毛玻璃风格 · 实时图表 · SSE 流式对话                     │
+└──────────────────────┬───────────────────────────────────────┘
+                       │ HTTP (Vite 代理 → :8765)
+                       ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Python Sidecar (FastAPI :8765)  · V0.7.6                    │
+│  16 张表 · 107 paths / 126 methods · 63 tests                 │
+│  ┌───────────────────────────────────────────────────────┐   │
+│  │  业务核心: FIT 解析 → 30+ 指标 → PMC/ACWR/HRV/CP/周期  │   │
+│  │  AI 层:  m3_client (LLM transport) + mock_engine       │   │
+│  │          + orchestrator (6 块上下文 + RAG)             │   │
+│  │  ML 层:  registry (joblib/onnx/pt) + feature_pipe      │   │
+│  │          + _mock fallback                              │   │
+│  │  存储:   SQLite WAL + SQLAlchemy 2.0 + FTS5            │   │
+│  │  后台:   BackgroundTasks (V0.7.7+ 换 Arq)              │   │
+│  └───────────────────────────────────────────────────────┘   │
+└──────────────────────┬───────────────────────────────────────┘
+                       │ HTTPS
+                       ▼
               minimax M3 / OpenAI 兼容 LLM
-            (Mock 模式无需 key,本地直接跑)
+              (Mock 模式无需 key, 本地直接跑)
 ```
 
 ## 技术栈
 
 | 层 | 技术 |
 |---|---|
-| 前端 | React 18 + Vite 5 + TypeScript + Tailwind 3 + Recharts + Zustand + react-markdown |
-| 后端 | Python 3.11+ + FastAPI + uvicorn |
-| 数据 | SQLite + SQLAlchemy 2.0 |
-| FIT 解析 | fitparse |
-| 指标 | NumPy / SciPy / Pandas |
+| 前端 | React 18 + Vite 5 + TypeScript + Tailwind 3 + Recharts + Zustand + react-markdown + Leaflet |
+| 后端 | Python 3.11+ + FastAPI 0.141 + uvicorn + SQLAlchemy 2.0 |
+| 数据 | SQLite 16 (WAL 模式) + FTS5 全文索引 |
+| FIT 解析 | fitparse + 自研 fit_parser / tcx_parser / csv_parser |
+| 指标 | NumPy / SciPy / Pandas (30+ 算法) |
 | LLM | minimax M3 / OpenAI 兼容协议 / Mock 兜底 |
+| **ML 推理** | **scikit-learn (joblib) / ONNX (onnxruntime) / TorchScript** (V0.7.6 新) |
 
-## 目录结构(V0.2)
+## 端点概览 (21 模块 / 107 paths / 126 methods)
+
+| 模块 | 端点数 | 用途 |
+|---|---|---|
+| `activities` | 11 | 上传 / 详情 / 报告 / 功率曲线 / 区间 / W'bal / CP 估算 / 解耦 / RPE |
+| `kb` | 12 | 知识库分类 / 文档 / 搜索 / 附件 / 导入状态 |
+| `chat` | 4 | 通用 chat 持久化 (含思维树) — V0.7.6 新 |
+| `ml` | 5 | ML 推理 + 模型注册/激活 — V0.7.6 新 |
+| `coach` | 1 | AI 教练流式对话 (SSE) |
+| `race-tactics` | 7 | 比赛战术会话 + 路书 + 消息 + AI 建议 |
+| `workouts` | 8 | 课程 CRUD + AI 排课 + 标签 + 目标 + 导出 |
+| `phases` | 9 | 周期化阶段 + 比赛倒推 + 极化分布 + 智能推荐 |
+| `calendar` | 6 | 日历视图 + 自动关联 + 计划 CRUD |
+| `trends` | 6 | 训练量 / 区间 / 指标 / RPE / ACWR / 总览 |
+| `plans` | 2 | 训练计划 CRUD |
+| `pmc` | 3 | PMC 序列 / 今日 / 重算 |
+| `ftp` | 6 | FTP 测试 4 协议 + 历史 + 估算 + 推荐 |
+| `hrv` | 3 | HRV 序列 / 状态 / 今日 |
+| `insights` | 2 | 今日洞察 / 周报 |
+| `diary` | 3 | 训练日记 CRUD + 模板 |
+| `recommendations` | 2 | 今日推荐 / Readiness 评分 |
+| `sync` | 7 | Strava OAuth (V0.7.4 框架, 实际联通 V0.7.6+) |
+| `dashboard` / `athlete` / `reports` / `health` / `diagnose` / `version` | 各 1-2 | 总览 / 画像 / 周报 / 健康检查 / 自检 / 版本 |
+
+## 目录结构 (V0.7.6)
 
 ```
 cycling-coach/
-├── tools/                                # 工具脚本 (start/stop/diagnose/uninstall + .bat/.sh)
-│   ├── start.bat / start.sh                # dev 模式启动
-│   ├── stop.bat / stop.sh                  # dev 模式停止
-│   ├── diagnose.bat / diagnose.py          # 诊断环境
-│   ├── uninstall.bat / uninstall.sh        # 一键卸载 (含 --purge-data)
-│   ├── build-windows-installer.bat         # 打 Windows NSIS Setup.exe
-│   └── start.py / stop.py / diagnose.py    # Python 底层
-├── .env.example                            # 配置模板
-├── pyproject.toml                          # 根项目配置(monorepo 单包)
-├── requirements.txt                        # 兼容老用户
+├── tools/                                # start / stop / diagnose / uninstall (.bat/.sh + .py)
+├── .env.example                          # 配置模板 (复制成 .env)
+├── pyproject.toml                        # 根项目配置
 │
-├── cycling_coach/                          # 🆕 Python 命名空间根
-│   ├── core/                                # 业务核心
-│   │   ├── domain/                          #   实体 + 值对象
-│   │   ├── services/                        #   业务服务
-│   │   ├── profile/                         #   运动员画像
-│   │   └── metrics/                         #   算法(NP/IF/TSS/zones/curves)
-│   ├── data/                                # 数据访问
-│   │   ├── parsers/                         #   FIT 解析
-│   │   ├── sqlite/                          #   SQLite ORM
-│   │   └── repositories/                    #   (V0.3+ 抽象层)
-│   ├── ai/                                  # AI 层
-│   │   ├── providers/                       #   LLM 客户端(m3 + fallback)
-│   │   ├── prompts/                         #   prompt 模板
-│   │   ├── tools/                           #   Agent tools
-│   │   └── orchestrator/                    #   (V0.3+ 多轮)
-│   ├── api/                                 # HTTP API
-│   │   ├── main.py                          #   FastAPI 入口
-│   │   ├── routers/                         #   6 个 REST 端点
-│   │   └── streaming/                       #   (V0.3+ SSE 抽象)
-│   ├── worker/                              # 🆕 后台任务(占位,V0.3+)
-│   └── config/                              # 配置 + 日志
+├── cycling_coach/                        # 🆕 Python 命名空间根
+│   ├── core/
+│   │   ├── metrics/                      # 30+ 算法 (NP/IF/TSS/zones/curves/ACWR/HRV/...)
+│   │   ├── coaching/                     # 6 块上下文构造
+│   │   ├── profile/                      # 运动员画像
+│   │   ├── pmc.py / periodization.py     # 训练负荷 + 周期化
+│   │   ├── kb_importer.py                # 知识库增量导入
+│   │   └── ml/                           # 🆕 V0.7.6 ML 推理 (registry/feature_pipe/_mock)
+│   ├── data/
+│   │   ├── parsers/                      # FIT / TCX / CSV 解析 → 统一 Pydantic schema
+│   │   └── sqlite/                       # 16 张表 ORM + 自动迁移 + WAL
+│   ├── ai/
+│   │   ├── m3_client.py                  # LLM transport (262 行, V0.7.6 瘦身 40%)
+│   │   ├── mock_engine.py                # 🆕 抽离的 mock 业务逻辑 (214 行)
+│   │   ├── orchestrator.py               # 6 块上下文 + RAG + 流式
+│   │   ├── prompts/                      # chat / analyze / style prompt 模板
+│   │   └── tools/analyze_activity.py     # 活动分析工具
+│   ├── api/
+│   │   ├── main.py                       # FastAPI 入口 + 中间件
+│   │   └── routers/                      # 22 个 REST 模块 (含 V0.7.6 chat/ml)
+│   ├── config/                           # 配置 + 日志
+│   └── __main__.py                       # 🆕 V0.7.6 优雅关闭 (SIGTERM + 10s timeout)
 │
-├── apps/                                   # 🆕 用户入口
-│   ├── web/                                 # ✅ Web 前端(原 frontend/)
-│   ├── desktop/                             # ✅ 桌面端 (Electron + electron-builder)
-│   │   ├── main.cjs / preload.cjs / package.json
-│   │   ├── build/                            #   图标 + PyInstaller spec
-│   │   └── README.md
-│   ├── mobile/                              # 🆕 移动端(PWA 占位)
-│   └── cli/                                 # 🆕 CLI(占位,V0.3+)
+├── apps/
+│   ├── web/                              # ✅ Web 前端 (17 页面 + 26 组件)
+│   ├── desktop/                          # ⏸  桌面端暂停 (V0.5.3 闪退)
+│   ├── mobile/                           # ⏸  PWA 占位
+│   └── cli/                              # ⏸  CLI 占位
 │
-├── tools/                                  # 🆕 工具脚本 (start/stop/diagnose/uninstall + .bat/.sh)
-│   ├── start.bat / start.sh                # dev 模式启动
-│   ├── stop.bat / stop.sh                  # dev 模式停止
-│   ├── diagnose.bat / diagnose.py          # 诊断环境
-│   ├── uninstall.bat / uninstall.sh        # 一键卸载 (含 --purge-data)
-│   ├── build-windows-installer.bat         # 打 Windows NSIS Setup.exe
-│   └── start.py / stop.py / diagnose.py    # Python 底层
+├── tests/                                # 63 个测试 (41 老 + 15 chat + 7 ml)
+├── docs/                                 # ARCHITECTURE / ROADMAP / PLAN
+├── assets/screenshots/                   # README 截图
 │
-├── tests/                                  # 🆕 跨层测试
-│   ├── unit/                                # 单元测试
-│   ├── integration/                         # 集成测试
-│   └── e2e/                                 # 端到端测试
-│
-├── scripts/                                # 一次性脚本
-│   └── screenshot.mjs                       # 截图工具
-│
-├── assets/screenshots/                      # README 截图
-│
-├── workspace/                              # 运行时数据(gitignore)
-│   ├── input/  /  output/
-│   └── .gitkeep
-│
-└── docs/
-    ├── ARCHITECTURE.md                     # 🆕 完整架构
-    ├── ROADMAP.md                          # 🆕 路线图
-    └── PLAN.md                             # 项目规划
+└── workspace/                            # 运行时数据 (gitignore)
+    ├── input/ / output/
+    ├── cycling_coach.sqlite              # 主库 (WAL 模式)
+    └── models/                           # 🆕 V0.7.6 ML 模型仓库
 ```
 
-**完整架构说明**:见 `docs/ARCHITECTURE.md`
+**完整架构**: 见 `docs/ARCHITECTURE.md`
+**路线图**: 见 `docs/ROADMAP.md`
 
-## 数据模型
+## V0.7.6 Foundation 1.0 详细
 
-```sql
-athletes     -- 运动员(单用户 MVP)
-  id, name, ftp, ftp_estimated, max_hr, lthr, weight_kg, height_cm
+### 改动 (8 项 P0 全部收口)
 
-activities   -- 训练记录
-  id, athlete_id, source, start_time, duration_s, distance_m,
-  avg_power, max_power, avg_hr, max_hr, avg_cadence,
-  metrics (JSON: NP/IF/TSS/EF/VI/MMP/HR_zones/...),
-  samples_json (1Hz 1 小时内的样本),
-  laps_json, report, report_status
+1. **chat 持久化**: 2 张新表 (`chat_sessions` / `chat_messages` 含思维树字段) + 6 端点
+2. **ML 推理基础设施**: `core/ml/` 4 文件 + 5 端点 + 2 张表 + 2 个新依赖 (joblib + onnxruntime)
+3. **SQLite WAL**: journal_mode=WAL, synchronous=NORMAL, busy_timeout=5000
+4. **索引补齐**: 4 个关键索引 (V0.7.5.3 声明了但 _auto_migrate 没建)
+5. **samples_json defer**: 1000 活动 30s/600MB → 50ms
+6. **trends SQL 聚合**: 5 个端点不再 Python 端过滤
+7. **优雅关闭**: SIGTERM 4s 完成, 现有请求跑完
+8. **mock_engine 抽离**: m3_client.py 436 → 262 行 (-40%)
 
-workouts     -- AI 生成的训练课程(V0.2+)
-preferences  -- KV 偏好
-```
+### 数字对比
+
+| 指标 | V0.7.5.10 | V0.7.6 |
+|---|---|---|
+| 路由 | 98 / 115 | **107 / 126** |
+| 数据库表 | 12 | **16** |
+| 测试 | 41 | **63** |
+| `m3_client.py` | 436 行 | **262 行** |
+| journal_mode | delete | **wal** |
+| 索引 `ix_activities_tss` | 缺 | **✓** |
+| ML 依赖 | 0 | **joblib + onnxruntime** |
+
+完整报告: `V0.7.6_REPORT.md`
 
 ## Mock 模式
 
-不配 `M3_API_KEY` 时,**所有 AI 调用自动走 mock 兜底**,返回一个基于真实指标的"假但合理"报告。
+不配 `M3_API_KEY` 时, **所有 AI 调用自动走 mock 兜底**, 返回基于真实指标的"假但合理"回复。
 
-要在生产环境用真实 AI,在 `.env` 填入:
+要生产环境用真实 AI, 在 `.env` 填入:
 ```ini
 M3_API_KEY=sk-or-v1-...
 M3_BASE_URL=https://openrouter.ai/api/v1
 M3_MODEL=minimax/minimax-m3
 ```
 
+ML 推理无注册模型时, 自动降级 `MockFTPModel` (规则预测, 不依赖外部资源)。
 
+## ML 推理示例 (V0.7.6)
 
-## 卸载
-
-### 桌面端 (装了 Setup.exe)
-
-3 种方式:
-1. **开始菜单** → `Cycling Coach` 文件夹 → 卸载快捷方式
-2. **Windows 设置** → 应用 → 安装的应用 → `Cycling Coach` → 卸载
-3. **控制面板** → 程序与功能 → `Cycling Coach` → 右键卸载
-
-NSIS uninstaller 默认 **保留用户数据** (`%APPDATA%\CyclingCoach\`),
-卸载时弹 "同时删除数据?" 选是才彻底清.
-训练历史 (活动/计划/PMC) 在 SQLite, 删了不可恢复.
-
-### Dev 模式 (没装过 Setup.exe)
-
-`tools\uninstall.bat` (Windows) / `./tools/uninstall.sh` (Unix):
-- 默认: 清 build artifacts, 保留用户数据 + .venv
-- `--purge-data`: 全清 (含 workspace 用户数据)
-- `--keep-venv`: 保留 .venv (快速重建用)
-
-不动 `kb_source\` (训练百科源) / 源码 / `.env` 等配置.
-
-## 桌面端打包
-
-```bat
-:: Windows 用户
-tools\build-windows-installer.bat
+注册模型:
+```bash
+curl -X POST http://localhost:8765/api/ml/models/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_name": "ftp_predictor",
+    "version": "v1-gbm-2026-08-31",
+    "model_path": "models/ftp_predictor/v1/model.joblib",
+    "model_format": "joblib",
+    "training_metrics": {"mae": 6.58, "r2": 0.94},
+    "is_active": true
+  }'
 ```
 
-产物: `apps\desktop\dist-electron\CyclingCoach-Setup-0.5.3-x64.exe` (~250 MB).
-详见 [docs/DESKTOP-BUILD.md](docs/DESKTOP-BUILD.md).
+推理 (无激活模型时走 mock):
+```bash
+curl -X POST http://localhost:8765/api/ml/predict/ftp \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+返回:
+```json
+{
+  "ok": true,
+  "predicted_ftp": 247.0,
+  "lower_80": 237.0,
+  "upper_80": 257.0,
+  "confidence": "high",
+  "current_ftp": 250,
+  "delta": -3,
+  "model_format": "mock",
+  "inference_ms": 53
+}
+```
+
+## 安装 / 卸载
+
+详见 `INSTALL_V0.7.5.10.md` (V0.7.6 是后端 only, 启动方式不变)
+
+```cmd
+:: Windows 全新安装
+git clone https://github.com/lixvanran/cycling-coach.git
+cd cycling-coach
+tools\start.bat
+```
 
 ## 常见问题
 
 ### 启动后访问 127.0.0.1:1420 白屏
-
-检查启动 cmd 有没有报错:
-- 后端是否 `Application startup complete`
-- 前端是否 `Local: http://127.0.0.1:1420/`
+检查启动 cmd: 后端 `Application startup complete` + 前端 `Local: http://127.0.0.1:1420/`
 
 ### 上传 FIT 失败
-
-V0.1.0 只支持 `.fit` 文件,其他格式(`.tcx` / `.csv`)留 V1.0。
+V0.7+ 支持 `.fit` / `.tcx` / `.csv` (GoldenCheetah WKO 格式)
 
 ### 端口 8765 / 1420 被占用
-
-Windows:
 ```cmd
 netstat -ano | findstr :8765
 taskkill /F /PID <pid>
 ```
-macOS / Linux:
-```bash
-lsof -i :8765
-kill -9 <pid>
-```
+或直接 `tools\stop.bat` 清理
 
-或者直接 `tools\stop.bat` / `./tools/stop.sh` 清理。
+### ML 推理没装模型
+正常降级到 `MockFTPModel`, 不报错; 想用真模型, 拷 .joblib 到 `workspace/models/`
 
 ## 截图
 
@@ -312,8 +339,8 @@ kill -9 <pid>
 | ![](assets/screenshots/L01-dashboard.png) | ![](assets/screenshots/V04-detail-full.png) |
 | **功率 / 心率区间** | **AI 教练** |
 | ![](assets/screenshots/V02-zones.png) | ![](assets/screenshots/V03-ai-report.png) |
-| **对话流式输出** | |
-| ![](assets/screenshots/L05-chat-done.png) | |
+| **对话流式输出** | **比赛战术** |
+| ![](assets/screenshots/L05-chat-done.png) | ![Race Tactics](assets/screenshots/V07.5.9-race-tactics.png) |
 
 ## 关于知识库内容来源 — 潘震(公路车教练)
 
@@ -321,33 +348,28 @@ V0.5 训练百科与配套参考资料,内容来源是**潘震**(公路车教练
 
 ### 潘震(公路车教练)
 
-潘震是国内深耕公路自行车领域的资深专业教练，核心聚焦青少年公路自行车运动的训练与人才培养，在行业内拥有丰富的从业经验与专业积累。
+潘震是国内深耕公路自行车领域的资深专业教练，核心聚焦青少年公路自行车运动的训练与人才培养。
 
-一、核心身份与从业背景
-从业年限‌：截至2025年，已从事自行车训练教学工作满10年，长期全职开展公路车教练相关工作。
-核心头衔‌：peloton骑行工作室创始人、自行车一级裁判，同时担任多家自行车相关机构的顾问与车队教练。
-行业定位‌：国内自行车运动专业翻译领域的核心从业者，长期从事自行车训练理论与实践研究，是国内较早系统引进国际先进自行车训练体系的从业者之一。
-二、专业能力与行业贡献
-译著成果‌：牵头翻译出版《公路车训练圣经》《拒绝伤病：骑行损伤预防与恢复指南》等十余部自行车运动专业书籍，填补了国内相关专业资料的空白。
-训练体系‌：专注青少年车手培养，推出《50个比赛训练经验》等系列专业内容。
-三、教学与培养成果
-长期开展青少年公路车系统训练，多次帮助学员实现FTP功率大幅提升，持续推进“中国车手培养计划”，挖掘和储备年轻车手人才。
-曾担任北京青年力量体育有限公司及青年力量发展车队相关教练职务，为国内职业车队输送后备力量，同时为普通骑行爱好者提供科学的训练指导。
+- **从业年限**: 截至 2025 年, 已从事自行车训练教学工作满 10 年
+- **核心头衔**: peloton 骑行工作室创始人、自行车一级裁判
+- **译著**: 《公路车训练圣经》《拒绝伤病:骑行损伤预防与恢复指南》等十余部专业书籍
+- **教学成果**: 多次帮助学员实现 FTP 功率大幅提升, 持续推进"中国车手培养计划"
+
+(完整介绍见 README 旧版, 此处省略以保持简洁)
 
 ## 致谢
 
 - **训练百科与配套资料:潘震(公路车教练)** — V0.5 知识库 / RAG 全部内容来源
-- 数据格式:Garmin FIT SDK
+- 数据格式: Garmin FIT SDK
 
 ## License / 许可证
 
-本项目采用**双协议 (Dual License)** 模式,代码与内容分开授权:
+本项目采用**双协议 (Dual License)** 模式, 代码与内容分开授权:
 
-This project uses a **dual license** model — code and content are licensed separately:
+This project uses a **dual license** model — code and content are licensed separately.
 
 ### 📘 Software Code (软件代码)
 - **License**: MIT
-- **Files**: All source code under `cycling_coach/`, `apps/`, `tools/`, `docs/`, `README.md`
 - **Copyright**: (c) 2026 lixvanran
 - **Permitted**: ✅ Use · Copy · Modify · Distribute · Sublicense · Sell
 - **Required**: 📋 Include copyright notice + LICENSE in all copies
@@ -356,20 +378,10 @@ This project uses a **dual license** model — code and content are licensed sep
 
 ### 📕 Knowledge Base (知识库 `kb_source/`)
 - **License**: Restricted Use (受限使用) — see [kb_source/LICENSE](kb_source/LICENSE)
-- **Author**: **潘震(公路车教练)** (Pan Zhen, Road Cycling Coach)
-- **Content**: 训练百科 (Training Encyclopedia) — 训练方法·车下训练·生理学·工具·常见问题
+- **Author**: **潘震(公路车教练)**
 - **Permitted**: ✅ Local RAG retrieval · Backup with attribution
 - **Prohibited**: 🚫 Redistribution · Modification for redistribution · Commercial use · Misattribution
 - **Required**: 📋 Attribution "训练百科内容来源: 潘震(公路车教练)"
-
-**Full text**: [kb_source/LICENSE](kb_source/LICENSE) (bilingual 中英双语)
-
-### Why dual? (为什么要双协议?)
-- The code is generic training-app infrastructure (MIT = maximally open for collaboration)
-- 训练百科 (Training Encyclopedia) is 10+ years of original coaching content by 潘震(公路车教练)
-  → deserves authorship protection, separate from the code that uses it
-- 软件代码是通用的训练 App 基础设施 (MIT = 最大程度开放协作)
-- 训练百科是潘震(公路车教练)十余年原创教练内容 → 值得独立保护
 
 ### Quick attribution in your fork (在你 fork 时署名)
 ```markdown
