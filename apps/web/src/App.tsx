@@ -34,6 +34,7 @@ export default function App() {
           {view === "builder" && <BuilderPage />}
           {view === "kb" && <KnowledgeBasePage />}
           {view === "kb-search" && <KnowledgeBasePage />}
+          {view === "kb-category" && <KnowledgeBasePage />}
           {view === "activities" && <ActivityList />}
           {view === "activity-detail" && <ActivityDetail />}
           {view === "compare" && <ComparePage />}
@@ -41,6 +42,9 @@ export default function App() {
           {view === "chat" && <ChatPage />}
           {view === "import" && <ImportPage />}
           {view === "diary" && <DiaryPage />}
+          {view === "phases" && <PhasesPage />}
+          {view === "insights" && <InsightsPage />}
+          {view === "ftp-test" && <FTPTestPage />}
           {view === "profile" && <Profile />}
         </main>
       </div>

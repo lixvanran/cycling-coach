@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
+  ChevronRight,
   Bike,
   Upload,
   User,
@@ -20,6 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useAppStore, type View } from "../store/useAppStore";
+import { api } from "../lib/api";
 import clsx from "clsx";
 
 const items: Array<{ view: View; label: string; icon: LucideIcon }> = [
@@ -43,6 +45,18 @@ const items: Array<{ view: View; label: string; icon: LucideIcon }> = [
 export function Sidebar() {
   const view = useAppStore((s) => s.view);
   const setView = useAppStore((s) => s.setView);
+  const setSelectedKbCategory = useAppStore((s) => s.setSelectedKbCategory);
+  // V0.7.5.1: KB 二级菜单 hover 状态 + 顶级分类
+  const [kbHover, setKbHover] = useState(false);
+  const [kbCats, setKbCats] = useState<{ name: string; path: string; doc_count: number }[]>([]);
+  useEffect(() => {
+    api.kbCategories().then((r) => {
+      const tops = (r.categories || [])
+        .filter((c: any) => c.path.split("/").length === 1)
+        .map((c: any) => ({ name: c.name, path: c.path, doc_count: c.doc_count || 0 }));
+      setKbCats(tops);
+    }).catch(() => {});
+  }, []);
 
   return (
     <aside className="w-56 bg-bg-base border-r border-border flex flex-col h-full">
@@ -68,14 +82,66 @@ export function Sidebar() {
       <nav className="flex-1 px-2 py-3 space-y-0.5">
         {items.map((item) => {
           const Icon = item.icon;
+          const isKb = item.view === "kb";
           return (
             <div
               key={item.view}
-              className={clsx("nav-link", view === item.view && "active")}
-              onClick={() => setView(item.view)}
+              className={clsx(
+                "relative",
+                isKb && "group"
+              )}
+              onMouseEnter={() => isKb && setKbHover(true)}
+              onMouseLeave={() => isKb && setKbHover(false)}
             >
-              <Icon size={16} />
-              <span>{item.label}</span>
+              <div
+                className={clsx("nav-link cursor-pointer", view === item.view && "active")}
+                onClick={() => setView(item.view)}
+              >
+                <Icon size={16} />
+                <span className="flex-1">{item.label}</span>
+                {isKb && <ChevronRight size={12} className="opacity-50" />}
+              </div>
+              {/* V0.7.5.1: KB hover 二级菜单 — 8 个顶级分类 */}
+              {isKb && kbHover && kbCats.length > 0 && (
+                <div
+                  className="absolute left-full top-0 ml-1 w-56 bg-white border-2 border-border rounded-lg shadow-xl z-50 py-1.5"
+                  onMouseEnter={() => setKbHover(true)}
+                  onMouseLeave={() => setKbHover(false)}
+                >
+                  <div className="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">
+                    知识库分类
+                  </div>
+                  <button
+                    onClick={() => { setSelectedKbCategory(null); setView("kb"); }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-bg-elevated transition-colors"
+                  >
+                    <span className="text-text-primary font-medium flex-1">📚 全部</span>
+                    <span className="text-[10px] text-text-muted tabular-nums">
+                      {kbCats.reduce((s, c) => s + c.doc_count, 0)}
+                    </span>
+                  </button>
+                  <div className="border-t border-border my-1" />
+                  {kbCats.map((cat) => (
+                    <button
+                      key={cat.path}
+                      onClick={() => { setSelectedKbCategory(cat.path); setView("kb-category"); }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-bg-elevated hover:text-accent transition-colors group/cat"
+                    >
+                      <span className="text-text-primary group-hover/cat:text-accent font-medium flex-1 truncate">
+                        {cat.name}
+                      </span>
+                      <span className={clsx("text-[10px] px-1.5 py-0.5 rounded font-bold tabular-nums",
+                        cat.doc_count > 50 ? "bg-fuchsia-100 text-fuchsia-700" :
+                        cat.doc_count > 20 ? "bg-amber-100 text-amber-700" :
+                        cat.doc_count > 5 ? "bg-sky-100 text-sky-700" :
+                        "bg-bg-input text-text-muted"
+                      )}>
+                        {cat.doc_count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}

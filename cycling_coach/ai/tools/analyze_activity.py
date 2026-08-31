@@ -93,12 +93,56 @@ def analyze_activity_tool(
     if focus:
         user += f"\n\n用户特别关注: {focus}"
 
-    # V0.7.4.1: 检索 KB (mock 模式下用 KB 拼报告, 真 LLM 也用 KB 增强)
+    # V0.7.5.1: 检索 KB — query 用训练学主题词, 不用数字/文件名
+    # (V0.7.4.1 bug: query = 文件名 + 数字, 检索出无关文档)
     try:
         from cycling_coach.ai.orchestrator import _retrieve_kb
-        # 检索关键词: 活动标题 + 训练学关键词
-        query = f"{activity.file_name or ''} {' '.join(str(v) for v in metrics_view.values() if v)}"
+        # 1) 主题词: focus (用户给) + 活动类型 + 训练学关键词
+        focus_kw = (focus or "").strip()
+        # 从 metrics 推断活动类型
+        type_kw = ""
+        np = metrics_view.get("normalized_power") or 0
+        avg_p = metrics_view.get("avg_power") or 0
+        ife = metrics_view.get("intensity_factor") or 0
+        if avg_p > 0 and ife > 0.95:
+            type_kw = "阈值 间歇 VO2 强度"
+        elif ife > 0.85:
+            type_kw = "阈值 间歇 节奏"
+        elif ife > 0.7:
+            type_kw = "耐力 巡航 长时间"
+        else:
+            type_kw = "恢复 主动休息"
+        # 加 athlete 关键参数
+        athlete_kw = ""
+        if athlete_view.get("ftp"):
+            athlete_kw = f"FTP {athlete_view['ftp']}W"
+        if athlete_view.get("max_hr"):
+            athlete_kw += f" 最大心率 {athlete_view['max_hr']}"
+        query = f"{focus_kw} {type_kw} {athlete_kw}".strip()
         retrieved = _retrieve_kb(query, top_k=3)
+        # V0.7.5.1: 加相邻 chunks (前/后 1) 提升上下文
+        if retrieved:
+            from cycling_coach.data.sqlite.models import KbChunk, KbDocument
+            from cycling_coach.data.sqlite.database import SessionLocal
+            from sqlalchemy import or_ as _or2
+            with SessionLocal() as s:
+                for r in retrieved:
+                    # 找该 chunk 的 doc + chunk_index
+                    cm = s.query(KbChunk).filter(KbChunk.content == r["content"]).first()
+                    if not cm:
+                        continue
+                    # 找 doc 全部 chunks
+                    siblings = (
+                        s.query(KbChunk)
+                        .filter(KbChunk.document_id == cm.document_id)
+                        .filter(_or2(KbChunk.chunk_index == cm.chunk_index - 1,
+                                     KbChunk.chunk_index == cm.chunk_index + 1))
+                        .all()
+                    )
+                    if siblings:
+                        # 拼 sibling 内容
+                        sib_text = " ".join(sb.content for sb in siblings)
+                        r["content"] = f"{r['content']}\n\n[上下文] {sib_text}"
     except Exception as e:
         logger.debug(f"KB 检索失败: {e}")
         retrieved = []

@@ -278,31 +278,79 @@ class M3Client:
         return self._format_activity_report(user)
 
     def _format_kb_answer(self, user: str, retrieved: list) -> str:
-        """V0.7.4.1: 用 KB 检索结果拼知识问答回答 (mock 兜底)"""
+        """V0.7.5.1: 抽取跟用户问题相关的句子 (避免堆砌无关内容, 牛头不对马嘴)"""
+        import re
         if not retrieved:
             return ""
-        top = retrieved[:3]
-        primary = top[0]
+        # 1) 提取 user 关键词
+        stopwords = {"的", "了", "是", "在", "和", "与", "或", "及", "把", "给", "我", "你", "他", "她", "它", "这", "那", "吗", "啊", "呢", "吧", "什么", "怎么", "如何", "为什么", "多久", "什么"}
+        user_kws = set()
+        for w in re.findall(r'[A-Za-z][A-Za-z0-9_]+', user):
+            if len(w) >= 2:
+                user_kws.add(w.lower())
+        for s in re.findall(r'[\u4e00-\u9fff]+', user):
+            # 加单字
+            for ch in s:
+                if ch not in stopwords:
+                    user_kws.add(ch)
+            # 2-gram
+            for i in range(len(s) - 1):
+                g = s[i:i+2]
+                if g not in stopwords:
+                    user_kws.add(g)
+        if not user_kws:
+            user_kws = set(re.findall(r'\w+', user))
+        # 2) 给 retrieved 排序 + 计算每条相关性
+        scored = []
+        for i, r in enumerate(retrieved[:5]):
+            content = r.get("content", "")
+            if not content:
+                continue
+            # 计算关键词命中
+            hits = sum(1 for kw in user_kws if kw in content)
+            scored.append((hits, i, r))
+        scored.sort(key=lambda x: (-x[0], x[1]))
+        if not scored:
+            return ""
+        primary = scored[0][2]
         title = primary.get("title", "")
         content = primary.get("content", "")
         path = primary.get("path", "")
+        # 3) 抽取 primary 里的相关句子 (按句号 / 换行 / 句号)
         if not content:
             return ""
-        # 截取
-        if len(content) > 800:
-            content = content[:800] + "..."
+        # 拆句
+        sentences = re.split(r'(?<=[。！？!?\n])|(?<=[.!?]\s)', content)
+        relevant = []
+        for sent in sentences:
+            sent = sent.strip()
+            if not sent or len(sent) < 8:
+                continue
+            # 计算句子命中
+            sent_hits = sum(1 for kw in user_kws if kw in sent)
+            if sent_hits > 0:
+                relevant.append((sent_hits, sent))
+        relevant.sort(key=lambda x: -x[0])
+        # 取 top 3-5 句
+        if relevant:
+            top_sents = [s for _, s in relevant[:5]]
+            content_used = "\n\n".join(top_sents)
+        else:
+            # 没有任何命中, 取头 400 字符
+            content_used = content[:400] + ("..." if len(content) > 400 else "")
         parts = [f"# {title}\n"]
         parts.append(f"**来源**: {path}\n")
         parts.append("\n## 核心内容\n")
-        parts.append(content)
-        if len(top) > 1:
+        parts.append(content_used)
+        if len(scored) > 1:
             parts.append("\n## 相关参考\n")
-            for i, c in enumerate(top[1:], 2):
+            for hits, i, c in scored[1:3]:
                 ctitle = c.get("title", "")
                 ccontent = c.get("content", "")[:200]
                 if ccontent and ctitle:
-                    parts.append(f"**[{i}] {ctitle}**: {ccontent}...\n")
-        parts.append(f"\n> 📚 本回答基于训练百科 (潘震教练) KB 检索,命中 {len(top)} 个相关片段.\n> 注:这是 mock 模式 (无 M3_API_KEY),回答由 KB 直接拼出. 配 M3_API_KEY 后 LLM 会基于 KB 完整生成.")
+                    parts.append(f"**{ctitle}**: {ccontent}...\n")
+        parts.append(f"\n> 📚 本回答基于训练百科 (潘震教练) KB 检索, 命中 {len(scored)} 个相关片段, 已按问题关键词抽取相关句子.")
+        parts.append("> 注: mock 模式 (无 M3_API_KEY). 配 key 后 LLM 会基于 KB 完整生成.")
         return "\n".join(parts)
 
     def _format_activity_report(self, user: str) -> str:

@@ -15,7 +15,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.resolve()
-VERSION = "v0.7.5"
+VERSION = "v0.7.5.1"
 NAME = f"cycling-coach-{VERSION}"
 
 # 排除 (跟 .gitignore 同步)
@@ -23,9 +23,9 @@ EXCLUDE_DIRS = {
     ".git", ".venv", "venv", "node_modules", "workspace",
     "__pycache__", ".pytest_cache", "dist", "build",
     ".vscode", ".idea", ".mypy_cache", ".ruff_cache",
-    "cycling-coach-v0.7.4.1-backup",  # V0.7.5 排除历史备份
+    "cycling-coach-v0.7.4.1-backup",  # V0.7.5.1 排除历史备份
     "cycling-coach-v0.7.4.1",  # V0.7.4.2 排除历史 zip 目录
-    "cycling-coach-v0.7.5",  # V0.7.5 排除当前 zip 输出目录
+    "cycling-coach-v0.7.5.1",  # V0.7.5.1 排除当前 zip 输出目录
 }
 # tests/ 在 .gitignore 但 zip 包要包含 (用户要能跑测试)
 EXCLUDE_PATTERNS = [
@@ -160,7 +160,7 @@ def build_full_zip(out_dir: Path) -> Path:
     用户要求"打成一个包". 一次下载一次解压, 直接能用.
     """
     import zipfile
-    VERSION = "v0.7.5"
+    VERSION = "v0.7.5.1"
     NAME = f"cycling-coach-{VERSION}"
     zip_path = out_dir / f"{NAME}-full.zip"
     full_root = out_dir / NAME
@@ -191,7 +191,7 @@ def build_full_zip(out_dir: Path) -> Path:
         shutil.copy2(sample_pdf, sample_dir / "weekly-7d-sample.pdf")
     
     # INSTALL.md
-    install_md = ROOT / "INSTALL_V0.7.5.md"
+    install_md = ROOT / "INSTALL_V0.7.5.1.md"
     if install_md.exists():
         shutil.copy2(install_md, full_root / "INSTALL.md")
     

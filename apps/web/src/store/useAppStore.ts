@@ -1,7 +1,7 @@
 // Zustand 全局 store
 import { create } from "zustand";
 
-export type View = "dashboard" | "calendar" | "activities" | "activity-detail" | "import" | "profile" | "chat" | "library" | "builder" | "kb" | "kb-search" | "compare" | "trends" | "phases" | "ftp-test" | "insights" | "diary";
+export type View = "dashboard" | "calendar" | "activities" | "activity-detail" | "import" | "profile" | "chat" | "library" | "builder" | "kb" | "kb-search" | "compare" | "trends" | "phases" | "ftp-test" | "insights" | "diary" | "kb-category";
 
 export interface ChatMsg {
   id: string;
@@ -15,8 +15,10 @@ export interface ChatMsg {
 interface AppState {
   view: View;
   selectedActivityId: number | null;
+  selectedKbCategory: string | null;
   setView: (v: View) => void;
   setSelectedActivity: (id: number | null) => void;
+  setSelectedKbCategory: (p: string | null) => void;
 
   // Chat
   chatMessages: ChatMsg[];
@@ -30,8 +32,10 @@ interface AppState {
 export const useAppStore = create<AppState>((set) => ({
   view: "dashboard",
   selectedActivityId: null,
+  selectedKbCategory: null,
   setView: (v) => set({ view: v }),
   setSelectedActivity: (id) => set({ selectedActivityId: id }),
+  setSelectedKbCategory: (p) => set({ selectedKbCategory: p }),
 
   chatMessages: [],
   isStreaming: false,
