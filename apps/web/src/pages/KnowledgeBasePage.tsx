@@ -31,7 +31,7 @@ const HOT_TAGS = [
 function renderMarkdown(md: string): { __html: string } {
   let html = md;
   html = html.replace(/!\[([^\]]*)\]\(attachments\/([^)]+)\)/g,
-    (_, alt, fname) => `<img class="kb-img" data-filename="${fname}" alt="${alt}" src="/api/kb/attachments/by-name/${encodeURIComponent(fname)}" />`);
+    (_, alt, fname) => `<img class="kb-img" loading="lazy" decoding="async" data-filename="${fname}" alt="${alt}" src="/api/kb/attachments/by-name/${encodeURIComponent(fname)}" />`);
   html = html.replace(/```([\s\S]*?)```/g, (_, code) => `<pre class="kb-pre"><code>${escapeHtml(code)}</code></pre>`);
   html = html.replace(/`([^`]+)`/g, (_, code) => `<code class="kb-code">${escapeHtml(code)}</code>`);
   html = html.replace(/^# (.+)$/gm, '<h1 class="kb-h1">$1</h1>');
