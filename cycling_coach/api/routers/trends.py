@@ -12,7 +12,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from cycling_coach.data.sqlite import get_db
 from cycling_coach.data.sqlite.models import Activity
@@ -38,9 +38,33 @@ def _month_key(d: datetime) -> str:
 
 
 def _filter_activities(db: Session, athlete_id: int, days: int) -> list[Activity]:
+    """按时间窗过滤 + 排序;V0.7.6 defer 大字段 (趋势端用不到 samples/laps/metrics/report)"""
     cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
     return (
         db.query(Activity)
+        .options(
+            defer(Activity.samples_json),
+            defer(Activity.laps_json),
+            defer(Activity.metrics),
+            defer(Activity.report),
+        )
+        .filter(Activity.athlete_id == athlete_id)
+        .filter(Activity.start_time >= cutoff)
+        .order_by(Activity.start_time.asc())
+        .all()
+    )
+
+
+def _filter_activities_with_metrics(db: Session, athlete_id: int, days: int) -> list[Activity]:
+    """zones_trend 专用: 需要 metrics.power_zones,所以只 defer samples/laps/report"""
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
+    return (
+        db.query(Activity)
+        .options(
+            defer(Activity.samples_json),
+            defer(Activity.laps_json),
+            defer(Activity.report),
+        )
         .filter(Activity.athlete_id == athlete_id)
         .filter(Activity.start_time >= cutoff)
         .order_by(Activity.start_time.asc())
@@ -93,7 +117,8 @@ def volume_trend(
     series = []
     for k in sorted(grouped.keys()):
         acts = grouped[k]
-        tss = sum((a.metrics or {}).get("tss", 0) or 0 for a in acts)
+        # V0.7.6: tss 读独立列 (metrics 已 defer)
+        tss = sum((a.tss or 0) for a in acts)
         dist = sum((a.distance_m or 0) for a in acts) / 1000
         dur = sum(a.duration_s for a in acts) / 3600
         series.append({
@@ -155,7 +180,8 @@ def zones_trend(
     每桶: 各区累计秒数, 用于堆叠柱状图 / 面积图
     """
     athlete = profile_store.get_or_create_athlete(db)
-    activities = _filter_activities(db, athlete.id, days)
+    # V0.7.6: zones_trend 需要 metrics.power_zones, 用专用 helper (只 defer samples/laps/report)
+    activities = _filter_activities_with_metrics(db, athlete.id, days)
 
     bucket_key = _iso_week_key if bucket == "week" else _month_key
     grouped: dict[str, list[Activity]] = defaultdict(list)
@@ -217,8 +243,9 @@ def metrics_trend(
         acts = grouped[k]
         if not acts:
             continue
-        nps = [(a.metrics or {}).get("normalized_power") for a in acts if (a.metrics or {}).get("normalized_power")]
-        ifs = [(a.metrics or {}).get("intensity_factor") for a in acts if (a.metrics or {}).get("intensity_factor")]
+        # V0.7.6: np / if 读独立列 (metrics 已 defer)
+        nps = [a.normalized_power for a in acts if a.normalized_power]
+        ifs = [a.intensity_factor for a in acts if a.intensity_factor]
         avgs = [a.avg_power for a in acts if a.avg_power]
         hrs = [a.avg_hr for a in acts if a.avg_hr]
         cads = [a.avg_cadence for a in acts if a.avg_cadence]
@@ -270,6 +297,12 @@ def rpe_trend(
     cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
     activities = (
         db.query(Activity)
+        .options(
+            defer(Activity.samples_json),
+            defer(Activity.laps_json),
+            defer(Activity.metrics),
+            defer(Activity.report),
+        )
         .filter(Activity.athlete_id == athlete.id)
         .filter(Activity.start_time >= cutoff)
         .filter(Activity.rpe.isnot(None))
@@ -286,7 +319,8 @@ def rpe_trend(
             by_day[day_key] = {"rpe_sum": 0, "count": 0, "tss_sum": 0}
         by_day[day_key]["rpe_sum"] += a.rpe
         by_day[day_key]["count"] += 1
-        tss = (a.metrics or {}).get("tss", 0) or 0
+        # V0.7.6: tss 读独立列
+        tss = a.tss or 0
         by_day[day_key]["tss_sum"] += tss
 
     series = []

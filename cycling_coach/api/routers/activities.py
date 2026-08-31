@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Query
 from pydantic import BaseModel
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from cycling_coach.config.config import settings
 from cycling_coach.data.sqlite import get_db
@@ -232,7 +232,17 @@ def list_activities(
     - 分页 offset+limit
     - 返回 total + 聚合统计,前端可一次画完顶部统计卡
     """
-    q = db.query(Activity)
+    # V0.7.6: defer 大字段 (samples_json 800KB+, laps_json, metrics)
+    # 列表端不需要这些,只在详情端用 → 显著降低 I/O (18 行 ≈ 11MB → 几百 KB)
+    q = (
+        db.query(Activity)
+        .options(
+            defer(Activity.samples_json),
+            defer(Activity.laps_json),
+            defer(Activity.metrics),
+            defer(Activity.report),
+        )
+    )
     if date_from:
         try:
             q = q.filter(Activity.start_time >= datetime.fromisoformat(date_from))
@@ -267,32 +277,30 @@ def list_activities(
         else:
             q = q.filter(Activity.report.is_(None))
 
-    # tss / np 存在 metrics JSON 里(没单独列),Python 端过滤
-    activities_all = q.all()
-    if min_tss is not None or max_tss is not None or min_normalized_power is not None or max_normalized_power is not None or sort in ("tss", "normalized_power"):
-        def _m(a, k, default=0):
-            v = (a.metrics or {}).get(k)
-            return v if isinstance(v, (int, float)) else default
-        filtered = []
-        for a in activities_all:
-            tss = _m(a, "tss")
-            np_ = _m(a, "np", _m(a, "normalized_power"))
-            if min_tss is not None and tss < min_tss:
-                continue
-            if max_tss is not None and tss > max_tss:
-                continue
-            if min_normalized_power is not None and np_ < min_normalized_power:
-                continue
-            if max_normalized_power is not None and np_ > max_normalized_power:
-                continue
-            filtered.append(a)
-        activities_all = filtered
+    # V0.7.6: tss / normalized_power 走独立列 + 索引 (不再 Python 端 filter metrics JSON)
+    if min_tss is not None:
+        q = q.filter(Activity.tss >= min_tss)
+    if max_tss is not None:
+        q = q.filter(Activity.tss <= max_tss)
+    if min_normalized_power is not None:
+        q = q.filter(Activity.normalized_power >= min_normalized_power)
+    if max_normalized_power is not None:
+        q = q.filter(Activity.normalized_power <= max_normalized_power)
 
-    total = len(activities_all)
+    # V0.7.6: tss / np 排序也走独立列 (ix_activities_tss / ix_activities_normalized_power)
+    if sort == "tss":
+        q = q.order_by(Activity.tss.desc() if order == "desc" else Activity.tss.asc())
+    elif sort == "normalized_power":
+        q = q.order_by(Activity.normalized_power.desc() if order == "desc" else Activity.normalized_power.asc())
 
-    # 聚合统计
+    # V0.7.6: 一次性 count() + 拉列表,SQL 端 limit/offset (defer 仍生效)
+    # 用一个分开的 count query 以便返回 total
+    total = q.with_entities(func.count(Activity.id)).scalar() or 0
+    activities_all = q.limit(limit).offset(offset).all()
+
+    # V0.7.6: 聚合统计改读独立列 (metrics 已 defer, 避免触发 lazy load)
     total_dur = sum(a.duration_s for a in activities_all)
-    total_tss_agg = sum((a.metrics or {}).get("tss", 0) or 0 for a in activities_all)
+    total_tss_agg = sum((a.tss or 0) for a in activities_all)
     total_dist = sum(a.distance_m or 0 for a in activities_all)
     aggregate = {
         "count": total,
@@ -301,20 +309,8 @@ def list_activities(
         "total_distance_m": float(total_dist),
     }
 
-    # 排序
-    def _sort_key(a):
-        if sort == "tss":
-            return (a.metrics or {}).get("tss", 0) or 0
-        if sort == "normalized_power":
-            return (a.metrics or {}).get("np", (a.metrics or {}).get("normalized_power", 0)) or 0
-        return getattr(a, sort, 0) or 0
-    activities_all.sort(key=_sort_key, reverse=(order == "desc"))
-
-    # 分页
-    activities = activities_all[offset: offset + limit]
-
     return {
-        "activities": [_to_summary(a) for a in activities],
+        "activities": [_to_summary(a) for a in activities_all],
         "total": total,
         "offset": offset,
         "limit": limit,
@@ -831,15 +827,15 @@ def downsample_samples(samples: list, max_samples: int = 14400) -> list:
 
 
 def _to_summary(a: Activity) -> ActivitySummary:
-    m = a.metrics or {}
+    # V0.7.6: 列表端 metrics 已 defer,改读独立列 (tss / normalized_power)
     return ActivitySummary(
         id=a.id,
         start_time=a.start_time,
         duration_s=a.duration_s,
         distance_m=a.distance_m,
         avg_power=a.avg_power,
-        normalized_power=m.get("normalized_power") if isinstance(m, dict) else None,
-        tss=m.get("tss") if isinstance(m, dict) else None,
+        normalized_power=a.normalized_power,
+        tss=int(a.tss) if a.tss is not None else None,
         avg_hr=a.avg_hr,
         avg_cadence=a.avg_cadence,
         total_elevation_gain=a.total_elevation_gain,
