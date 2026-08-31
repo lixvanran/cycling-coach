@@ -12,11 +12,12 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from cycling_coach import __version__
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from cycling_coach.config.config import settings
 from cycling_coach.config.logging import setup_logging
@@ -111,6 +112,33 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# V0.7.5.3 DEV-3: 上传文件大小限制 (DoS 防护)
+class FileSizeLimitMiddleware(BaseHTTPMiddleware):
+    """限制 /api/*/upload 端点上传文件大小, 防止 DoS
+    
+    FIT/TCX 高采样率 1h 文件 5-20MB, 8h Gran Fondo 30-80MB, 50MB 限制足够.
+    50MB = 52428800 bytes
+    """
+    MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50MB
+    
+    async def dispatch(self, request, call_next):
+        if request.method == "POST" and "/upload" in request.url.path:
+            cl = request.headers.get("content-length")
+            if cl and cl.isdigit() and int(cl) > self.MAX_UPLOAD_SIZE:
+                size_mb = int(cl) / 1024 / 1024
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "detail": f"文件过大 ({size_mb:.1f}MB), 限制 50MB. "
+                                  f"如需更大, 请编辑 cycling_coach/api/main.py 的 MAX_UPLOAD_SIZE"
+                    }
+                )
+        return await call_next(request)
+
+
+app.add_middleware(FileSizeLimitMiddleware)
 
 app.include_router(activities.router)
 app.include_router(athlete.router)

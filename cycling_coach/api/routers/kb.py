@@ -207,6 +207,30 @@ def search(
 
 # ---------- 附件 ----------
 
+# V0.7.5.3 DEV-9: 路径遍历校验 (defense-in-depth)
+# 防止 DB 被污染时 (att.file_path 变成 /etc/passwd), FileResponse 泄漏任意文件
+import os
+_KB_ATTACH_BASE = None
+def _get_attach_base() -> Path:
+    """懒加载 KB 附件根目录"""
+    global _KB_ATTACH_BASE
+    if _KB_ATTACH_BASE is None:
+        from cycling_coach.config.config import settings
+        _KB_ATTACH_BASE = Path(settings.workspace_dir).resolve() / "kb_attachments"
+    return _KB_ATTACH_BASE
+
+def _assert_safe_path(fp: Path) -> Path:
+    """V0.7.5.3 DEV-9: 断言附件路径在 KB 附件根目录内"""
+    base = _get_attach_base()
+    resolved = fp.resolve()
+    try:
+        resolved.relative_to(base)
+    except ValueError:
+        logger.error(f"KB 附件路径越界: {fp} (resolve={resolved}, base={base})")
+        raise HTTPException(403, f"附件路径不安全: {fp.name}")
+    return resolved
+
+
 @router.get("/attachments/by-name/{filename}")
 def get_attachment_by_name(filename: str, db: Session = Depends(get_db)):
     """按 filename 找附件(markdown 里的 ![](attachments/xxx) 重写用)"""
@@ -216,6 +240,7 @@ def get_attachment_by_name(filename: str, db: Session = Depends(get_db)):
     if not att.is_visible:
         raise HTTPException(403, "附件已隐藏(用户审核)")
     fp = Path(att.file_path)
+    fp = _assert_safe_path(fp)  # V0.7.5.3 DEV-9
     if not fp.exists():
         raise HTTPException(404, "文件丢失")
     return FileResponse(
@@ -234,6 +259,7 @@ def get_attachment_image(att_id: int, db: Session = Depends(get_db)):
     if not att.is_visible:
         raise HTTPException(403, "附件已隐藏(用户审核)")
     fp = Path(att.file_path)
+    fp = _assert_safe_path(fp)  # V0.7.5.3 DEV-9
     if not fp.exists():
         raise HTTPException(404, "文件丢失")
     return FileResponse(

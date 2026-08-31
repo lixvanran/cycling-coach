@@ -68,6 +68,9 @@ _TABLE_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "activities": [
         ("rpe", "INTEGER"),  # V0.6.1 主观疲劳 Borg CR-10 (1-10)
         ("rpe_note", "VARCHAR(64)"),  # RPE 自定义标签
+        ("tss", "FLOAT"),  # V0.7.5.3 DEV-6: 关键指标单独列 + 索引
+        ("normalized_power", "INTEGER"),
+        ("intensity_factor", "FLOAT"),
     ],
     "training_phases": [
         ("race_type", "VARCHAR(32)"),  # V0.7 比赛类型 TT/road_race/stage_race/gran_fondo/crit/hill_climb/other

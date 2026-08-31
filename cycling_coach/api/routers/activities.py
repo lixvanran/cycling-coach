@@ -109,21 +109,22 @@ async def upload_activity(
         shutil.copyfileobj(file.file, f)
     logger.info(f"文件已保存: {file_path} ({file_path.stat().st_size} bytes)")
 
-    # 解析 (V0.7.5.2 改: 友好错误, ValueError → 415 而不是 400 + stack)
+    # V0.7.5.3 DEV-4: 解析跑在 worker thread (asyncio.to_thread), EventLoop 不阻塞
+    # 仍同步等结果 (用户看到 loading), 但 server 能继续处理其他请求
+    import asyncio
     try:
         ext_lower = ext.lower()
         if ext_lower == ".fit":
-            activity = FitParser().parse_file(file_path)
+            activity = await asyncio.to_thread(FitParser().parse_file, file_path)
         elif ext_lower == ".tcx":
-            activity = TcxParser().parse_file(file_path)
+            activity = await asyncio.to_thread(TcxParser().parse_file, file_path)
         elif ext_lower == ".csv":
-            activity = WkoCsvParser().parse_file(file_path)
+            activity = await asyncio.to_thread(WkoCsvParser().parse_file, file_path)
         else:
             raise HTTPException(400, f"不支持的文件类型: {ext}")
     except HTTPException:
         raise
     except ValueError as e:
-        # FitParser / TcxParser 内部 raise ValueError 转 415 (内容问题, 不是请求格式)
         logger.warning(f"解析失败(内容): {e}")
         raise HTTPException(
             415,
@@ -133,9 +134,10 @@ async def upload_activity(
         logger.exception(f"解析失败: {e}")
         raise HTTPException(400, f"解析失败: {e}")
 
-    # 指标计算
+    # 指标计算 (也用 to_thread, NP/W'bal/CP 都是 CPU 密集)
     athlete = profile_store.get_or_create_athlete(db)
-    metrics = compute_metrics(
+    metrics = await asyncio.to_thread(
+        compute_metrics,
         activity,
         ftp=athlete.ftp,
         max_hr=athlete.max_hr,
@@ -162,6 +164,10 @@ async def upload_activity(
         calories=activity.calories,
         device=activity.device,
         metrics=metrics,
+        # V0.7.5.3 DEV-6: 关键指标单独列 (tss/np/if 已有索引)
+        tss=metrics.get("tss"),
+        normalized_power=metrics.get("normalized_power"),
+        intensity_factor=metrics.get("intensity_factor"),
         # V0.7.1: samples 智能截断 — 短课 (<4h) 全存, 长课 (>4h) 降采样到 5s 间隔
         # 7200 = 2h 上限太短, Gran Fondo 8h 会被截掉后半
         samples_json=_downsample_samples(activity.samples, max_samples=14400),

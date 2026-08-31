@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cycling-coach"
-version = "0.7.5.2"
+version = "0.7.5.3"
 description = "公路自行车 AI 教练 — 本地优先,把 FIT 数据自动解读成可执行训练建议"
 readme = "README.md"
 requires-python = ">=3.11"

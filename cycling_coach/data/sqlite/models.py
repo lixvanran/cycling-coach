@@ -78,6 +78,14 @@ class Activity(Base):
 
     # 我们算的指标(JSON,前端拿来直接渲染)
     metrics: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # V0.7.5.3 DEV-6: 关键指标单独列 + 索引 (避免全表扫描)
+    tss: Mapped[Optional[float]] = mapped_column(Float, nullable=True, index=True)
+    normalized_power: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    intensity_factor: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # 组合索引 (athlete + start_time) 用于 Dashboard / Trends
+    __table_args__ = (
+        Index("ix_act_athlete_start", "athlete_id", "start_time"),
+    )
     # 1Hz 样本(只存最近 1 小时的完整数据,大量数据走文件)
     samples_json: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     laps_json: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
