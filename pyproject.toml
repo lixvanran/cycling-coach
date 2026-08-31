@@ -33,6 +33,10 @@ dependencies = [
     "reportlab>=4.0",
     # V0.7.4: FIT 课程导出 (Garmin/Wahoo)
     "fit-tool>=0.9.16",
+    # V0.7.6: ML 推理基础设施 (Agent B)
+    "joblib>=1.3,<2.0",        # sklearn / xgboost / lightgbm 序列化
+    "onnxruntime>=1.16,<2.0",  # ONNX 推理 (轻量, 桌面模式优先)
+    # 注: torch 仅 V0.7.7+ 需要时再装 (PyTorch >=2GB, 桌面包太大)
 ]
 
 [project.optional-dependencies]
