@@ -1,9 +1,0 @@
-# Rust 构建产物
-src-tauri/target/
-src-tauri/Cargo.lock
-
-# 临时构建
-src-tauri/gen/
-
-# UI(从 apps/web/dist 复用)
-ui/

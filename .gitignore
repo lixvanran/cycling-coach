@@ -80,3 +80,19 @@ kb_source/attachments/
 启动.sh
 停止.sh
 workspace/
+
+# Release artifacts (历史 release 残留, GitHub history 够查)
+cycling-coach-v*/
+*-backup/
+INSTALL_V0.7.[2-5]*.md
+AUDIT_V0.7.2.md
+PUSH_INSTRUCTIONS.md
+RELEASE_NOTES.md
+SECURITY.md
+
+# Local environment
+.env
+.env.local
+
+# Screenshot temp
+screenshots/
