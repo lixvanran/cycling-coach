@@ -569,3 +569,135 @@ class RaceTacticsAttachment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     session: Mapped["RaceTacticsSession"] = relationship(back_populates="attachments")
+
+
+# ===== V0.7.6 Foundation 1.0: 通用 chat 持久化 + ML 预测基础设施 =====
+
+class ChatSession(Base):
+    """通用 chat 会话(给思维扩散器/普通 chat 共用)
+
+    区别于 RaceTacticsSession: 这是通用对话,不带比赛上下文
+    V0.7.6 引入, 给后续思维扩散器 / 多 agent 推理持久化用
+    """
+    __tablename__ = "chat_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athletes.id"), index=True)
+    title: Mapped[str] = mapped_column(String(128), default="新对话")
+    # 类型: general / race_tactics / training_plan / diffuse_thinking
+    session_type: Mapped[str] = mapped_column(String(32), default="general")
+    # 思维树参数(JSON): {"beam_width": 4, "max_depth": 5, ...}
+    tree_params: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # 思维树快照(JSON): 完整节点树, 给前端可视化
+    tree_snapshot: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # 选中的最佳节点 id(思维扩散器最终答案)
+    selected_node_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="active")  # active / completed / cancelled
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    messages: Mapped[list["ChatMessage"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan"
+    )
+
+
+class ChatMessage(Base):
+    """chat 消息,支持思维树节点结构"""
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("chat_sessions.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(16))  # user / assistant / system / tool / agent_a / agent_b
+    content: Mapped[str] = mapped_column(Text)
+    # 思维树专用字段(普通 chat 留空)
+    parent_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("chat_messages.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    node_path: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # "root.0.2.1"
+    thought_kind: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    # decompose / explore / synthesize / evaluate / final
+    score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    # active / pruned / selected / cancelled
+    # 思维内容(reasoning / 内部推理)
+    thinking: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # RAG 引用源 [{title, path, snippet}]
+    rag_sources: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    # token 统计
+    tokens_in: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    tokens_out: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # 错误信息
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+    session: Mapped["ChatSession"] = relationship(back_populates="messages")
+
+
+class MLPrediction(Base):
+    """ML 模型预测结果归档
+
+    每次推理写一行, 留作回溯 + 评估 ML 模型精度
+    """
+    __tablename__ = "ml_predictions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athletes.id"), index=True)
+    # 模型元数据
+    model_name: Mapped[str] = mapped_column(String(64), index=True)  # "ftp_predictor" / "readiness_ranker"
+    model_version: Mapped[str] = mapped_column(String(32))  # "v1-gbm-conformal-2026-08-31"
+    model_format: Mapped[str] = mapped_column(String(16), default="joblib")  # joblib / pt / onnx
+    # 预测任务
+    target: Mapped[str] = mapped_column(String(32))  # "ftp_w" / "readiness" / "race_time"
+    predicted_value: Mapped[float] = mapped_column(Float)
+    # 置信区间(80%)
+    lower_80: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    upper_80: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    confidence_label: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    # high / medium / low(基于样本量)
+    # 特征快照(留 1 周可回溯, 大数据后续用 parquet)
+    feature_snapshot: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # 关联上下文(可选)
+    activity_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("activities.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # 推理耗时 ms
+    inference_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+
+class MLModelMeta(Base):
+    """ML 模型元数据 + 版本管理
+
+    单用户 MVP: 全局模型(athlete_id=NULL), 多用户时按 athlete 区分
+    """
+    __tablename__ = "ml_model_meta"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    task_name: Mapped[str] = mapped_column(String(64), index=True)  # "ftp_predictor"
+    version: Mapped[str] = mapped_column(String(32))  # "v1.0.0" (semver)
+    model_path: Mapped[str] = mapped_column(String(512))  # 相对 settings.ml_models_dir
+    model_format: Mapped[str] = mapped_column(String(16))  # joblib / pt / onnx
+    # 训练信息
+    training_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    training_samples_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    training_metrics: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # {"mae": 8.5, "r2": 0.78, "mape": 0.04}
+    # 特征 schema(列顺序 + 类型, 推理时强校验)
+    feature_schema: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # {"ctl": "float", "hrv_7d_avg": "float|null", ...}
+    feature_columns: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    # ["ctl", "atl", "tsb", ...]
+    # 状态
+    athlete_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("athletes.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow
+    )
+
+

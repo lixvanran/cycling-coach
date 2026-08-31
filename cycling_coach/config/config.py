@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     kb_download_url: str = ""  # 空表示内嵌导入 (开发模式)
     kb_zip_name: str = "kb-panzhen-v1.zip"
 
+    # V0.7.6: ML 模型基础设施
+    ml_models_dir: str = "models"          # 相对 workspace 的模型目录
+    ml_active_ftp_model: str = ""          # 当前激活的 FTP 预测模型文件名
+    ml_device: str = "cpu"                 # cpu / cuda / mps(预留)
+    ml_max_batch: int = 8                  # 并行推理上限
+    ml_use_onnx: bool = False              # 桌面模式 True(轻量 ONNX)
+    ml_conformal_coverage: float = 0.8     # 80% 预测区间
+
     @property
     def is_mock(self) -> bool:
         """没有 API key 时进入 mock 模式(对齐 P 项目)"""

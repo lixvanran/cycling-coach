@@ -37,13 +37,32 @@ engine = create_engine(
 def _set_sqlite_pragma(dbapi_conn, _):
     """SQLite 性能优化 + 兼容性
 
-    v0.1.0:默认 rollback journal 模式,避免挂载文件系统上 WAL 失败
-    后续 V0.2 视情况再开 WAL
+    V0.7.6: 开启 WAL 模式, 提升并发读写
+    - WAL: 读不阻塞写, 写不阻塞读
+    - synchronous=NORMAL: 折中模式, 性能 + 安全性平衡
+    - busy_timeout=5000: 锁等待 5s(避免 IMMEDIATE 锁快速失败)
     """
     cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA busy_timeout=5000")
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
+
+
+# V0.7.5.4 DEV-19: 允许 _auto_migrate / repair_db 操作的表白名单
+# 防止 text() SQL 注入 + 防止误操作业务表
+_ALLOWED_TABLES: set[str] = {
+    "workouts",
+    "kb_chunks",
+    "activities",
+    "training_phases",
+    # V0.7.6 新表(新增可加, 不要轻易删)
+    "chat_sessions",
+    "chat_messages",
+    "ml_predictions",
+    "ml_model_meta",
+}
 
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -110,17 +129,6 @@ def _auto_migrate() -> None:
                         logger.warning(f"  [迁移] {table}.{col_name} 失败: {e}")
 
 
-def init_db() -> None:
-    """建表 + 自动迁移
-
-    V0.3.3 起:create_all 不会改老表 schema,所以先 create_all 再 auto_migrate
-    """
-    from . import models  # noqa: F401  注册表
-    Base.metadata.create_all(engine)
-    _auto_migrate()
-    logger.info("数据库初始化完成")
-
-
 def repair_db() -> dict:
     """一键修复:迁移 + 清空坏的 system 课程 + 重 seed
 
@@ -165,3 +173,38 @@ def get_db() -> Session:
         yield db
     finally:
         db.close()
+
+
+def _ensure_indexes() -> None:
+    """V0.7.6: 补全 ORM 声明了但 _auto_migrate 没建的索引
+
+    ORM `index=True` 只能影响新表 create_all, 升级用户的老库缺这些索引
+    - ix_activities_tss: ORDER BY tss DESC 用, 大表必备
+    - ix_act_athlete_start: 复合 (athlete_id, start_time), 加速分页
+    """
+    _indexes = [
+        "CREATE INDEX IF NOT EXISTS ix_activities_tss ON activities(tss)",
+        "CREATE INDEX IF NOT EXISTS ix_activities_normalized_power ON activities(normalized_power)",
+        "CREATE INDEX IF NOT EXISTS ix_act_athlete_start ON activities(athlete_id, start_time)",
+        "CREATE INDEX IF NOT EXISTS ix_daily_metrics_athlete_date ON daily_metrics(athlete_id, date)",
+    ]
+    with engine.connect() as conn:
+        for sql in _indexes:
+            try:
+                conn.execute(text(sql))
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"[索引迁移] 失败 {sql}: {e}")
+
+
+def init_db() -> None:
+    """建表 + 自动迁移 + 补索引
+
+    V0.3.3 起:create_all 不会改老表 schema,所以先 create_all 再 auto_migrate
+    V0.7.6 起: 再补 ORM 声明了但 create_all 没建的索引
+    """
+    from . import models  # noqa: F401  注册表
+    Base.metadata.create_all(engine)
+    _auto_migrate()
+    _ensure_indexes()
+    logger.info("数据库初始化完成")
