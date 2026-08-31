@@ -185,79 +185,22 @@ def stream_chat(
       "data: [DONE]\n\n"  — 结束
       "data: [ERROR] <msg>\n\n" — 错误
     """
-    # 取 athlete 名字 + 今日 PMC(V0.3 新增)
+    # V0.7.5.2: 抽 build_chat_context 统一 6 块 (DEV-7 + DEV-10)
     db = SessionLocal()
     try:
         athlete = profile_store.get_or_create_athlete(db)
-        athlete_name = athlete.name
-        athlete_exp = getattr(athlete, "experience", None) or "未填"
-        athlete_max_hr = athlete.max_hr
-        athlete_lthr = athlete.lthr
-        athlete_ftp = athlete.ftp
-        try:
-            pmc = get_pmc_today(db, athlete.id)
-        except Exception as e:
-            logger.warning(f"PMC 读取失败(降级为空): {e}")
-            pmc = None
-
-        # V0.7.1 补遗漏: 注入 ACWR + RPE 7d + 当前周期 + 最新 FTP
-        try:
-            from cycling_coach.core.metrics.acwr import get_acwr_overview
-            acwr = get_acwr_overview(db, days=90)
-        except Exception as e:
-            logger.debug(f"ACWR 读取失败: {e}")
-            acwr = None
-
-        try:
-            from sqlalchemy import desc
-            from datetime import timedelta
-            from cycling_coach.data.sqlite.models import Activity, TrainingPhase, FTPTest
-            now = datetime.utcnow()
-            cutoff_7d = now - timedelta(days=7)
-            rpe_acts = (
-                db.query(Activity)
-                .filter(Activity.athlete_id == athlete.id)
-                .filter(Activity.start_time >= cutoff_7d)
-                .filter(Activity.rpe.isnot(None))
-                .all()
-            )
-            if rpe_acts:
-                rpe_avg = round(sum(a.rpe for a in rpe_acts) / len(rpe_acts), 1)
-                rpe_high = sum(1 for a in rpe_acts if a.rpe >= 7)
-                rpe_7d = {
-                    "avg": rpe_avg,
-                    "count": len(rpe_acts),
-                    "high_count": rpe_high,
-                    "days": sorted({a.start_time.date().isoformat() for a in rpe_acts})[-7:],
-                }
-            else:
-                rpe_7d = None
-        except Exception as e:
-            logger.debug(f"RPE 7d 读取失败: {e}")
-            rpe_7d = None
-
-        try:
-            from cycling_coach.core.metrics.periodization import derive_phase
-            current_phase_info = derive_phase(db, athlete.id)
-        except Exception as e:
-            logger.debug(f"周期 读取失败: {e}")
-            current_phase_info = None
-
-        try:
-            latest_ftp = (
-                db.query(FTPTest)
-                .filter(FTPTest.athlete_id == athlete.id)
-                .order_by(desc(FTPTest.test_date))
-                .first()
-            )
-            ftp_info = {
-                "ftp_w": latest_ftp.ftp_w if latest_ftp else athlete_ftp,
-                "test_date": latest_ftp.test_date.date().isoformat() if latest_ftp else None,
-                "method": latest_ftp.method if latest_ftp else "默认",
-            } if (latest_ftp or athlete_ftp) else None
-        except Exception as e:
-            logger.debug(f"FTP 读取失败: {e}")
-            ftp_info = None
+        from cycling_coach.core.coaching.context import build_chat_context
+        ctx = build_chat_context(db, athlete.id)
+        athlete_name = ctx.get("athlete", {}).get("name", "Rider")
+        athlete_exp = ctx.get("athlete", {}).get("experience", "未填")
+        athlete_max_hr = ctx.get("athlete", {}).get("max_hr")
+        athlete_lthr = ctx.get("athlete", {}).get("lthr")
+        athlete_ftp = ctx.get("athlete", {}).get("ftp")
+        pmc = ctx.get("pmc")
+        acwr = ctx.get("acwr")
+        rpe_7d = ctx.get("rpe_7d")
+        current_phase_info = ctx.get("phase")
+        ftp_info = ctx.get("ftp")
     finally:
         db.close()
 

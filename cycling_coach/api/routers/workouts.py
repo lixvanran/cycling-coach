@@ -891,11 +891,12 @@ def ai_schedule_stub(
     raise HTTPException(
         status_code=501,
         detail={
-            "error": "AI 排课尚未实装",
+            "ok": False,
+            "code": "not_implemented",
+            "message": "AI 排课尚未实装, V0.7.6+ 推出",
             "endpoint": "POST /api/workouts/ai-schedule",
             "plan_id": plan_id,
             "week_start": week_start,
-            "planned_version": "V0.5",
-            "todo": "V0.5 实装 - 调用 M3 生成 weekly_plan,写入 PlanAIDraft 表,用户确认后 apply 到 PlannedWorkout",
+            "planned_version": "V0.7.6+",
         }
     )

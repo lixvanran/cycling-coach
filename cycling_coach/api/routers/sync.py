@@ -125,11 +125,12 @@ def strava_auth_start(redirect_uri: Optional[str] = None):
     V0.7.4: 501 Not Implemented
     V0.8+: 跳 strava.com/oauth/authorize
     """
-    raise HTTPException(
-        status_code=501,
-        detail="Strava OAuth V0.8+ 实现. 当前 V0.7.4 接口预留. "
-               "配置 .env: STRAVA_CLIENT_ID / STRAVA_CLIENT_SECRET, 启用 V0.8+ 后重试."
-    )
+    raise HTTPException(501, detail={
+        "ok": False, "code": "not_implemented",
+        "message": "Strava OAuth V0.8+ 推出. 当前接口预留.",
+        "planned_version": "V0.8+",
+        "config_hint": "设置 STRAVA_CLIENT_ID / STRAVA_CLIENT_SECRET 后启用",
+    })
 
 
 @router.get("/strava/callback")
@@ -141,16 +142,21 @@ def strava_oauth_callback(code: Optional[str] = None, state: Optional[str] = Non
     """
     if error:
         raise HTTPException(400, f"Strava OAuth 错误: {error}")
-    raise HTTPException(
-        status_code=501,
-        detail="Strava OAuth callback V0.8+ 实现."
-    )
+    raise HTTPException(501, detail={
+        "ok": False, "code": "not_implemented",
+        "message": "Strava OAuth callback V0.8+ 推出.",
+        "planned_version": "V0.8+",
+    })
 
 
 @router.post("/strava/disconnect")
 def strava_disconnect():
     """V0.7.4: 断开 Strava (V0.8+ 实现)"""
-    raise HTTPException(501, "V0.8+ 实现")
+    raise HTTPException(501, detail={
+        "ok": False, "code": "not_implemented",
+        "message": "Strava V0.8+ 推出.",
+        "planned_version": "V0.8+",
+    })
 
 
 @router.get("/strava/activities")
@@ -174,4 +180,8 @@ def strava_activities(
 @router.post("/strava/sync")
 def strava_sync_now(db: Session = Depends(get_db)):
     """V0.7.4: 手动触发同步 (V0.8+ 实现)"""
-    raise HTTPException(501, "V0.8+ 实现")
+    raise HTTPException(501, detail={
+        "ok": False, "code": "not_implemented",
+        "message": "Strava V0.8+ 推出.",
+        "planned_version": "V0.8+",
+    })

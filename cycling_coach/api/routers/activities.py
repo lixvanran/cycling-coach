@@ -91,16 +91,25 @@ async def upload_activity(
     if ext not in _ALLOWED_EXTS:
         raise HTTPException(400, f"不支持的文件类型: {ext}(仅 .fit/.tcx/.csv)")
 
-    # 落盘
+    # 落盘 (V0.7.5.2 修: 路径遍历 — basename + 解析后断言)
     workspace = Path(settings.workspace_dir).resolve()
     input_dir = workspace / "input" / datetime.now().strftime("%Y%m%d-%H%M%S")
     input_dir.mkdir(parents=True, exist_ok=True)
-    file_path = input_dir / file.filename
+    # basename 去路径前缀 (../foo.fit → foo.fit, C:\evil\foo.fit → foo.fit)
+    safe_basename = Path(file.filename).name
+    if not safe_basename or safe_basename.startswith("."):
+        raise HTTPException(400, f"非法文件名: {file.filename!r}")
+    file_path = (input_dir / safe_basename).resolve()
+    # 断言仍在 input_dir 内 (defense-in-depth)
+    try:
+        file_path.relative_to(input_dir.resolve())
+    except ValueError:
+        raise HTTPException(400, f"文件路径不安全: {safe_basename!r}")
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
     logger.info(f"文件已保存: {file_path} ({file_path.stat().st_size} bytes)")
 
-    # 解析(同步,避免 V0.1.0 还要做异步队列)
+    # 解析 (V0.7.5.2 改: 友好错误, ValueError → 415 而不是 400 + stack)
     try:
         ext_lower = ext.lower()
         if ext_lower == ".fit":
@@ -113,6 +122,13 @@ async def upload_activity(
             raise HTTPException(400, f"不支持的文件类型: {ext}")
     except HTTPException:
         raise
+    except ValueError as e:
+        # FitParser / TcxParser 内部 raise ValueError 转 415 (内容问题, 不是请求格式)
+        logger.warning(f"解析失败(内容): {e}")
+        raise HTTPException(
+            415,
+            f"文件无法解析 (可能损坏或码表固件不兼容): {e}"
+        )
     except Exception as e:
         logger.exception(f"解析失败: {e}")
         raise HTTPException(400, f"解析失败: {e}")
@@ -179,14 +195,28 @@ async def upload_activity(
 
 
 def _run_analyze(activity_id: int, focus: str | None) -> None:
-    """后台任务:生成 AI 报告"""
+    """后台任务:生成 AI 报告 (V0.7.5.2 修: 外层 try/except, 失败强制写 failed 状态)"""
     from cycling_coach.data.sqlite.database import SessionLocal
     db = SessionLocal()
     try:
-        result = analyze_activity_tool(db, activity_id, focus=focus)
-        a = db.query(Activity).get(activity_id)
+        try:
+            result = analyze_activity_tool(db, activity_id, focus=focus)
+        except Exception as e:
+            # analyze_activity_tool 内部已经 catch, 这是兜底 (DB 锁 / 网络抖动 等)
+            logger.exception(f"活动 {activity_id} AI 报告任务异常: {e}")
+            try:
+                a = db.get(Activity, activity_id)
+                if a:
+                    a.report_status = "failed"
+                    a.report = f"⚠️ AI 报告生成失败: {e}\n\n请尝试手动重试, 或查看后端日志."
+                    db.commit()
+            except Exception as e2:
+                logger.error(f"活动 {activity_id} 写失败状态也错: {e2}")
+            return
+        # SQLAlchemy 2.0 推荐用 db.get, 不用 .get (DEV-2)
+        a = db.get(Activity, activity_id)
         if a:
-            if result["ok"]:
+            if result.get("ok"):
                 report = result.get("report") or ""
                 a.report = report
                 a.report_status = "done" if report.strip() else "failed"
@@ -196,11 +226,14 @@ def _run_analyze(activity_id: int, focus: str | None) -> None:
                 )
             else:
                 a.report_status = "failed"
+                a.report = f"⚠️ AI 报告生成失败: {result.get('reason', '未知原因')}"
                 logger.warning(
                     f"活动 {activity_id} 报告生成失败: {result.get('reason')}"
                 )
             db.commit()
             logger.info(f"活动 {activity_id} 报告状态: {a.report_status}")
+        else:
+            logger.warning(f"活动 {activity_id} 不存在, 跳过报告状态更新")
     finally:
         db.close()
 
