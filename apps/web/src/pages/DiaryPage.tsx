@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../lib/api";
+import { useToast } from "../components/Toast";
 import type { Diary, DiaryTemplate } from "../lib/types";
 
 function todayISO() {
@@ -153,7 +154,7 @@ export function DiaryPage() {
       }
     } catch (e: any) {
       console.error("保存失败", e);
-      alert(`保存失败: ${e?.message || e}`);
+      toast.error(`保存失败: ${e?.message || e}`);
     } finally {
       setSaving(false);
     }
@@ -172,7 +173,7 @@ export function DiaryPage() {
       const list = await api.diaryList(30);
       setRecent(list.items);
     } catch (e: any) {
-      alert(`删除失败: ${e?.message || e}`);
+      toast.error(`删除失败: ${e?.message || e}`);
     }
   }
 

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../lib/api";
+import { useToast } from "../components/Toast";
 import type {
   CalendarMonth, PlanPeriod, PlannedWorkout, PlannedStatus, WorkoutIntent, ActualActivity, ActivitySummary,
 } from "../lib/types";
@@ -128,7 +129,7 @@ export function CalendarPage() {
   // 自动关联
   const handleAutoLink = async () => {
     const r = await api.autoLinkMonth(year, month);
-    alert(`已自动关联 ${r.linked} / ${r.total} 个计划课`);
+    toast.error(`已自动关联 ${r.linked} / ${r.total} 个计划课`);
     refresh();
   };
 
@@ -144,7 +145,7 @@ export function CalendarPage() {
       await api.updatePlanned(draggingPlannedId, { scheduled_date: date });
       refresh();
     } catch (e: any) {
-      alert("移动失败: " + e.message);
+      toast.error("移动失败: " + e.message);
     }
     setDraggingPlannedId(null);
     setDropDate(null);
@@ -443,7 +444,7 @@ function NewPlannedPopover(props: {
   }
 
   async function save() {
-    if (!title.trim()) { alert("请填写标题"); return; }
+    if (!title.trim()) { toast.error("请填写标题"); return; }
     setBusy(true);
     try {
       await api.createPlanned({
@@ -453,7 +454,7 @@ function NewPlannedPopover(props: {
       });
       props.onSaved();
     } catch (e: any) {
-      alert("保存失败: " + e.message);
+      toast.error("保存失败: " + e.message);
     } finally { setBusy(false); }
   }
 
@@ -556,7 +557,7 @@ function EditPlannedPopover(props: {
   const [busy, setBusy] = useState(false);
 
   async function save() {
-    if (!title.trim()) { alert("请填写标题"); return; }
+    if (!title.trim()) { toast.error("请填写标题"); return; }
     setBusy(true);
     try {
       await api.updatePlanned(props.planned.id, {
@@ -568,7 +569,7 @@ function EditPlannedPopover(props: {
       });
       props.onSaved();
     } catch (e: any) {
-      alert("保存失败: " + e.message);
+      toast.error("保存失败: " + e.message);
     } finally { setBusy(false); }
   }
 

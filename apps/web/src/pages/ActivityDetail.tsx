@@ -9,6 +9,7 @@ import {
   Target,
 } from "lucide-react";
 import { api } from "../lib/api";
+import { useToast } from "../components/Toast";
 import type { ActivityDetail as ActivityDetailT } from "../lib/types";
 import { useAppStore } from "../store/useAppStore";
 import { MetricCard } from "../components/MetricCard";
@@ -109,7 +110,7 @@ export function ActivityDetail() {
       }, 60000);
     } catch (e) {
       setAnalyzing(false);
-      alert("触发分析失败:" + (e as Error).message);
+      toast.error("触发分析失败:" + (e as Error).message);
     }
   };
 

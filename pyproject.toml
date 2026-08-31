@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cycling-coach"
-version = "0.7.5.4"
+version = "0.7.5.5"
 description = "公路自行车 AI 教练 — 本地优先,把 FIT 数据自动解读成可执行训练建议"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -16,17 +16,17 @@ keywords = ["cycling", "coach", "fit", "power-meter", "training"]
 
 # runtime deps
 dependencies = [
-    "fastapi>=0.110",
+    "fastapi>=0.110,<1.0",
     "uvicorn[standard]>=0.27",
-    "pydantic>=2.6",
+    "pydantic>=2.6,<3.0",
     "pydantic-settings>=2.2",
-    "openai>=1.12",
-    "httpx>=0.27",
+    "openai>=1.12,<2.0",
+    "httpx>=0.27,<1.0",
     "python-multipart>=0.0.9",
     "aiofiles>=23.2",
-    "sqlalchemy>=2.0",
+    "sqlalchemy>=2.0,<3.0",
     "fitparse>=1.2",
-    "numpy>=1.26",
+    "numpy>=1.26,<3.0",
     "pandas>=2.1",
     "scipy>=1.11",
     # V0.7.3: PDF 周报

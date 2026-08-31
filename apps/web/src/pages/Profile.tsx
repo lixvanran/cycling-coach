@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { Save, RefreshCw } from "lucide-react";
 import { api } from "../lib/api";
+import { useToast } from "../components/Toast";
 import type { Athlete } from "../lib/types";
 import { MetricCard } from "../components/MetricCard";
 
@@ -26,7 +27,7 @@ export function Profile() {
       setAthlete(updated);
       setEditing({});
     } catch (e) {
-      alert("保存失败:" + (e as Error).message);
+      toast.error("保存失败:" + (e as Error).message);
     } finally {
       setSaving(false);
     }
@@ -39,7 +40,7 @@ export function Profile() {
       const updated = await api.getAthlete();
       setAthlete(updated);
     } catch (e) {
-      alert("重算失败:" + (e as Error).message);
+      toast.error("重算失败:" + (e as Error).message);
     } finally {
       setRefreshing(false);
     }

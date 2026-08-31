@@ -18,6 +18,7 @@ import { BuilderPage } from "./pages/BuilderPage";
 import { DiaryPage } from "./pages/DiaryPage";
 import { KnowledgeBasePage } from "./pages/KnowledgeBasePage";
 import { useAppStore } from "./store/useAppStore";
+import { ToastContainer } from "./components/Toast";
 
 export default function App() {
   const view = useAppStore((s) => s.view);
@@ -27,7 +28,8 @@ export default function App() {
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar />
-        <main className="flex-1 overflow-hidden">
+        <ToastContainer />
+      <main className="flex-1 overflow-hidden">
           {view === "dashboard" && <Dashboard />}
           {view === "calendar" && <CalendarPage />}
           {view === "library" && <LibraryPage />}

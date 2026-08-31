@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Upload, Zap, FileUp, Check } from "lucide-react";
 import { api } from "../lib/api";
+import { useToast } from "../components/Toast";
 import type { MockProfile } from "../lib/types";
 import { useAppStore } from "../store/useAppStore";
 
@@ -23,7 +24,7 @@ export function ImportPage() {
     const allowed = [".fit", ".tcx", ".csv"];
     const ext = "." + file.name.toLowerCase().split(".").pop();
     if (!allowed.includes(ext)) {
-      alert(`不支持的格式: ${ext}\n支持: .fit / .tcx / .csv (WKO/GoldenCheetah)`);
+      toast.error(`不支持的格式: ${ext}\n支持: .fit / .tcx / .csv (WKO/GoldenCheetah)`);
       return;
     }
     setUploading(true);
@@ -33,7 +34,7 @@ export function ImportPage() {
       const r = await api.uploadActivity(file, setProgress);
       setUploadResult({ id: r.id });
     } catch (e) {
-      alert("上传失败:" + (e as Error).message);
+      toast.error("上传失败:" + (e as Error).message);
     } finally {
       setUploading(false);
     }
@@ -54,7 +55,7 @@ export function ImportPage() {
       setSelected(r.id);
       setView("activity-detail");
     } catch (e) {
-      alert("生成失败:" + (e as Error).message);
+      toast.error("生成失败:" + (e as Error).message);
     } finally {
       setGenerating(null);
     }

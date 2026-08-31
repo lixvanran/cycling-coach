@@ -31,6 +31,7 @@ import {
 } from "recharts";
 import clsx from "clsx";
 import { api } from "../lib/api";
+import { useToast } from "../components/Toast";
 import type { FTPTest, FTPRecommend, FTPEstimate } from "../lib/types";
 
 export function FTPTestPage() {
@@ -70,7 +71,7 @@ export function FTPTestPage() {
       const e = await api.ftpEstimate(id, estimateMethod);
       setEstimate(e);
     } catch (e: any) {
-      alert("估算失败: " + (e?.message || e));
+      toast.error("估算失败: " + (e?.message || e));
     }
   };
 
