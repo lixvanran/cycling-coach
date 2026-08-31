@@ -1,6 +1,7 @@
 // 单条消息气泡(模仿 Z 项目 ChatPage 风格)
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeSanitize from "rehype-sanitize";  // V0.7.5.4 DEV-17: 防 XSS
 import { Brain, User } from "lucide-react";
 import { useState } from "react";
 import type { ChatMsg } from "../store/useAppStore";
@@ -48,7 +49,7 @@ export function ChatMessage({ msg }: Props) {
         ) : (
           <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-white/90 backdrop-blur border border-border text-text-primary text-sm leading-relaxed prose prose-sm max-w-none shadow-sm">
             {msg.content ? (
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
                 {msg.content}
               </ReactMarkdown>
             ) : msg.error ? (

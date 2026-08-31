@@ -88,6 +88,10 @@ def _auto_migrate() -> None:
     with engine.connect() as conn:
         for table, cols in _TABLE_COLUMNS.items():
             try:
+                # V0.7.5.4 DEV-19: 白名单
+                if table not in _ALLOWED_TABLES:
+                    logger.error(f"[迁移] 非法表名: {table!r}, 跳过")
+                    continue
                 existing = {
                     row[1]
                     for row in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
@@ -126,6 +130,10 @@ def repair_db() -> dict:
     # 1. 迁移
     with engine.connect() as conn:
         for table, cols in _TABLE_COLUMNS.items():
+            # V0.7.5.4 DEV-19: 白名单
+            if table not in _ALLOWED_TABLES:
+                info["actions"].append(f"SKIP illegal table: {table!r}")
+                continue
             existing = {
                 row[1]
                 for row in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()

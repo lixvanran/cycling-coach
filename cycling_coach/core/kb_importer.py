@@ -202,6 +202,8 @@ def import_knowledge_base(kb_root: Optional[Path] = None, attach_dir: Optional[P
     filename_to_attach: dict[str, int] = {}
     with Session(engine) as s:
         existing = {a.filename: a.id for a in s.query(KbAttachment).all()}
+    # V0.7.5.4 DEV-20: 整批事务 (252 附件 → 1 commit, 失败回滚)
+    pending_attachments: list[KbAttachment] = []
     if att.exists():
         for fp in att.rglob("*"):
             if not fp.is_file():
@@ -220,24 +222,33 @@ def import_knowledge_base(kb_root: Optional[Path] = None, attach_dir: Optional[P
                        "image/gif" if fp.suffix.lower() == ".gif" else \
                        "application/pdf" if fp.suffix.lower() == ".pdf" else \
                        "application/octet-stream"
-                with Session(engine) as s:
-                    a = KbAttachment(
-                        filename=fname,
-                        file_path=str(fp),
-                        mime_type=mime,
-                        size_bytes=size,
-                        is_likely_decoration=is_dec,
-                        is_visible=not is_dec,  # 可疑默认隐藏
-                    )
-                    s.add(a)
-                    s.commit()
-                    s.refresh(a)
-                    filename_to_attach[fname] = a.id
-                    stats["attachments"] += 1
-                    if is_dec:
-                        stats["likely_decoration"] += 1
+                pending_attachments.append(KbAttachment(
+                    filename=fname,
+                    file_path=str(fp),
+                    mime_type=mime,
+                    size_bytes=size,
+                    is_likely_decoration=is_dec,
+                    is_visible=not is_dec,
+                ))
             except Exception as e:
                 stats["errors"].append(f"attachment {fname}: {e}")
+        # 整批 commit
+        if pending_attachments:
+            try:
+                with Session(engine) as s:
+                    s.add_all(pending_attachments)
+                    s.commit()
+                    for a in pending_attachments:
+                        s.refresh(a)
+                        filename_to_attach[a.filename] = a.id
+                        stats["attachments"] += 1
+                        if a.is_likely_decoration:
+                            stats["likely_decoration"] += 1
+                logger.info(f"附件批量入库: {len(pending_attachments)} 个")
+            except Exception as e:
+                # 整批失败, 回滚 (SQLAlchemy Session context 自动 rollback)
+                logger.error(f"附件批量入库失败, 已回滚: {e}")
+                stats["errors"].append(f"attachments batch: {e}")
     logger.info(f"附件导入: {stats['attachments']} 个 ({stats['likely_decoration']} 装饰)")
 
     # 2. 走 markdown 目录, 建分类树 + 文档
@@ -480,33 +491,54 @@ def _import_document(
         sess.commit()
 
 
-def _setup_fts(engine):
-    """创建 FTS5 虚拟表 + 填充(注意: DDL 必须用 begin() 才能真正持久化)"""
-    # 用 engine.begin() 让 DDL 自动 commit, 否则 connection close 后表丢失
+def _setup_fts(engine, full_rebuild: bool = False):
+    """创建/更新 FTS5 虚拟表
+
+    V0.7.5.3 DEV-16: 增量更新 (INSERT OR REPLACE), 避免 DROP TABLE 全量重建
+    - full_rebuild=False (默认): 检测 kb_chunks_fts 是否存在, 增量同步
+    - full_rebuild=True: 完全重建 (用户手动触发 / 升级时)
+    """
     with engine.begin() as conn:
-        # 删除旧 FTS 表
-        conn.execute(text("DROP TABLE IF EXISTS kb_chunks_fts"))
-        # 创建 FTS5 虚拟表
-        conn.execute(text("""
-            CREATE VIRTUAL TABLE kb_chunks_fts USING fts5(
-                content,
-                title,
-                category_path,
-                tokenize = 'unicode61 remove_diacritics 2'
-            )
-        """))
-        # 填充(从 kb_chunks + kb_documents JOIN)
-        conn.execute(text("""
-            INSERT INTO kb_chunks_fts(rowid, content, title, category_path)
-            SELECT c.id, c.content, d.title, d.path
-            FROM kb_chunks c
-            JOIN kb_documents d ON d.id = c.document_id
-        """))
-    # 验证: 重新开一个 connection 查 (确保 DDL 真持久化)
+        # 检查表是否存在
+        exists = conn.execute(text(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='kb_chunks_fts'"
+        )).scalar()
+        if not exists or full_rebuild:
+            if exists and full_rebuild:
+                conn.execute(text("DROP TABLE IF EXISTS kb_chunks_fts"))
+                logger.info("FTS5 全量重建 (full_rebuild=True)")
+            conn.execute(text("""
+                CREATE VIRTUAL TABLE kb_chunks_fts USING fts5(
+                    content,
+                    title,
+                    category_path,
+                    tokenize = 'unicode61 remove_diacritics 2'
+                )
+            """))
+            conn.execute(text("""
+                INSERT INTO kb_chunks_fts(rowid, content, title, category_path)
+                SELECT c.id, c.content, d.title, d.path
+                FROM kb_chunks c
+                JOIN kb_documents d ON d.id = c.document_id
+            """))
+            logger.info("FTS5 索引: 全量填充完成")
+        else:
+            inserted = conn.execute(text("""
+                INSERT OR REPLACE INTO kb_chunks_fts(rowid, content, title, category_path)
+                SELECT c.id, c.content, d.title, d.path
+                FROM kb_chunks c
+                JOIN kb_documents d ON d.id = c.document_id
+            """)).rowcount
+            deleted = conn.execute(text("""
+                DELETE FROM kb_chunks_fts
+                WHERE rowid NOT IN (SELECT id FROM kb_chunks)
+            """)).rowcount
+            logger.info(f"FTS5 增量: 插入/更新 {inserted} 行, 删除 {deleted} orphan")
     with engine.connect() as conn:
         cnt = conn.execute(text("SELECT COUNT(*) FROM kb_chunks_fts")).scalar()
     logger.info(f"FTS5 索引: {cnt} 行")
     return cnt
+
 
 
 def get_import_status() -> dict:

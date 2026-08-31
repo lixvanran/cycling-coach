@@ -22,13 +22,16 @@ from cycling_coach.core.metrics.curve import mean_maximal_power, estimate_ftp
 from cycling_coach.core.metrics.power import power_zones_detailed, wbal_analysis, detect_cp_3param
 from cycling_coach.core.profile import store as profile_store
 from cycling_coach.core.pmc import recompute_pmc
+from ._activities_shared import (
+    ALLOWED_EXTS, AnalyzeResponse, downsample_samples, run_analyze_task,
+)
 from cycling_coach.ai.tools import analyze_activity_tool
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/activities", tags=["activities"])
 
 # 上传白名单
-_ALLOWED_EXTS = {".fit", ".FIT", ".tcx", ".TCX", ".csv", ".CSV"}
+# ALLOWED_EXTS 在 _activities_shared.py
 
 
 # ---------- Schema ----------
@@ -70,11 +73,6 @@ class AnalyzeRequest(BaseModel):
     focus: str | None = None
 
 
-class AnalyzeResponse(BaseModel):
-    ok: bool
-    report: str | None
-    reason: str | None
-
 
 # ---------- API ----------
 
@@ -88,7 +86,7 @@ async def upload_activity(
     if not file.filename:
         raise HTTPException(400, "未提供文件名")
     ext = Path(file.filename).suffix
-    if ext not in _ALLOWED_EXTS:
+    if ext not in ALLOWED_EXTS:
         raise HTTPException(400, f"不支持的文件类型: {ext}(仅 .fit/.tcx/.csv)")
 
     # 落盘 (V0.7.5.2 修: 路径遍历 — basename + 解析后断言)
@@ -170,7 +168,7 @@ async def upload_activity(
         intensity_factor=metrics.get("intensity_factor"),
         # V0.7.1: samples 智能截断 — 短课 (<4h) 全存, 长课 (>4h) 降采样到 5s 间隔
         # 7200 = 2h 上限太短, Gran Fondo 8h 会被截掉后半
-        samples_json=_downsample_samples(activity.samples, max_samples=14400),
+        samples_json=downsample_samples(activity.samples, max_samples=14400),
         laps_json=[lap.model_dump() for lap in activity.laps],
         report_status="pending",
     )
@@ -190,7 +188,7 @@ async def upload_activity(
 
     # 异步生成报告
     if background_tasks is not None:
-        background_tasks.add_task(_run_analyze, db_activity.id, None)
+        background_tasks.add_task(run_analyze_task, db_activity.id, None)
 
     return {
         "ok": True,
@@ -200,48 +198,6 @@ async def upload_activity(
     }
 
 
-def _run_analyze(activity_id: int, focus: str | None) -> None:
-    """后台任务:生成 AI 报告 (V0.7.5.2 修: 外层 try/except, 失败强制写 failed 状态)"""
-    from cycling_coach.data.sqlite.database import SessionLocal
-    db = SessionLocal()
-    try:
-        try:
-            result = analyze_activity_tool(db, activity_id, focus=focus)
-        except Exception as e:
-            # analyze_activity_tool 内部已经 catch, 这是兜底 (DB 锁 / 网络抖动 等)
-            logger.exception(f"活动 {activity_id} AI 报告任务异常: {e}")
-            try:
-                a = db.get(Activity, activity_id)
-                if a:
-                    a.report_status = "failed"
-                    a.report = f"⚠️ AI 报告生成失败: {e}\n\n请尝试手动重试, 或查看后端日志."
-                    db.commit()
-            except Exception as e2:
-                logger.error(f"活动 {activity_id} 写失败状态也错: {e2}")
-            return
-        # SQLAlchemy 2.0 推荐用 db.get, 不用 .get (DEV-2)
-        a = db.get(Activity, activity_id)
-        if a:
-            if result.get("ok"):
-                report = result.get("report") or ""
-                a.report = report
-                a.report_status = "done" if report.strip() else "failed"
-                logger.info(
-                    f"活动 {activity_id} 报告生成: status={a.report_status}, "
-                    f"len={len(report)}"
-                )
-            else:
-                a.report_status = "failed"
-                a.report = f"⚠️ AI 报告生成失败: {result.get('reason', '未知原因')}"
-                logger.warning(
-                    f"活动 {activity_id} 报告生成失败: {result.get('reason')}"
-                )
-            db.commit()
-            logger.info(f"活动 {activity_id} 报告状态: {a.report_status}")
-        else:
-            logger.warning(f"活动 {activity_id} 不存在, 跳过报告状态更新")
-    finally:
-        db.close()
 
 
 @router.get("")
@@ -835,7 +791,7 @@ def trigger_analyze(
     a.report_status = "analyzing"
     db.commit()
     if background_tasks is not None:
-        background_tasks.add_task(_run_analyze, activity_id, req.focus)
+        background_tasks.add_task(run_analyze_task, activity_id, req.focus)
     return {"ok": True, "report": None, "reason": "已加入后台队列"}
 
 
@@ -851,7 +807,7 @@ def delete_activity(activity_id: int, db: Session = Depends(get_db)):
 
 # ---------- helpers ----------
 
-def _downsample_samples(samples: list, max_samples: int = 14400) -> list:
+def downsample_samples(samples: list, max_samples: int = 14400) -> list:
     """V0.7.1: 智能降采样, 避免长活动 (Gran Fondo 8h) DB 膨胀
 
     策略:
