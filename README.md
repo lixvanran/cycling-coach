@@ -2,8 +2,8 @@
 
 > 把公路车训练从"经验"升级为"数据 + 智能"。
 
-![Version](https://img.shields.io/badge/version-v0.7.6-blue.svg)
-![Status](https://img.shields.io/badge/status-Foundation%201.0-green.svg)
+![Version](https://img.shields.io/badge/version-v0.7.8-blue.svg)
+![Status](https://img.shields.io/badge/status-Foundation%201.0%20%2B%20Bump-green.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![React](https://img.shields.io/badge/react-18-61dafb)
 ![License: Dual (MIT + KB Restricted)](https://img.shields.io/badge/license-Dual%20(MIT%20%2B%20KB%20Restricted)-blue)
@@ -15,9 +15,9 @@
 >
 > 训练百科内容来源: **潘震(公路车教练)**, 仅供本地 RAG 检索, 禁止再分发/衍生/商用
 
-## 当前版本: **V0.7.6 Foundation 1.0**
+## 当前版本: **V0.7.8 Foundation 1.0 (版本号统一)**
 
-V0.7.6 = **"上大家伙前的地基"**: 给后续自研 LLM 思维扩散器 + 训练回归模型铺路, 全部 8 项 P0 改造无破坏性收口。
+V0.7.8 = **"上大家伙前的地基"**: 给后续自研 LLM 思维扩散器 + 训练回归模型铺路, 全部 8 项 P0 改造无破坏性收口。
 
 ### V0.7.x 阶段一览
 
@@ -26,7 +26,7 @@ V0.7.6 = **"上大家伙前的地基"**: 给后续自研 LLM 思维扩散器 + �
 | V0.7.5 | HRV / Phase / Trends / AI Coach / Reports / Sync / Diary | ✅ |
 | V0.7.5.1-5.8 | KB 精准 + P0/P1 修复 + 性能 + UX 批量 (39/40 报告项) | ✅ |
 | V0.7.5.9+10 | 比赛战术规划 (后端 10 端点 + AI 流式 + 路书 + 前端 RaceTacticsPage) | ✅ |
-| **V0.7.6** | **Foundation 1.0**: chat 持久化 + ML 骨架 + WAL + 性能 + 优雅关闭 | ✅ |
+| **V0.7.8** | **Foundation 1.0**: chat 持久化 + ML 骨架 + WAL + 性能 + 优雅关闭 | ✅ |
 
 ## 🎯 核心能力
 
@@ -40,12 +40,12 @@ V0.7.6 = **"上大家伙前的地基"**: 给后续自研 LLM 思维扩散器 + �
 
 ### 🤖 AI 教练
 - **流式对话 (SSE)**: 6 块上下文 (athlete / pmc / acwr / rpe_7d / phase / ftp) + RAG 知识库自动 top-3
-- **思维树持久化** (V0.7.6): `chat_sessions` + `chat_messages` (含 parent_id / node_path / score, 给思维扩散器预留)
+- **思维树持久化** (V0.7.8): `chat_sessions` + `chat_messages` (含 parent_id / node_path / score, 给思维扩散器预留)
 - **AI 报告生成**: 单活动深度解读 (结构化 4 段: 总评/亮点/待改进/下一步)
 - **比赛战术 AI** (V0.7.5.9): 上传路书 PDF + OCR + 多轮对话 + 流式策略建议
 - **训练日记模板** (V0.7.4.2): 训练感受/心情/睡眠/天气/痛点
 
-### 🧠 ML 推理 (V0.7.6 新)
+### 🧠 ML 推理 (V0.7.8 新)
 - **模型注册表**: `core/ml/registry.py` 统一加载 joblib / onnx / torch / mock
 - **特征工程**: 12 维起步 (7 PMC + 5 活动)
 - **FTP 预测端点**: `POST /api/ml/predict/ftp` (无模型时降级 MockFTPModel)
@@ -66,7 +66,7 @@ V0.7.6 = **"上大家伙前的地基"**: 给后续自研 LLM 思维扩散器 + �
 - 7 种比赛类型 × 3 优先级 (A/B/C)
 - AI prompt: 比赛信息 + 运动员上下文 + 路书 OCR + KB 检索
 
-### 🛠 工程能力 (V0.7.6 增强)
+### 🛠 工程能力 (V0.7.8 增强)
 - **SQLite WAL** + busy_timeout 5000ms (多任务并发不撞锁)
 - **关键索引补齐**: `ix_activities_tss` / `ix_activities_normalized_power` / `ix_act_athlete_start` / `ix_daily_metrics_athlete_date`
 - **samples_json defer**: 单活动 1MB 字段不再吃全表内存
@@ -121,7 +121,7 @@ macOS / Linux:
                        │ HTTP (Vite 代理 → :8765)
                        ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  Python Sidecar (FastAPI :8765)  · V0.7.6                    │
+│  Python Sidecar (FastAPI :8765)  · V0.7.8                    │
 │  16 张表 · 107 paths / 126 methods · 63 tests                 │
 │  ┌───────────────────────────────────────────────────────┐   │
 │  │  业务核心: FIT 解析 → 30+ 指标 → PMC/ACWR/HRV/CP/周期  │   │
@@ -149,7 +149,7 @@ macOS / Linux:
 | FIT 解析 | fitparse + 自研 fit_parser / tcx_parser / csv_parser |
 | 指标 | NumPy / SciPy / Pandas (30+ 算法) |
 | LLM | minimax M3 / OpenAI 兼容协议 / Mock 兜底 |
-| **ML 推理** | **scikit-learn (joblib) / ONNX (onnxruntime) / TorchScript** (V0.7.6 新) |
+| **ML 推理** | **scikit-learn (joblib) / ONNX (onnxruntime) / TorchScript** (V0.7.8 新) |
 
 ## 端点概览 (21 模块 / 107 paths / 126 methods)
 
@@ -157,8 +157,8 @@ macOS / Linux:
 |---|---|---|
 | `activities` | 11 | 上传 / 详情 / 报告 / 功率曲线 / 区间 / W'bal / CP 估算 / 解耦 / RPE |
 | `kb` | 12 | 知识库分类 / 文档 / 搜索 / 附件 / 导入状态 |
-| `chat` | 4 | 通用 chat 持久化 (含思维树) — V0.7.6 新 |
-| `ml` | 5 | ML 推理 + 模型注册/激活 — V0.7.6 新 |
+| `chat` | 4 | 通用 chat 持久化 (含思维树) — V0.7.8 新 |
+| `ml` | 5 | ML 推理 + 模型注册/激活 — V0.7.8 新 |
 | `coach` | 1 | AI 教练流式对话 (SSE) |
 | `race-tactics` | 7 | 比赛战术会话 + 路书 + 消息 + AI 建议 |
 | `workouts` | 8 | 课程 CRUD + AI 排课 + 标签 + 目标 + 导出 |
@@ -172,10 +172,10 @@ macOS / Linux:
 | `insights` | 2 | 今日洞察 / 周报 |
 | `diary` | 3 | 训练日记 CRUD + 模板 |
 | `recommendations` | 2 | 今日推荐 / Readiness 评分 |
-| `sync` | 7 | Strava OAuth (V0.7.4 框架, 实际联通 V0.7.6+) |
+| `sync` | 7 | Strava OAuth (V0.7.4 框架, 实际联通 V0.7.8+) |
 | `dashboard` / `athlete` / `reports` / `health` / `diagnose` / `version` | 各 1-2 | 总览 / 画像 / 周报 / 健康检查 / 自检 / 版本 |
 
-## 目录结构 (V0.7.6)
+## 目录结构 (V0.7.8)
 
 ```
 cycling-coach/
@@ -190,21 +190,21 @@ cycling-coach/
 │   │   ├── profile/                      # 运动员画像
 │   │   ├── pmc.py / periodization.py     # 训练负荷 + 周期化
 │   │   ├── kb_importer.py                # 知识库增量导入
-│   │   └── ml/                           # 🆕 V0.7.6 ML 推理 (registry/feature_pipe/_mock)
+│   │   └── ml/                           # 🆕 V0.7.8 ML 推理 (registry/feature_pipe/_mock)
 │   ├── data/
 │   │   ├── parsers/                      # FIT / TCX / CSV 解析 → 统一 Pydantic schema
 │   │   └── sqlite/                       # 16 张表 ORM + 自动迁移 + WAL
 │   ├── ai/
-│   │   ├── m3_client.py                  # LLM transport (262 行, V0.7.6 瘦身 40%)
+│   │   ├── m3_client.py                  # LLM transport (262 行, V0.7.8 瘦身 40%)
 │   │   ├── mock_engine.py                # 🆕 抽离的 mock 业务逻辑 (214 行)
 │   │   ├── orchestrator.py               # 6 块上下文 + RAG + 流式
 │   │   ├── prompts/                      # chat / analyze / style prompt 模板
 │   │   └── tools/analyze_activity.py     # 活动分析工具
 │   ├── api/
 │   │   ├── main.py                       # FastAPI 入口 + 中间件
-│   │   └── routers/                      # 22 个 REST 模块 (含 V0.7.6 chat/ml)
+│   │   └── routers/                      # 22 个 REST 模块 (含 V0.7.8 chat/ml)
 │   ├── config/                           # 配置 + 日志
-│   └── __main__.py                       # 🆕 V0.7.6 优雅关闭 (SIGTERM + 10s timeout)
+│   └── __main__.py                       # 🆕 V0.7.8 优雅关闭 (SIGTERM + 10s timeout)
 │
 ├── apps/
 │   ├── web/                              # ✅ Web 前端 (17 页面 + 26 组件)
@@ -219,13 +219,13 @@ cycling-coach/
 └── workspace/                            # 运行时数据 (gitignore)
     ├── input/ / output/
     ├── cycling_coach.sqlite              # 主库 (WAL 模式)
-    └── models/                           # 🆕 V0.7.6 ML 模型仓库
+    └── models/                           # 🆕 V0.7.8 ML 模型仓库
 ```
 
 **完整架构**: 见 `docs/ARCHITECTURE.md`
 **路线图**: 见 `docs/ROADMAP.md`
 
-## V0.7.6 Foundation 1.0 详细
+## V0.7.8 Foundation 1.0 详细
 
 ### 改动 (8 项 P0 全部收口)
 
@@ -240,7 +240,7 @@ cycling-coach/
 
 ### 数字对比
 
-| 指标 | V0.7.5.10 | V0.7.6 |
+| 指标 | V0.7.5.10 | V0.7.8 |
 |---|---|---|
 | 路由 | 98 / 115 | **107 / 126** |
 | 数据库表 | 12 | **16** |
@@ -250,7 +250,7 @@ cycling-coach/
 | 索引 `ix_activities_tss` | 缺 | **✓** |
 | ML 依赖 | 0 | **joblib + onnxruntime** |
 
-完整报告: `V0.7.6_REPORT.md`
+完整报告: `V0.7.8_REPORT.md`
 
 ## Mock 模式
 
@@ -265,7 +265,7 @@ M3_MODEL=minimax/minimax-m3
 
 ML 推理无注册模型时, 自动降级 `MockFTPModel` (规则预测, 不依赖外部资源)。
 
-## ML 推理示例 (V0.7.6)
+## ML 推理示例 (V0.7.8)
 
 注册模型:
 ```bash
@@ -305,7 +305,7 @@ curl -X POST http://localhost:8765/api/ml/predict/ftp \
 
 ## 安装 / 卸载
 
-详见 `INSTALL_V0.7.5.10.md` (V0.7.6 是后端 only, 启动方式不变)
+详见 `INSTALL_V0.7.5.10.md` (V0.7.8 是后端 only, 启动方式不变)
 
 ```cmd
 :: Windows 全新安装

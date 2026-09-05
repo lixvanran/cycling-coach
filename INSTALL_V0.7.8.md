@@ -1,6 +1,6 @@
-# Cycling Coach V0.7.6 Foundation 1.0 安装指南
+# Cycling Coach V0.7.8 Foundation 1.0 安装指南
 
-> **V0.7.6 是后端 only 更新**, 启动方式跟 V0.7.5.x 一样: 双击 `tools\start.bat` → 浏览器开 `http://localhost:1420`
+> **V0.7.8 是后端 only 更新**, 启动方式跟 V0.7.5.x 一样: 双击 `tools\start.bat` → 浏览器开 `http://localhost:1420`
 > **改动**: 4 张新表 + WAL + 索引 + ML 推理基础设施 + chat 持久化 + 性能 + 优雅关闭
 > **新增依赖**: `joblib>=1.3,<2.0` + `onnxruntime>=1.16,<2.0` (启动器自动装)
 
@@ -16,7 +16,7 @@ tools\start.bat
 ## 方案 B: 全新安装 (无 git)
 
 1. 下载这个 zip:
-   - `cycling-coach-v0.7.6-foundation-1.0.zip` (162 MB, 含源码 + 训练百科)
+   - `cycling-coach-v0.7.8.zip` (162 MB, 含源码 + 训练百科)
 
 2. 解压:
    ```cmd
@@ -40,13 +40,13 @@ tools\start.bat
 
 - 首次启动: **3-5 分钟** (装依赖 + 编译前端 + 导入 KB)
 - 后续启动: **30-60 秒** (依赖已装)
-- V0.7.6 启动增量: **+0.5s** (WAL 检测 + 索引检查)
+- V0.7.8 启动增量: **+0.5s** (WAL 检测 + 索引检查)
 
 ## 端口冲突
 
 跟 V0.7.5.x 一样: 8765 (后端) / 1420 (前端), 见 README "常见问题"
 
-## V0.7.6 新增端点
+## V0.7.8 新增端点
 
 - 6 个 chat 端点 (`/api/chat/*`)
 - 5 个 ML 端点 (`/api/ml/*`)
@@ -58,7 +58,7 @@ tools\start.bat
 启动后:
 ```bash
 curl http://localhost:8765/api/diagnose
-# 期望: {"ok": true, "version": "0.7.5.10", ...}  (version 字段下一版升 0.7.6)
+# 期望: {"ok": true, "version": "0.7.8", ...}  (version 字段下一版升 0.7.6)
 
 curl http://localhost:8765/api/chat/sessions
 # 期望: []
@@ -72,4 +72,4 @@ curl http://localhost:8765/api/ml/models
 - **ImportError: joblib** → 装 `pip install joblib`
 - **ImportError: onnxruntime** → 装 `pip install onnxruntime` (装失败不影响 mock)
 - **journal_mode 不是 wal** → 删 `workspace/cycling_coach.sqlite*` 重建, 或 `sqlite3 workspace/cycling_coach.sqlite "PRAGMA journal_mode=WAL"`
-- **杀进程丢 SSE 流** → V0.7.6 已修, 用 `tools\stop.bat` 走 SIGTERM 优雅关闭
+- **杀进程丢 SSE 流** → V0.7.8 已修, 用 `tools\stop.bat` 走 SIGTERM 优雅关闭

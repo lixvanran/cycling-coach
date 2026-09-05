@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 自动洞察告警
 - AI 训练建议生成
 
-## [V0.7.6] - 2026-08-31 — Foundation 1.0 (上"大家伙"前的地基)
+## [V0.7.8] - 2026-08-31 — Foundation 1.0 (上"大家伙"前的地基)
 
 ### Added / 新增
 - **chat 持久化**: 2 张新表 `chat_sessions` / `chat_messages` (含思维树字段 parent_id / node_path / thought_kind / score)
@@ -45,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **tools/stop.py**: SIGTERM → 8s 后 SIGKILL fallback (Windows 用 taskkill 不带 /F)
 - **修了 _ALLOWED_TABLES 死代码** (V0.7.5.4 DEV-19 引用了但没定义)
 - **m3_client.py**: 436 → 262 行 (-40%)
-- **README.md / INSTALL**: V0.6.1 → V0.7.6
+- **README.md / INSTALL**: V0.6.1 → V0.7.8
 
 ### Performance / 性能
 - 单活动 1MB 字段不再吃全表内存 (defer)
@@ -89,7 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **训练趋势** TrendsPage (训练量 / 区间分布 / 指标 / 同比)
 - **AI 教练** 重构 (orchestrator 6 块上下文 + RAG top-3 注入 + SSE 流式)
 - **周报** ReportsPage (训练量 / 强度 / 关键事件)
-- **同步框架** Strava OAuth (UI 框架到位, 实际联通 V0.7.6+)
+- **同步框架** Strava OAuth (UI 框架到位, 实际联通 V0.7.8+)
 - **训练日记** (V0.7.4.2 合并到此版): 训练感受/心情/睡眠/天气/痛点
 - **比赛准备** Race Prep (training state / TSB target / 比赛类型)
 
