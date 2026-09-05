@@ -6,6 +6,7 @@
 // - 紧凑行 + 状态色(基于 TSS)
 // - 排序 + 分页
 import { useEffect, useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Search,
   Filter,
@@ -27,7 +28,6 @@ import {
 import clsx from "clsx";
 import { api } from "../lib/api";
 import type { ActivitySummary } from "../lib/types";
-import { useAppStore } from "../store/useAppStore";
 import { RPEBadge } from "../components/RPEEditor";
 
 // 排序选项
@@ -66,8 +66,7 @@ function fmtDate(s: string) {
 }
 
 export function ActivityList() {
-  const setView = useAppStore((s) => s.setView);
-  const setSelectedActivity = useAppStore((s) => s.setSelectedActivity);
+  const navigate = useNavigate();
 
   // 过滤状态
   const [filters, setFilters] = useState<{
@@ -175,7 +174,7 @@ export function ActivityList() {
           </span>
         </div>
         <button
-          onClick={() => setView("import")}
+          onClick={() => navigate("/data/import")}
           className="px-3 py-1.5 bg-accent text-bg-base rounded-lg text-sm font-medium flex items-center gap-1.5"
         >
           <Zap className="w-3.5 h-3.5" />
@@ -294,8 +293,7 @@ export function ActivityList() {
                 <div
                   key={a.id}
                   onClick={() => {
-                    setSelectedActivity(a.id);
-                    setView("activity-detail");
+                    navigate(`/training/activities/${a.id}`);
                   }}
                   className="grid grid-cols-12 gap-2 px-3 py-2.5 border-b border-border/50 text-xs hover:bg-bg-base cursor-pointer transition items-center"
                 >

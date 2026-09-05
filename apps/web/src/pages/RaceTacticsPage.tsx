@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../lib/api";
-import { useAppStore } from "../store/useAppStore";
 import { useToast } from "../components/Toast";
 import type {
   RaceTacticsSession, RaceTacticsMessage, RaceTacticsAttachment,
@@ -34,7 +33,6 @@ function formatSize(b: number) {
 
 export function RaceTacticsPage() {
   const toast = useToast();
-  const setView = useAppStore((s) => s.setView);
   const [sessions, setSessions] = useState<RaceTacticsSession[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [session, setSession] = useState<RaceTacticsSession | null>(null);

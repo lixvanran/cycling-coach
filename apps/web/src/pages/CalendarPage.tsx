@@ -17,7 +17,7 @@ import { useToast } from "../components/Toast";
 import type {
   CalendarMonth, PlanPeriod, PlannedWorkout, PlannedStatus, WorkoutIntent, ActualActivity, ActivitySummary,
 } from "../lib/types";
-import { useAppStore } from "../store/useAppStore";
+import { useNavigate } from "react-router-dom";
 
 // 训练意图 → 颜色 (TP 风格, 更饱和)
 const INTENT_COLORS: Record<WorkoutIntent, { bg: string; border: string; text: string; light: string; ring: string }> = {
@@ -77,8 +77,7 @@ export function CalendarPage() {
   const [draggingPlannedId, setDraggingPlannedId] = useState<number | null>(null);
   const [dropDate, setDropDate] = useState<string | null>(null);
 
-  const setView = useAppStore((s) => s.setView);
-  const setSelectedActivity = useAppStore((s) => s.setSelectedActivity);
+  const navigate = useNavigate();
 
   const refresh = async () => {
     setLoading(true);
@@ -317,8 +316,7 @@ export function CalendarPage() {
               onClose={() => setPopover(null)}
               onSaved={() => { setPopover(null); refresh(); }}
               onViewActivity={(actId) => {
-                setSelectedActivity(actId);
-                setView("activity-detail");
+                navigate(`/training/activities/${actId}`);
               }}
             />
           )}
@@ -327,8 +325,7 @@ export function CalendarPage() {
               activities={popover.activities}
               onClose={() => setPopover(null)}
               onViewActivity={(actId) => {
-                setSelectedActivity(actId);
-                setView("activity-detail");
+                navigate(`/training/activities/${actId}`);
               }}
             />
           )}

@@ -21,7 +21,7 @@ import type {
   GoalDef,
   WorkoutStep,
 } from "../lib/types";
-import { useAppStore } from "../store/useAppStore";
+import { useNavigate } from "react-router-dom";
 
 // intent/goals 配色(TP 风)
 const GOAL_COLOR: Record<
@@ -92,7 +92,7 @@ function stepSummary(s: WorkoutStep): string {
 }
 
 export function LibraryPage() {
-  const setView = useAppStore((s) => s.setView);
+  const navigate = useNavigate();
 
   const [q, setQ] = useState("");
   const [goal, setGoal] = useState<WorkoutGoal | "">("");
@@ -240,7 +240,7 @@ export function LibraryPage() {
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => setView("builder")}
+                onClick={() => navigate("/plan")}
                 className="px-4 py-2 bg-accent text-bg-base rounded-lg font-medium hover:opacity-90"
               >
                 + 新建课程

@@ -1,9 +1,9 @@
 // 活动对比 (V0.6 GoldenCheetah 对标)
 // 流程: 1) 多选活动 (checkbox 列表) 2) 调 compare API 3) 显示指标表 + MMP 叠加图
 import { useEffect, useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { GitCompare, Loader2, AlertCircle, Check, X } from "lucide-react";
 import { api } from "../lib/api";
-import { useAppStore } from "../store/useAppStore";
 import {
   LineChart,
   Line,
@@ -35,8 +35,7 @@ interface CompareActivity {
 }
 
 export function ComparePage() {
-  const setView = useAppStore((s) => s.setView);
-  const setSelectedId = useAppStore((s) => s.setSelectedActivity);
+  const navigate = useNavigate();
 
   const [allActivities, setAllActivities] = useState<any[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -204,8 +203,7 @@ export function ComparePage() {
                         className="text-left font-medium py-2 px-2 cursor-pointer hover:bg-slate-50"
                         style={{ color: COLORS[i % COLORS.length] }}
                         onClick={() => {
-                          setSelectedId(a.id);
-                          setView("activity-detail");
+                          navigate(`/training/activities/${a.id}`);
                         }}
                       >
                         <div className="truncate max-w-[140px]">{a.name}</div>

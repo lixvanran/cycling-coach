@@ -1,5 +1,6 @@
-// 单次训练详情 — 模仿 TP 风格布局
+// 单次训练详情 — 模仿 TP 风格布局 (V0.8.0: URL :id 参数)
 import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   RefreshCw,
@@ -11,7 +12,6 @@ import {
 import { api } from "../lib/api";
 import { useToast } from "../components/Toast";
 import type { ActivityDetail as ActivityDetailT } from "../lib/types";
-import { useAppStore } from "../store/useAppStore";
 import { MetricCard } from "../components/MetricCard";
 import { PowerCurveChart } from "../components/PowerCurveChart";
 import { PowerZoneChart } from "../components/PowerZoneChart";
@@ -22,11 +22,13 @@ import { ElevationProfileChart } from "../components/ElevationProfileChart";
 import { DecouplingCard } from "../components/DecouplingCard";
 import { GPSMap } from "../components/GPSMap";
 import { RPEEditor, RPEBadge } from "../components/RPEEditor";
+import { LoadingSkeleton } from "../components/common";
 
 export function ActivityDetail() {
   const toast = useToast();
-  const selectedId = useAppStore((s) => s.selectedActivityId);
-  const setView = useAppStore((s) => s.setView);
+  const navigate = useNavigate();
+  const { id: idParam } = useParams<{ id: string }>();
+  const selectedId = idParam ? Number(idParam) : null;
   const [activity, setActivity] = useState<ActivityDetailT | null>(null);
   const [athlete, setAthlete] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -53,7 +55,7 @@ export function ActivityDetail() {
   };
 
   useEffect(() => {
-    if (!selectedId) return;
+    if (!selectedId || Number.isNaN(selectedId)) return;
     setLoading(true);
     Promise.all([
       api.getActivity(selectedId),
@@ -76,7 +78,7 @@ export function ActivityDetail() {
       .finally(() => setLoading(false));
   }, [selectedId]);
 
-  if (!selectedId) {
+  if (!selectedId || Number.isNaN(selectedId)) {
     return (
       <div className="h-full flex items-center justify-center text-text-muted">
         未选择训练
@@ -85,7 +87,7 @@ export function ActivityDetail() {
   }
 
   if (loading || !activity) {
-    return <ActivityDetailSkeleton />;
+    return <LoadingSkeleton variant="detail" />;
   }
 
   const m = activity.metrics;
@@ -125,7 +127,7 @@ export function ActivityDetail() {
     <div className="overflow-y-auto h-full">
       {/* 顶部导航 */}
       <div className="sticky top-0 z-10 bg-bg-base/80 backdrop-blur-glass border-b border-border px-6 py-3 flex items-center gap-3">
-        <button onClick={() => setView("activities")} className="btn-ghost p-1.5">
+        <button onClick={() => navigate("/training/activities")} className="btn-ghost p-1.5">
           <ArrowLeft size={16} />
         </button>
         <div>
@@ -515,24 +517,7 @@ export function ActivityDetail() {
 
 // V0.7.5.5 UX-9: AI 报告生成计时 (让用户知道等了多久)
 
-// V0.7.5.5 UX-11: loading skeleton (灰块闪烁, 避免白屏)
-function ActivityDetailSkeleton() {
-  return (
-    <div className="p-6 space-y-4 animate-pulse">
-      <div className="h-7 bg-bg-elevated rounded w-1/3" />
-      <div className="grid grid-cols-4 gap-3">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-20 bg-bg-elevated rounded" />
-        ))}
-      </div>
-      <div className="h-64 bg-bg-elevated rounded" />
-      <div className="grid grid-cols-2 gap-3">
-        <div className="h-40 bg-bg-elevated rounded" />
-        <div className="h-40 bg-bg-elevated rounded" />
-      </div>
-    </div>
-  );
-}
+// V0.7.5.5 UX-11: loading skeleton 已抽到 components/common/LoadingSkeleton.tsx
 
 function ElapsedCounter({ active }: { active: boolean }) {
   const [elapsed, setElapsed] = useState(0);

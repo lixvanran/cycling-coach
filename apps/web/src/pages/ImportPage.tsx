@@ -1,20 +1,19 @@
 // 导入页(FIT 上传 + Mock 数据生成)
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Upload, Zap, FileUp, Check } from "lucide-react";
 import { api } from "../lib/api";
 import { useToast } from "../components/Toast";
 import type { MockProfile } from "../lib/types";
-import { useAppStore } from "../store/useAppStore";
 
 export function ImportPage() {
+  const navigate = useNavigate();
   const [progress, setProgress] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ id: number; name?: string } | null>(null);
   const [mockProfiles, setMockProfiles] = useState<MockProfile[]>([]);
   const [generating, setGenerating] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const setView = useAppStore((s) => s.setView);
-  const setSelected = useAppStore((s) => s.setSelectedActivity);
 
   useEffect(() => {
     api.listMockProfiles().then((d) => setMockProfiles(d.profiles));
@@ -51,9 +50,8 @@ export function ImportPage() {
     try {
       const r = await api.generateMock(key);
       setUploadResult({ id: r.id, name: r.name });
-      // 自动跳转详情页
-      setSelected(r.id);
-      setView("activity-detail");
+      // V0.8.0: 跳转到详情页
+      navigate(`/training/activities/${r.id}`);
     } catch (e) {
       toast.error("生成失败:" + (e as Error).message);
     } finally {
@@ -115,10 +113,7 @@ export function ImportPage() {
                 {uploadResult.name || "上传成功"}
               </span>
               <button
-                onClick={() => {
-                  setSelected(uploadResult.id);
-                  setView("activity-detail");
-                }}
+                onClick={() => navigate(`/training/activities/${uploadResult.id}`)}
                 className="ml-auto btn-ghost text-accent-primary"
               >
                 查看分析 →

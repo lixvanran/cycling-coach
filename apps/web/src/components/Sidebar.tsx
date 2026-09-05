@@ -1,5 +1,6 @@
-// 左侧导航栏(TrainingPeaks 风格)
+// 左侧导航栏(TrainingPeaks 风格) — V0.8.0 URL 路由版
 import { useEffect, useState } from "react";
+import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Trophy,
@@ -13,7 +14,6 @@ import {
   BookOpen,
   Hammer,
   Library,
-  GitCompare,
   TrendingUp,
   Heart,
   Layers,
@@ -21,33 +21,36 @@ import {
   Gauge,
   type LucideIcon,
 } from "lucide-react";
-import { useAppStore, type View } from "../store/useAppStore";
 import { api } from "../lib/api";
 import clsx from "clsx";
 
-const items: Array<{ view: View; label: string; icon: LucideIcon }> = [
-  { view: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { view: "calendar", label: "日历", icon: CalendarIcon },
-  { view: "library", label: "课程库", icon: BookOpen },
-  { view: "builder", label: "课程编排", icon: Hammer },
-  { view: "kb", label: "知识库", icon: Library },
-  { view: "activities", label: "训练", icon: Bike },
-  { view: "compare", label: "对比", icon: GitCompare },
-  { view: "trends", label: "趋势", icon: TrendingUp },
-  { view: "insights", label: "训练洞察", icon: Heart },
-  { view: "phases", label: "周期化", icon: Layers },
-  { view: "diary", label: "训练日记", icon: NotebookPen },
-  { view: "race-tactics", label: "比赛战术", icon: Trophy },
-  { view: "ftp-test", label: "FTP 测试", icon: Gauge },
-  { view: "chat", label: "AI 教练", icon: MessageCircle },
-  { view: "import", label: "导入", icon: Upload },
-  { view: "profile", label: "个人画像", icon: User },
+// V0.8.0 路由版 — 每项 = 路径前缀, 用于 NavLink active 判断
+interface NavItem {
+  to: string;             // 路径
+  label: string;
+  icon: LucideIcon;
+}
+
+const items: NavItem[] = [
+  { to: "/training", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/training/activities", label: "训练", icon: Bike },
+  { to: "/training/trends", label: "趋势", icon: TrendingUp },
+  { to: "/training/diary", label: "训练日记", icon: NotebookPen },
+  { to: "/ai/chat", label: "AI 教练", icon: MessageCircle },
+  { to: "/ai/race-tactics", label: "比赛战术", icon: Trophy },
+  { to: "/ai/hrv", label: "训练洞察", icon: Heart },
+  { to: "/plan", label: "计划", icon: Hammer },
+  { to: "/plan/calendar", label: "日历", icon: CalendarIcon },
+  { to: "/plan/workouts", label: "课程库", icon: BookOpen },
+  { to: "/plan/phases", label: "周期化", icon: Layers },
+  { to: "/data/import", label: "导入", icon: Upload },
+  { to: "/data/knowledge", label: "知识库", icon: Library },
+  { to: "/data/ftp-test", label: "FTP 测试", icon: Gauge },
+  { to: "/settings", label: "个人画像", icon: User },
 ];
 
 export function Sidebar() {
-  const view = useAppStore((s) => s.view);
-  const setView = useAppStore((s) => s.setView);
-  const setSelectedKbCategory = useAppStore((s) => s.setSelectedKbCategory);
+  const navigate = useNavigate();
   // V0.7.5.1: KB 二级菜单 hover 状态 + 顶级分类
   const [kbHover, setKbHover] = useState(false);
   const [kbCats, setKbCats] = useState<{ name: string; path: string; doc_count: number }[]>([]);
@@ -84,10 +87,10 @@ export function Sidebar() {
       <nav className="flex-1 px-2 py-3 space-y-0.5">
         {items.map((item) => {
           const Icon = item.icon;
-          const isKb = item.view === "kb";
+          const isKb = item.to === "/data/knowledge";
           return (
             <div
-              key={item.view}
+              key={item.to}
               className={clsx(
                 "relative",
                 isKb && "group"
@@ -95,14 +98,17 @@ export function Sidebar() {
               onMouseEnter={() => isKb && setKbHover(true)}
               onMouseLeave={() => isKb && setKbHover(false)}
             >
-              <div
-                className={clsx("nav-link cursor-pointer", view === item.view && "active")}
-                onClick={() => setView(item.view)}
+              <NavLink
+                to={item.to}
+                end={item.to === "/training" || item.to === "/plan" || item.to === "/settings" || item.to === "/ai/chat"}
+                className={({ isActive }) =>
+                  clsx("nav-link", isActive && "active")
+                }
               >
                 <Icon size={16} />
                 <span className="flex-1">{item.label}</span>
                 {isKb && <ChevronRight size={12} className="opacity-50" />}
-              </div>
+              </NavLink>
               {/* V0.7.5.1: KB hover 二级菜单 — 8 个顶级分类 */}
               {isKb && kbHover && kbCats.length > 0 && (
                 <div
@@ -114,7 +120,7 @@ export function Sidebar() {
                     知识库分类
                   </div>
                   <button
-                    onClick={() => { setSelectedKbCategory(null); setView("kb"); }}
+                    onClick={() => navigate("/data/knowledge")}
                     className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-bg-elevated transition-colors"
                   >
                     <span className="text-text-primary font-medium flex-1">📚 全部</span>
@@ -126,7 +132,7 @@ export function Sidebar() {
                   {kbCats.map((cat) => (
                     <button
                       key={cat.path}
-                      onClick={() => { setSelectedKbCategory(cat.path); setView("kb-category"); }}
+                      onClick={() => navigate(`/data/knowledge?category=${encodeURIComponent(cat.path)}`)}
                       className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-bg-elevated hover:text-accent transition-colors group/cat"
                     >
                       <span className="text-text-primary group-hover/cat:text-accent font-medium flex-1 truncate">

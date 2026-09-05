@@ -15,9 +15,9 @@ import {
   Hash, Heart, Gauge, BookOpen, Wand2,
 } from "lucide-react";
 import clsx from "clsx";
+import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import type { Workout, WorkoutGoal, WorkoutStep, StepKind } from "../lib/types";
-import { useAppStore } from "../store/useAppStore";
 
 // =============== 类型 ===============
 type Block =
@@ -164,7 +164,7 @@ function fmtBigTime(s: number): string {
 
 // =============== 主体 ===============
 export function BuilderPage() {
-  const setView = useAppStore((s) => s.setView);
+  const navigate = useNavigate();
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -611,7 +611,7 @@ export function BuilderPage() {
             </span>
           )}
           <div className="w-px h-6 bg-border mx-1" />
-          <button onClick={() => setView("library")} className="px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary">
+          <button onClick={() => navigate("/plan/workouts")} className="px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary">
             ← 课程库
           </button>
           <button onClick={resetForm} className="px-3 py-1.5 bg-bg-elevated border border-border rounded-md text-sm hover:border-accent/50">

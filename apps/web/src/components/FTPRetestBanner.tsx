@@ -7,8 +7,8 @@
 // - 4-8 周但 14d IF 持续高
 
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Gauge, ArrowRight, X } from "lucide-react";
-import { useAppStore } from "../store/useAppStore";
 
 interface FTPRecommend {
   days_since: number | null;
@@ -37,9 +37,9 @@ const METHOD_LABEL: Record<string, string> = {
 };
 
 export function FTPRetestBanner() {
+  const navigate = useNavigate();
   const [data, setData] = useState<FTPRecommend | null>(null);
   const [dismissed, setDismissed] = useState(false);
-  const setView = useAppStore((s) => s.setView);
 
   useEffect(() => {
     fetch("/api/ftp/recommend")
@@ -82,7 +82,7 @@ export function FTPRetestBanner() {
           )}
           <div className="flex items-center gap-2 mt-2">
             <button
-              onClick={() => setView("ftp-test")}
+              onClick={() => navigate("/data/ftp-test")}
               className="px-3 py-1.5 text-xs font-medium rounded bg-accent-primary text-white hover:opacity-90 transition flex items-center gap-1.5"
             >
               去测试

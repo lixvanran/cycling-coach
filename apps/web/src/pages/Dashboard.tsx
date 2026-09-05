@@ -1,5 +1,6 @@
 // Dashboard 主页 — V0.3 加 PMC + 今日状态卡
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Activity, Clock, Flame, Mountain, RefreshCw } from "lucide-react";
 import { MetricCard } from "../components/MetricCard";
 import { PMCChart } from "../components/PMCChart";
@@ -11,11 +12,12 @@ import type {
   PMCSeries,
   PMCToday,
 } from "../lib/types";
-import { useAppStore } from "../store/useAppStore";
 import { InsightsBanner, InsightsHealthCard } from "../components/InsightsBanner";
 import { DailyRecommendationCard } from "../components/DailyRecommendationCard";
 import { FTPRetestBanner } from "../components/FTPRetestBanner";
 import { FTPPredictionCard } from "../components/FTPPredictionCard";
+import { EmptyState } from "../components/common";
+import { useAthleteStore } from "../store/athlete";
 
 const RANGE_OPTIONS = [
   { value: 30, label: "30 天" },
@@ -25,6 +27,8 @@ const RANGE_OPTIONS = [
 ];
 
 export function Dashboard() {
+  const navigate = useNavigate();
+  const setAthleteProfile = useAthleteStore((s) => s.setAthlete);
   const [overview, setOverview] = useState<DashboardOverview | null>(null);
   const [athlete, setAthlete] = useState<Athlete | null>(null);
   const [pmc, setPMC] = useState<PMCSeries | null>(null);
@@ -32,7 +36,6 @@ export function Dashboard() {
   const [pmcDays, setPmcDays] = useState(90);
   const [rebuilding, setRebuilding] = useState(false);
   const [loading, setLoading] = useState(true);
-  const setView = useAppStore((s) => s.setView);
 
   const refresh = async () => {
     setLoading(true);
@@ -47,6 +50,8 @@ export function Dashboard() {
       setAthlete(a);
       setPMC(p);
       setPMCToday(pt);
+      // V0.8.0: 同步到 athlete store
+      setAthleteProfile(a ? { id: a.id, name: a.name, ftp: a.ftp, max_hr: a.max_hr, lthr: a.lthr, weight_kg: a.weight_kg, height_cm: a.height_cm } : null);
     } finally {
       setLoading(false);
     }
@@ -62,7 +67,18 @@ export function Dashboard() {
   }
 
   if (!overview || overview.total_activities === 0) {
-    return <EmptyState onImport={() => setView("import")} />;
+    return (
+      <EmptyState
+        icon={<Activity size={28} />}
+        title="还没有训练数据"
+        description="上传一个 FIT 文件,或者先生成一些示例训练看看效果。"
+        cta={
+          <button onClick={() => navigate("/data/import")} className="btn-primary">
+            开始训练 →
+          </button>
+        }
+      />
+    );
   }
 
   const handleRebuild = async () => {
@@ -135,9 +151,6 @@ export function Dashboard() {
         </div>
       </section>
 
-      {/* V0.8.0: FTP 预测卡(ML 模型推理) */}
-      <FTPPredictionCard />
-
       {/* V0.3:PMC 主图(全宽) */}
       <section className="panel p-5">
         <div className="flex items-center justify-between mb-3">
@@ -170,6 +183,11 @@ export function Dashboard() {
 
       {/* 训练洞察告警 (V0.7 新增) — 高严重度优先 */}
       <InsightsBanner />
+
+      {/* V0.8.0: FTP 预测卡 (调用 /api/ml/predict/ftp) */}
+      {athlete && (
+        <FTPPredictionCard athleteId={athlete.id} />
+      )}
 
       {/* FTP 复测提醒 (V0.7.1 补遗漏) — Gabbett 训练学建议 */}
       <FTPRetestBanner />
@@ -217,34 +235,15 @@ export function Dashboard() {
       <section>
         <h2 className="text-sm uppercase tracking-wider text-text-secondary mb-3">快速操作</h2>
         <div className="flex gap-3">
-          <button onClick={() => setView("import")} className="btn-primary">
+          <button onClick={() => navigate("/data/import")} className="btn-primary">
             <Activity size={14} />
             导入训练数据
           </button>
-          <button onClick={() => setView("activities")} className="btn-ghost">
+          <button onClick={() => navigate("/training/activities")} className="btn-ghost">
             查看所有训练
           </button>
         </div>
       </section>
-    </div>
-  );
-}
-
-function EmptyState({ onImport }: { onImport: () => void }) {
-  return (
-    <div className="h-full flex items-center justify-center p-6">
-      <div className="text-center max-w-md">
-        <div className="w-16 h-16 rounded-full bg-bg-elevated mx-auto mb-4 flex items-center justify-center">
-          <Activity size={28} className="text-text-muted" />
-        </div>
-        <h2 className="text-xl font-semibold text-text-primary mb-2">还没有训练数据</h2>
-        <p className="text-sm text-text-muted mb-6">
-          上传一个 FIT 文件,或者先生成一些示例训练看看效果。
-        </p>
-        <button onClick={onImport} className="btn-primary">
-          开始训练 →
-        </button>
-      </div>
     </div>
   );
 }
