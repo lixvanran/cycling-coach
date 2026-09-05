@@ -56,6 +56,15 @@ class Settings(BaseSettings):
     ml_use_onnx: bool = False              # 桌面模式 True(轻量 ONNX)
     ml_conformal_coverage: float = 0.8     # 80% 预测区间
 
+    # V0.8.0: multi-mind 集成 (HTTP 调独立进程, 不 import 代码)
+    # 跑: ./tools/start_multi_mind.sh (默认 :8766)
+    # 关: ./tools/stop_multi_mind.sh
+    # 同步: ./tools/sync_multi_mind.sh (拉 lixvanran/multi-mind 最新 main)
+    multi_mind_url: str = "http://127.0.0.1:8766"  # multi-mind HTTP 端点
+    multi_mind_pipeline: str = "insight_v2"        # 默认 pipeline (v0.3 旗舰)
+    multi_mind_timeout: float = 5.0                # 单次 /run 调用超时(秒)
+    multi_mind_fallback_to_rag: bool = True        # 不可达时降级到 mode=rag
+
     @property
     def is_mock(self) -> bool:
         """没有 API key 时进入 mock 模式(对齐 P 项目)"""
