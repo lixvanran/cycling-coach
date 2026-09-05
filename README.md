@@ -2,8 +2,8 @@
 
 > 把公路车训练从"经验"升级为"数据 + 智能"。
 
-![Version](https://img.shields.io/badge/version-v0.7.8-blue.svg)
-![Status](https://img.shields.io/badge/status-Foundation%201.0-green.svg)
+![Version](https://img.shields.io/badge/version-v0.8.0-blue.svg)
+![Status](https://img.shields.io/badge/status-Chat%20%2B%20ML%20%2B%20Architect-green.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![React](https://img.shields.io/badge/react-18-61dafb)
 ![License: Dual (MIT + KB Restricted)](https://img.shields.io/badge/license-Dual%20(MIT%20%2B%20KB%20Restricted)-blue)
@@ -15,9 +15,9 @@
 >
 > 训练百科内容来源: **潘震(公路车教练)**, 仅供本地 RAG 检索, 禁止再分发/衍生/商用
 
-## 当前版本: **V0.7.8 Foundation 1.0 (版本号统一)**
+## 当前版本: **V0.8.0**
 
-V0.7.8 = **Foundation 1.0**: chat 持久化 + ML 推理基础设施 + SQLite WAL + samples defer + 优雅关闭, 全部 8 项改造无破坏性收口。
+V0.8.0 = **战术规划接 multi-mind + FTP 真模型 + 架构整理**: Chat 拆 3 mode (rag/workflow/chat), 接入 lixvanran/multi-mind 思维扩散器 (6 stage pipeline), 接入 lixvanran/ftp-predictor 真实模型 (20 维特征 + Conformal 区间), 后端 service 化 + 异常统一, 前端路由分组 + store 拆分 + 17 页面懒加载。
 
 ### V0.7.x 阶段一览
 
@@ -26,7 +26,8 @@ V0.7.8 = **Foundation 1.0**: chat 持久化 + ML 推理基础设施 + SQLite WAL
 | V0.7.5 | HRV / Phase / Trends / AI Coach / Reports / Sync / Diary | ✓ |
 | V0.7.5.1-5.8 | KB 精准 + P0/P1 修复 + 性能 + UX 批量 (39/40 报告项) | ✓ |
 | V0.7.5.9+10 | 比赛战术规划 (后端 10 端点 + AI 流式 + 路书 + 前端 RaceTacticsPage) | ✓ |
-| **V0.7.8** | **Foundation 1.0**: chat 持久化 + ML 骨架 + WAL + 性能 + 优雅关闭 | ✓ |
+| V0.7.8 | Foundation 1.0: chat 持久化 + ML 骨架 + WAL + 性能 + 优雅关闭 | ✓ |
+| **V0.8.0** | **战术规划 + FTP 真模型 + 架构整理**: Chat 3 mode + multi-mind + ftp-predictor + 7 service + 路由分组 | ✓ |
 
 ## 主要功能
 
@@ -45,9 +46,12 @@ V0.7.8 = **Foundation 1.0**: chat 持久化 + ML 推理基础设施 + SQLite WAL
 - **比赛战术 AI** (V0.7.5.9): 上传路书 PDF + OCR + 多轮对话 + 流式策略建议
 - **训练日记模板** (V0.7.4.2): 训练感受/心情/睡眠/天气/痛点
 
-### ML 推理 (V0.7.8 新)
+### ML 推理 (V0.8.0 接 ftp-predictor)
+- **真实集成**: lixvanran/ftp-predictor 拷 .joblib (GBM + Conformal 区间)
+- **20 维特征** (对齐 ftp-predictor): distance + moving_time + avg_hr + HR Zone 1-5 + kilojoules + Power Zone 1-11
+- **Conformal 校准**: 80% 区间 (P10/P90), 实测 86.8% 覆盖率
 - **模型注册表**: `core/ml/registry.py` 统一加载 joblib / onnx / torch / mock
-- **特征工程**: 12 维起步 (7 PMC + 5 活动)
+- **特征工程**: build_feature_row 12 → 20 维, 顺序对齐 ftp-predictor
 - **FTP 预测端点**: `POST /api/ml/predict/ftp` (无模型时降级 MockFTPModel)
 - **模型版本管理**: `ml_model_meta` 表, is_active 单激活 + 热切换
 - **预测归档**: `ml_predictions` 表, 留 feature_snapshot 1 周可回溯
@@ -125,9 +129,9 @@ macOS / Linux:
 │  16 张表 · 107 paths / 126 methods · 63 tests                 │
 │  ┌───────────────────────────────────────────────────────┐   │
 │  │  业务核心: FIT 解析 → 30+ 指标 → PMC/ACWR/HRV/CP/周期  │   │
-│  │  AI 层:  m3_client (LLM transport) + mock_engine       │   │
+│  │  AI 层:  m3_client (LLM transport) + mock_engine + workflow │   │
 │  │          + orchestrator (6 块上下文 + RAG)             │   │
-│  │  ML 层:  registry (joblib/onnx/pt) + feature_pipe      │   │
+│  │  ML 层:  registry + feature_pipe (20 维) + Conformal    │   │
 │  │          + _mock fallback                              │   │
 │  │  存储:   SQLite WAL + SQLAlchemy 2.0 + FTS5            │   │
 │  │  后台:   BackgroundTasks (V0.7.7+ 计划换 Arq)              │   │
@@ -157,8 +161,8 @@ macOS / Linux:
 |---|---|---|
 | `activities` | 11 | 上传 / 详情 / 报告 / 功率曲线 / 区间 / W'bal / CP 估算 / 解耦 / RPE |
 | `kb` | 12 | 知识库分类 / 文档 / 搜索 / 附件 / 导入状态 |
-| `chat` | 4 | 通用 chat 持久化 (含思维树) — V0.7.8 新 |
-| `ml` | 5 | ML 推理 + 模型注册/激活 — V0.7.8 新 |
+| `chat` | 4 | 通用 chat 持久化 (含思维树) — V0.7.6 新 |
+| `ml` | 5 | ML 推理 + 模型注册/激活 — V0.7.6 新 (V0.8.0 接 ftp-predictor 真模型 + Conformal 区间) |
 | `coach` | 1 | AI 教练流式对话 (SSE) |
 | `race-tactics` | 7 | 比赛战术会话 + 路书 + 消息 + AI 建议 |
 | `workouts` | 8 | 课程 CRUD + AI 排课 + 标签 + 目标 + 导出 |
@@ -212,7 +216,7 @@ cycling-coach/
 │   ├── mobile/                           # PWA 占位
 │   └── cli/                              # CLI 占位
 │
-├── tests/                                # 63 个测试 (41 老 + 15 chat + 7 ml)
+├── tests/                                # 96 + 2 skip 测试 (41 metrics + 15 chat + 5 ml + 22 workflow + 13 ftp_predictor)
 ├── docs/                                 # ARCHITECTURE / ROADMAP / PLAN
 ├── assets/screenshots/                   # README 截图
 │
@@ -225,7 +229,7 @@ cycling-coach/
 **完整架构**: 见 `docs/ARCHITECTURE.md`
 **路线图**: 见 `docs/ROADMAP.md`
 
-## V0.7.8 Foundation 1.0 变更详情
+## V0.7.8 Foundation 1.0 变更详情 (历史)
 
 ### 改动 (8 项 P0 全部收口)
 
@@ -250,7 +254,86 @@ cycling-coach/
 | 索引 `ix_activities_tss` | 缺 | **✓** |
 | ML 依赖 | 0 | **joblib + onnxruntime** |
 
-完整报告: `V0.7.8_REPORT.md`
+## V0.8.0 变更详情
+
+### 接 2 个外部仓库
+
+| 仓库 | 用途 | 集成方式 | 集成边界 |
+|---|---|---|---|
+| **lixvanran/multi-mind** (v0.3.0) | 战术规划 / 思维扩散器 | 独立进程 :8766, HTTP 调 `/run` | 不 import 代码, 仓库更新重启即可 |
+| **lixvanran/ftp-predictor** | FTP 预测 (GBM + Conformal) | 拷 .joblib 到 `workspace/models/ftp_predictor/latest/` | 不 clone 代码, 一行脚本拉最新 release |
+
+### Chat 拆 3 mode
+
+| mode | 后端行为 | 前端 tab |
+|---|---|---|
+| `rag` (默认) | 6 块上下文 + RAG top-3 + LLM | "训练答疑" |
+| `workflow` | HTTP 调 multi-mind :8766, 流式推思维树节点 | "战术规划" |
+| `chat` | 6 块上下文 + 直 LLM, 不 RAG | "随便聊聊" |
+
+### 后端 service 化
+
+- 7 个 service (`core/services/`): activity / chat / diary / ftp / kb / ml / race_tactics / training
+- `core/exceptions.py`: AppError + NotFoundError / ValidationError / Conflict / Forbidden / Unauthorized
+- `api/dependencies.py`: Services 容器 + `get_services` DI
+- Router 改薄: `activities` 867 → 179 行 (业务下沉 service)
+
+### 前端架构整理
+
+- 5 个 layout (Training / AI / Plan / Data / Settings) 共用 AppShell
+- 17 页面全 `lazy()`, Suspense + LoadingSkeleton
+- Store 拆分: `useUIStore` / `useChatStore` (3 mode 分桶) / `useAthleteStore` + `useAppStore` shim
+- 5 公共组件: Card / EmptyState / LoadingSkeleton / ErrorBoundary / ConfirmDialog
+- HashRouter + `useLegacyRedirect` 兜底桌面模式
+
+### ML 真实集成
+
+- 12 维 → **20 维** 特征 (对齐 ftp-predictor: distance + moving_time + avg_hr + HR Zone 1-5 + kilojoules + Power Zone 1-11)
+- Conformal 校准: q_models[P10/P50/P90] + conformal_quantile, 80% 区间实测 86.8% 覆盖率
+- `tools/sync_ftp_model.sh`: 一键从 ftp-predictor release 拉最新 .joblib + metadata.json
+- `cli/export_features.py`: 训练数据 parquet 导出, 给 ftp-predictor 训练新版本
+
+### 思维树可视化
+
+- `ThinkingTreeView` 组件: 9-15 节点 SVG 树, 实时流式更新
+- 节点状态: pending (灰) / running (蓝脉冲) / done (绿) / pruned (红)
+- 战术规划 mode 每个 stage 节点持久化到 `chat_messages` (parent_id / node_path / score)
+
+### FTPPredictionCard
+
+- Dashboard 顶部: 大数字 + 区间条 + 置信度 + 模型版本
+- 调用 `POST /api/ml/predict/ftp` 拿真模型预测值 + 80% Conformal 区间
+
+### 数字对比
+
+| 指标 | V0.7.8 | V0.8.0 |
+|---|---|---|
+| 端点 | 107 / 126 | 107 / 126 (持平, 加 mode 字段) |
+| 后端 service | 0 | 7 (3500 行) |
+| 前端 store | 1 大 | 4 拆 (UI/Chat/Athlete + App shim) |
+| 前端 lazy | 0 | 17 页面 |
+| 真实 ML 模型 | Mock | ftp-predictor joblib |
+| 测试 | 63 | 96 + 2 skip (+35) |
+
+### 启动 / 升级
+
+```cmd
+:: Windows
+cd cycling-coach
+git pull origin main
+tools\start.bat          :: 启 V0.8.0 后端 + Vite 前端
+tools\start_multi_mind.sh :: 可选, 启 multi-mind :8766 (战术规划 mode)
+tools\sync_ftp_model.sh latest  :: 可选, 拉 ftp-predictor 真模型
+
+:: 战术规划 mode 用法
+:: 1. 启 multi-mind (独立进程, 共享 OPENROUTER_API_KEY)
+:: 2. 启 cycling-coach 后端
+:: 3. 浏览器 http://localhost:1420 → ChatPage 选 "战术规划" tab
+:: 4. 输入问题, 实时看 9 节点思维树 + 最终策略
+```
+
+完整报告: `V0.8.0_REPORT.md`
+
 
 ## Mock 模式
 
@@ -263,9 +346,9 @@ M3_BASE_URL=https://openrouter.ai/api/v1
 M3_MODEL=minimax/minimax-m3
 ```
 
-ML 推理无注册模型时, 自动降级 `MockFTPModel` (规则预测, 不依赖外部资源)。
+ML 推理无注册模型时, 自动降级 `MockFTPModel`。注册 ftp-predictor 真模型后, 走 20 维特征 + Conformal 区间, 数学保证 80% 覆盖率。
 
-## ML 推理示例 (V0.7.8)
+## ML 推理示例 (V0.8.0 真模型)
 
 注册模型:
 ```bash
@@ -305,7 +388,7 @@ curl -X POST http://localhost:8765/api/ml/predict/ftp \
 
 ## 安装 / 卸载
 
-详见 `INSTALL_V0.7.8.md`
+详见 `INSTALL_V0.8.0.md`
 
 ```cmd
 :: Windows 全新安装

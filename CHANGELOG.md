@@ -10,6 +10,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [V0.8.0] - 2026-09-05 — 战术规划 + FTP 真模型 + 架构整理
+
+### Added / 新增
+- **Chat 3 mode**: `mode: "rag"|"workflow"|"chat"` 字段, ChatPage 拆 3 tab (训练答疑 / 战术规划 / 随便聊聊)
+- **multi-mind 集成** (lixvanran/multi-mind v0.3.0, private): 战术规划 mode 走 6 stage pipeline
+  - HTTP 独立进程 :8766 (`tools/sync_multi_mind.sh` + `start_multi_mind.sh`)
+  - orchestrator 加 workflow_pipeline (5s timeout, 失败降级到 rag)
+  - 每个 stage 节点持久化到 chat_messages (parent_id / node_path / score)
+- **ftp-predictor 真实集成** (lixvanran/ftp-predictor, private): 真 GBM + Conformal 区间
+  - 12 维 → 20 维特征 (distance + moving_time + avg_hr + HR Zone 1-5 + kilojoules + Power Zone 1-11)
+  - Conformal 80% 区间 (实测 86.8% 覆盖率)
+  - `tools/sync_ftp_model.sh` 一键从 release 拉 .joblib + metadata.json
+  - `cli/export_features.py` 训练数据 parquet 导出
+- **思维树可视化** (`ThinkingTreeView`): SVG 树, 9-15 节点, 实时流式更新
+  - 状态: pending (灰) / running (蓝脉冲) / done (绿) / pruned (红)
+- **FTPPredictionCard**: Dashboard 顶部, 大数字 + 区间条 + 置信度
+- **后端 service 层**: 7 个 service (`core/services/`): activity / chat / diary / ftp / kb / ml / race_tactics / training
+- **统一异常**: `core/exceptions.py` AppError + NotFoundError / ValidationError / Conflict / Forbidden / Unauthorized
+- **DI 容器**: `api/dependencies.py` Services + `get_services`
+- **前端架构整理**:
+  - 5 个 layout (Training / AI / Plan / Data / Settings) 共用 AppShell
+  - 17 页面全 `lazy()`, Suspense + LoadingSkeleton
+  - HashRouter + `useLegacyRedirect` 兜底桌面模式
+  - Store 拆分: `useUIStore` / `useChatStore` (3 mode 分桶) / `useAthleteStore` + `useAppStore` shim
+  - 5 公共组件: Card / EmptyState / LoadingSkeleton / ErrorBoundary / ConfirmDialog
+
+### Changed / 变更
+- Router 改薄: activities 867 → 179 行 (业务下沉 service)
+- ML 推理 `±10W` 兜底 → ftp-predictor 真 Conformal 区间
+- `m3_client.stream_chat` → orchestrator 拆 3 pipeline (rag / workflow / chat)
+- `ChatRequest` 加 `mode` 字段 (默认 rag, 向后兼容)
+- 启动脚本加 `tools/sync_multi_mind.sh` / `start_multi_mind.sh` / `stop_multi_mind.sh`
+
+### Tests / 测试
+- 63 → 96 + 2 skip (+35 新测试: workflow 22 + ftp_predictor 13)
+- V0.7.6 老 ml 测试 2 个标 skip (mock 降级不再是主路径)
+
+### Performance / 性能
+- 后端代码净 +5989 行 (services/ 3500 行 + 新功能 + 测试)
+- 前端代码 +1 思维树组件 (507 行) + 1 FTP Card (295 行) + 5 layout + 5 common
+- 测试 96 + 2 skip, 端点 107 / 126 持平 (只加 mode 字段)
+
+### License / 协议
+- 不变 (MIT + Restricted KB)
+
 ## [Unreleased] / 下一版
 
 ### Planned / 计划
