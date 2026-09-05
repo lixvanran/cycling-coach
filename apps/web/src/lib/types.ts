@@ -534,3 +534,42 @@ export interface RaceTacticsAttachment {
   created_at: string;
   url: string;
 }
+
+// ====== V0.8.0: Agent 3 - Chat mode + 思维树 + ML 预测 ======
+
+// 3 个 chat mode (训练答疑 / 战术规划 / 随便聊聊)
+export type ChatMode = "rag" | "workflow" | "chat";
+
+// 思维树节点 — 用于 tactical workflow 可视化
+export type ThinkingNodeStatus = "pending" | "running" | "done" | "pruned";
+
+export interface ThinkingNode {
+  id: string;                          // 唯一 id, 例如 "router", "executor_1", "critic"
+  label: string;                       // 显示名, 例如 "Router", "激进 Track"
+  stage: string;                       // 后端 stage 标识
+  status: ThinkingNodeStatus;
+  parent_id: string | null;            // 父节点, 用于树形布局
+  track?: "aggressive" | "conservative" | "shared";  // 轨道分类
+  score?: number | null;               // Critic 评分
+  content?: string;                    // 节点输出
+  error?: string | null;
+  started_at?: number;
+  finished_at?: number;
+}
+
+// FTP 预测响应(对齐后端 /api/ml/predict/ftp)
+export interface FTPPredictionResponse {
+  ok: boolean;
+  predicted_ftp: number;
+  lower_80: number;
+  upper_80: number;
+  confidence: "high" | "medium" | "low";
+  current_ftp: number | null;
+  delta: number | null;
+  data_window: string;
+  model_name: string;
+  model_version: string;
+  model_format: string;
+  prediction_id: number;
+  inference_ms: number;
+}

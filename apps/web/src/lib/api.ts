@@ -496,6 +496,111 @@ export const api = {
     }
   },
 
+  // V0.8.0: 多 mode chat 流 (rag / workflow / chat)
+  // 后端会推 [NODE] [STREAM] [DONE] [ERROR] [FINAL] [SOURCES] 等帧
+  chatStreamV2: async function* (
+    mode: "rag" | "workflow" | "chat",
+    messages: { role: string; content: string }[],
+    message: string,
+    signal?: AbortSignal
+  ): AsyncGenerator<{
+    type: "text" | "think" | "done" | "error" | "sources" | "node" | "final";
+    data: any;
+  }> {
+    const r = await fetch(BASE + "/coach/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode, messages, message }),
+      signal,
+    });
+    if (!r.ok || !r.body) {
+      throw new Error(`HTTP ${r.status}: ${await r.text().catch(() => r.statusText)}`);
+    }
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf("\n\n")) !== -1) {
+        const frame = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const line = frame.replace(/^data: /, "").trim();
+        if (!line) continue;
+        if (line === "[DONE]") {
+          yield { type: "done", data: "" };
+          return;
+        }
+        if (line.startsWith("[ERROR]")) {
+          yield { type: "error", data: line.slice(8).trim() };
+          return;
+        }
+        if (line.startsWith("[NODE]")) {
+          try {
+            const json = line.slice(6).trim();
+            const node = JSON.parse(json);
+            yield { type: "node", data: node };
+          } catch (e) {
+            // ignore parse error
+          }
+          continue;
+        }
+        if (line.startsWith("[FINAL]")) {
+          try {
+            const json = line.slice(7).trim();
+            const final = JSON.parse(json);
+            yield { type: "final", data: final };
+          } catch (e) {
+            // ignore parse error
+          }
+          continue;
+        }
+        if (line.startsWith("[SOURCES]")) {
+          try {
+            const json = line.slice(9).trim().replace(/\\n/g, "\n");
+            const sources = JSON.parse(json);
+            yield { type: "sources", data: sources };
+          } catch (e) {
+            // ignore parse error
+          }
+          continue;
+        }
+        if (line.startsWith("[STREAM]")) {
+          yield { type: "text", data: line.slice(8).trim().replace(/\\n/g, "\n") };
+          continue;
+        }
+        // 默认: 纯文本 delta
+        yield { type: "text", data: line.replace(/\\n/g, "\n") };
+      }
+    }
+  },
+
+  // V0.8.0: FTP 预测
+  predictFtp: (activityId?: number, modelVersion?: string) => {
+    const body: any = {};
+    if (activityId !== undefined) body.activity_id = activityId;
+    if (modelVersion) body.model_version = modelVersion;
+    return jsonFetch<import("./types").FTPPredictionResponse>(
+      "/ml/predict/ftp",
+      { method: "POST", body: JSON.stringify(body) }
+    );
+  },
+
+  // V0.8.0: 列出已注册模型
+  listMlModels: () =>
+    jsonFetch<{
+      ok: boolean;
+      models: Array<{
+        id: number;
+        task_name: string;
+        version: string;
+        format: string;
+        is_active: boolean;
+      }>;
+    }>("/ml/models"),
+
   // ============== 课程库 (V0.3.3) ==============
   // 注意:jsonFetch 已经会拼 BASE="/api",所以这里只传相对路径 "/workouts"
   listWorkouts: (params?: {

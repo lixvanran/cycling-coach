@@ -15,6 +15,7 @@ import { useAppStore } from "../store/useAppStore";
 import { InsightsBanner, InsightsHealthCard } from "../components/InsightsBanner";
 import { DailyRecommendationCard } from "../components/DailyRecommendationCard";
 import { FTPRetestBanner } from "../components/FTPRetestBanner";
+import { FTPPredictionCard } from "../components/FTPPredictionCard";
 
 const RANGE_OPTIONS = [
   { value: 30, label: "30 天" },
@@ -133,6 +134,9 @@ export function Dashboard() {
           </div>
         </div>
       </section>
+
+      {/* V0.8.0: FTP 预测卡(ML 模型推理) */}
+      <FTPPredictionCard />
 
       {/* V0.3:PMC 主图(全宽) */}
       <section className="panel p-5">
