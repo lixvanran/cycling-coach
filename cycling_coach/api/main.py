@@ -21,6 +21,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from cycling_coach.config.config import settings
 from cycling_coach.config.logging import setup_logging
+from cycling_coach.core.exceptions import AppError
 from cycling_coach.data.sqlite import init_db
 from .routers import activities, athlete, dashboard, diagnose, dev, coach, pmc, plans, calendar, workouts, kb, trends, phases, ftp, insights, race_prep, hrv, recommendations, reports, sync, diary, race_tactics
 from .routers.chat import router as chat_router  # V0.7.6 通用 chat 持久化
@@ -109,6 +110,18 @@ app = FastAPI(
     version=__version__,
     lifespan=lifespan,
 )
+
+
+# V0.8.0: 统一 AppError handler
+# 业务异常 (NotFoundError / ValidationError / ...) 在 service 层抛,
+# handler 自动转 JSON 响应 {ok: false, code, message, ...}
+@app.exception_handler(AppError)
+async def app_error_handler(request: Request, exc: AppError):
+    return JSONResponse(
+        status_code=exc.status,
+        content=exc.to_dict(),
+    )
+
 
 app.add_middleware(
     CORSMiddleware,
