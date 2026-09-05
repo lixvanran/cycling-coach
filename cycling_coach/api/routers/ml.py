@@ -1,10 +1,16 @@
-"""/api/ml/* V0.7.6: ML 推理端点
+"""/api/ml/* V0.7.6+: ML 推理端点
 
 端点:
-- POST /api/ml/predict/ftp    预测当前 FTP
+- POST /api/ml/predict/ftp    预测当前 FTP (20 维特征, 接 ftp-predictor 真模型 + Conformal)
 - GET  /api/ml/models         列出已注册模型
 - POST /api/ml/models/register 注册新模型
 - POST /api/ml/models/activate 切换激活模型
+- GET  /api/ml/predictions    列出最近预测
+
+V0.8.0 升级:
+- 12 维 → 20 维特征 (对齐 lixvanran/ftp-predictor)
+- 接 Conformal 校准区间 (q_models[0.1, 0.5, 0.9] + conformal_quantile)
+- 模型加载失败的 graceful fallback: 没注册 → mock, 特征不匹配 → 400
 """
 from __future__ import annotations
 
@@ -30,8 +36,10 @@ from cycling_coach.core.ml import (
     build_feature_row,
     get_active_model,
     ModelNotFoundError,
+    FeatureSchemaMismatchError,
     MockFTPModel,
     FEATURE_SCHEMA,
+    FEATURE_COLUMNS,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,8 +51,9 @@ router = APIRouter(prefix="/api/ml", tags=["ml"])
 # ============================================================
 
 class FTPPredictRequest(BaseModel):
-    activity_id: Optional[int] = Field(None, description="基于哪个活动预测, 留空用今日最新")
+    activity_id: Optional[int] = Field(None, description="基于哪个活动预测, 留空用 14d 窗口聚合")
     model_version: Optional[str] = Field(None, description="指定模型版本, 留空用 active")
+    window_days: Optional[int] = Field(None, description="特征聚合窗口天数, 默认 14")
 
 
 class FTPPredictResponse(BaseModel):
@@ -55,10 +64,12 @@ class FTPPredictResponse(BaseModel):
     confidence: str  # "high" / "medium" / "low"
     current_ftp: Optional[int] = None
     delta: Optional[int] = None
-    data_window: str = "今日 + 7d PMC"
+    data_window: str = "14d 窗口聚合"
     model_name: str
     model_version: str
     model_format: str
+    model_has_conformal: bool = False
+    feature_count: int = 20
     prediction_id: int
     inference_ms: int
 
@@ -90,22 +101,38 @@ class ActivateModelRequest(BaseModel):
 def predict_ftp(req: FTPPredictRequest, db: Session = Depends(get_db)):
     """基于近期训练数据预测当前 FTP
 
-    流程:
-    1. 从 build_feature_row 拿 12 维特征
-    2. 加载激活的 ftp_predictor 模型 (joblib / onnx)
-    3. 推理 → 80% 区间 (V0.7.6 简化为 ±10W)
+    V0.8.0 流程:
+    1. 从 build_feature_row 拿 20 维特征 (14d 窗口聚合 或 单活动)
+    2. 加载激活的 ftp_predictor 模型 (joblib + 可选 Conformal)
+    3. 推理 → 80% 区间 (真模型用 Conformal, mock 降级 ±10W)
     4. 落库到 ml_predictions
     """
     start = time.time()
     athlete = profile_store.get_or_create_athlete(db)
 
-    # 1) 特征
+    # 1) 特征 (20 维, 对齐 ftp-predictor)
     try:
-        values, columns = build_feature_row(db, athlete.id, activity_id=req.activity_id)
+        if req.activity_id is not None:
+            values, columns = build_feature_row(db, athlete.id, activity_id=req.activity_id)
+            data_window = f"单活动 #{req.activity_id}"
+        else:
+            kwargs = {}
+            if req.window_days:
+                kwargs["window_days"] = req.window_days
+            values, columns = build_feature_row(db, athlete.id, **kwargs)
+            data_window = f"{req.window_days or 14}d 窗口聚合"
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"数据不足: {e}")
 
+    # 验证特征维度跟 schema 一致
+    if len(values) != len(FEATURE_COLUMNS):
+        raise HTTPException(
+            status_code=500,
+            detail=f"特征维度异常: 拿到 {len(values)}, 期望 {len(FEATURE_COLUMNS)}",
+        )
+
     # 2) 加载模型 (失败时降级 mock)
+    model_has_conformal = False
     try:
         handle = get_active_model("ftp_predictor", version=req.model_version)
         X = np.array([values], dtype=np.float32)
@@ -113,6 +140,7 @@ def predict_ftp(req: FTPPredictRequest, db: Session = Depends(get_db)):
         model_name = handle.name
         model_version = handle.version
         model_format = handle.model_format
+        model_has_conformal = handle.has_conformal()
     except ModelNotFoundError as e:
         # 没注册模型 → mock 降级 (开发体验)
         logger.warning(f"ML 模型未注册, 降级 MockFTPModel: {e}")
@@ -124,14 +152,18 @@ def predict_ftp(req: FTPPredictRequest, db: Session = Depends(get_db)):
         model_name = "ftp_predictor"
         model_version = "mock-v0"
         model_format = "mock"
+    except FeatureSchemaMismatchError as e:
+        # 模型跟特征不匹配, 报 400 (拒预测, 不假装)
+        logger.error(f"特征 schema 不匹配: {e}")
+        raise HTTPException(status_code=400, detail=f"特征 schema 不匹配: {e}")
 
-    # 3) 置信度 (基于 daily_metrics 历史数量)
-    n_history = (
-        db.query(DailyMetric).filter(DailyMetric.athlete_id == athlete.id).count()
+    # 3) 置信度 (基于活动历史数量)
+    n_activities = (
+        db.query(Activity).filter(Activity.athlete_id == athlete.id).count()
     )
-    if n_history >= 90:
+    if n_activities >= 60:
         confidence = "high"
-    elif n_history >= 28:
+    elif n_activities >= 14:
         confidence = "medium"
     else:
         confidence = "low"
@@ -168,9 +200,12 @@ def predict_ftp(req: FTPPredictRequest, db: Session = Depends(get_db)):
         confidence=confidence,
         current_ftp=current_ftp,
         delta=delta,
+        data_window=data_window,
         model_name=model_name,
         model_version=model_version,
         model_format=model_format,
+        model_has_conformal=model_has_conformal,
+        feature_count=len(values),
         prediction_id=pred.id,
         inference_ms=elapsed_ms,
     )
@@ -207,13 +242,20 @@ def list_models(db: Session = Depends(get_db)):
 
 @router.post("/models/register")
 def register_model(req: RegisterModelRequest, db: Session = Depends(get_db)):
-    """注册一个新模型到 MLModelMeta"""
+    """注册一个新模型到 MLModelMeta
+
+    V0.8.0 升级:
+    - 默认 feature_columns / feature_schema 用 20 维 FEATURE_COLUMNS
+    - 可传 feature_columns 自定义 (必须跟模型对齐)
+    """
     # 如果 is_active=True, 把同 task 的其他置 False (单激活)
     if req.is_active:
         db.query(MLModelMeta).filter(
             MLModelMeta.task_name == req.task_name
         ).update({"is_active": False})
         db.commit()
+    feature_cols = req.feature_columns or FEATURE_COLUMNS
+    feature_schema = req.feature_schema or FEATURE_SCHEMA
     m = MLModelMeta(
         task_name=req.task_name,
         version=req.version,
@@ -222,15 +264,15 @@ def register_model(req: RegisterModelRequest, db: Session = Depends(get_db)):
         training_date=datetime.now(timezone.utc).replace(tzinfo=None),
         training_samples_count=req.training_samples_count,
         training_metrics=req.training_metrics,
-        feature_schema=req.feature_schema or FEATURE_SCHEMA,
-        feature_columns=req.feature_columns or list(FEATURE_SCHEMA.keys()),
+        feature_schema=feature_schema,
+        feature_columns=feature_cols,
         is_active=req.is_active,
         notes=req.notes,
     )
     db.add(m)
     db.commit()
     db.refresh(m)
-    return {"ok": True, "id": m.id, "is_active": m.is_active}
+    return {"ok": True, "id": m.id, "is_active": m.is_active, "feature_count": len(feature_cols)}
 
 
 @router.post("/models/activate")
