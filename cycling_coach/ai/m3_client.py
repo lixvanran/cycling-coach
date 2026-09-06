@@ -6,6 +6,7 @@
 - 启动时验证 key
 """
 from __future__ import annotations
+import functools
 import logging
 import os
 from typing import Optional
@@ -252,11 +253,7 @@ class M3Client:
         return engine.format_activity_report({"raw_query": user}, focus="auto")
 
 
-_client: Optional[M3Client] = None
-
-
+# V0.8.1: 用 @functools.cache 替换手动单例 (线程安全, Pythonic)
+@functools.cache
 def get_m3() -> M3Client:
-    global _client
-    if _client is None:
-        _client = M3Client()
-    return _client
+    return M3Client()

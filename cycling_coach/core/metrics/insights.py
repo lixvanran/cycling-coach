@@ -390,7 +390,7 @@ def compute_today_insights(db: Session, athlete_id: Optional[int] = None) -> Ins
             "tsb": round(tsb, 1),
             "ramp_rate": round(ramp_rate, 2),
         },
-        acwr=get_acwr_overview(db) if False else {},  # 简化
+        acwr=get_acwr_overview(db),
     )
 
 

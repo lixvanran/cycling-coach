@@ -239,7 +239,7 @@ class ActivityService:
 
         # 异步生成报告
         if background_tasks is not None:
-            from cycling_coach.api.routers._activities_shared import run_analyze_task
+            from cycling_coach.core.services.tasks import run_analyze_task
             background_tasks.add_task(run_analyze_task, db_activity.id, None)
 
         return {
@@ -374,7 +374,7 @@ class ActivityService:
         a.report_status = "analyzing"
         self.db.commit()
         if background_tasks is not None:
-            from cycling_coach.api.routers._activities_shared import run_analyze_task
+            from cycling_coach.core.services.tasks import run_analyze_task
             background_tasks.add_task(run_analyze_task, activity_id, req.focus)
         return {"ok": True, "report": None, "reason": "已加入后台队列"}
 

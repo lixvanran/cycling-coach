@@ -15,6 +15,8 @@ V0.7.4 状态: 接口定义, 未实现 OAuth client
 - 需要 cron job: 定时刷新 token + 拉新活动
 """
 from __future__ import annotations
+import functools
+
 import logging
 from datetime import datetime
 from typing import Optional
@@ -113,16 +115,12 @@ class StravaProvider(SyncProvider):
         raise NotImplementedError("V0.8+")
 
 
-# V0.7.4: 默认实例
-_default_strava = None
-
+# V0.8.1: 用 @functools.cache 替换手动单例 (线程安全, Pythonic)
+@functools.cache
 def get_strava_provider() -> StravaProvider:
     """获取 Strava Provider 单例"""
-    global _default_strava
-    if _default_strava is None:
-        import os
-        _default_strava = StravaProvider(
-            client_id=os.environ.get("STRAVA_CLIENT_ID"),
-            client_secret=os.environ.get("STRAVA_CLIENT_SECRET"),
-        )
-    return _default_strava
+    import os
+    return StravaProvider(
+        client_id=os.environ.get("STRAVA_CLIENT_ID"),
+        client_secret=os.environ.get("STRAVA_CLIENT_SECRET"),
+    )

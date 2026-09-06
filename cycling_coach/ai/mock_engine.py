@@ -4,6 +4,7 @@
 m3_client 只负责真实 LLM 调用, MockEngine 负责无 key 时的回退行为.
 """
 from __future__ import annotations
+import functools
 import logging
 import re
 from typing import Any, Generator
@@ -203,12 +204,8 @@ class MockEngine:
 """
 
 
-_default_engine = None  # type: ignore[var-annotated]
-
-
+# V0.8.1: 用 @functools.cache 替换手动单例 (线程安全, Pythonic)
+@functools.cache
 def get_mock_engine() -> MockEngine:
     """模块级单例 — 避免重复构造"""
-    global _default_engine
-    if _default_engine is None:
-        _default_engine = MockEngine()
-    return _default_engine
+    return MockEngine()

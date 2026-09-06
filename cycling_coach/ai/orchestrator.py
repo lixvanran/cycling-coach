@@ -121,7 +121,7 @@ def _retrieve_kb(user_message: str, top_k: int = 3) -> list[dict]:
         for i in range(len(s) - 1):
             g = s[i:i+2]
             if g not in STOPWORDS and g not in seen_t:
-                seen_t.append(g) if False else seen_t.add(g)
+                seen_t.add(g)
                 terms_with_weight.append((g, CYCLING_KEYWORDS.get(g, 0.8)))
 
     terms_with_weight.sort(key=lambda x: x[1], reverse=True)

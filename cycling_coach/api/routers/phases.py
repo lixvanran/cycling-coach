@@ -167,7 +167,7 @@ def create_phase(payload: PhaseCreate, db: Session = Depends(get_db)):
     db.add(p)
     db.commit()
     db.refresh(p)
-    return list_phases.__wrapped__(db) if False else _to_out(p, db)
+    return _to_out(p, db)
 
 
 @router.get("/current", response_model=PhaseOut | None)
