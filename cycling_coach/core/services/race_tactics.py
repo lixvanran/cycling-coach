@@ -60,9 +60,12 @@ class RaceTacticsService:
     """比赛战术会话服务 (V0.8.0 P1 占位, AI 流式后续重构)"""
     def __init__(self, db: Session):
         self.db = db
+        # V0.8.1 批 2: 启动时绑定当前 athlete, service 层兜底 IDOR
+        # (router 端点其实已经做了 athlete 过滤, 这里加 service 层保险)
+        self.athlete = profile_store.get_or_create_athlete(db)
 
     def get_session(self, session_id: int) -> dict:
-        s = self.db.get(RaceTacticsSession, session_id)
+        s = self._get_owned_session(session_id)
         if not s:
             raise NotFoundError(f"会话不存在: {session_id}")
         return _serialize_session(s, with_details=True)
@@ -96,7 +99,7 @@ class RaceTacticsService:
         return _serialize_session(s)
 
     def update_session(self, session_id: int, req: SessionPatch) -> dict:
-        s = self.db.get(RaceTacticsSession, session_id)
+        s = self._get_owned_session(session_id)
         if not s:
             raise NotFoundError(f"会话不存在: {session_id}")
         payload = req.model_dump(exclude_unset=True)
@@ -108,7 +111,7 @@ class RaceTacticsService:
         return _serialize_session(s)
 
     def delete_session(self, session_id: int) -> dict:
-        s = self.db.get(RaceTacticsSession, session_id)
+        s = self._get_owned_session(session_id)
         if not s:
             raise NotFoundError(f"会话不存在: {session_id}")
         self.db.delete(s)
@@ -116,7 +119,7 @@ class RaceTacticsService:
         return {"ok": True, "id": session_id}
 
     def add_message(self, session_id: int, req: MessageIn) -> dict:
-        s = self.db.get(RaceTacticsSession, session_id)
+        s = self._get_owned_session(session_id)
         if not s:
             raise NotFoundError(f"会话不存在: {session_id}")
         m = RaceTacticsMessage(session_id=session_id, role="user", content=req.content)
@@ -131,9 +134,21 @@ class RaceTacticsService:
             raise NotFoundError(f"附件不存在: {att_id}")
         if att.session_id != session_id:
             raise ValidationError("附件与会话不匹配")
+        # V0.8.1 批 2: 验证 session 属于当前 athlete (避免借 att_id 探别人的 session)
+        session = self._get_owned_session(att.session_id)
+        if not session:
+            raise NotFoundError(f"会话不存在: {att.session_id}")
         self.db.delete(att)
         self.db.commit()
         return {"ok": True, "id": att_id}
+
+    # ---------- V0.8.1 批 2: IDOR 防护 helper ----------
+
+    def _get_owned_session(self, session_id: int):
+        return self.db.query(RaceTacticsSession).filter(
+            RaceTacticsSession.id == session_id,
+            RaceTacticsSession.athlete_id == self.athlete.id,
+        ).first()
 
 
 # ============== helpers ==============

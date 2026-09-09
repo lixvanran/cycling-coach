@@ -129,6 +129,9 @@ class FTPService:
     """FTP 测试 + 估算服务"""
     def __init__(self, db: Session):
         self.db = db
+        # V0.8.1 批 2: 启动时绑定当前 athlete
+        from cycling_coach.core.profile import store as profile_store
+        self.athlete = profile_store.get_or_create_athlete(db)
 
     def get_methods(self) -> dict:
         return {"methods": METHOD_INFO}
@@ -299,7 +302,10 @@ class FTPService:
         }
 
     def delete_test(self, test_id: int) -> dict:
-        t = self.db.get(FTPTest, test_id)
+        t = self.db.query(FTPTest).filter(
+            FTPTest.id == test_id,
+            FTPTest.athlete_id == self.athlete.id,
+        ).first()
         if not t:
             raise NotFoundError(f"测试 {test_id} 不存在")
         self.db.delete(t)
