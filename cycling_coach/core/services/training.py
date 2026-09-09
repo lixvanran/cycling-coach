@@ -87,6 +87,9 @@ class TrainingService:
     """
     def __init__(self, db: Session):
         self.db = db
+        # V0.8.1 批 2: 启动时绑定当前 athlete, 所有 ID 类查询自动 scope,
+        # 防止 IDOR (Plan/Workout 猜 ID 改/删)
+        self.athlete = profile_store.get_or_create_athlete(db)
 
     # ---------- Plans ----------
 
@@ -120,13 +123,13 @@ class TrainingService:
         return _serialize_plan(p)
 
     def get_plan(self, plan_id: int) -> dict:
-        p = self.db.get(PlanPeriod, plan_id)
+        p = self._get_owned_plan(plan_id)
         if not p:
             raise NotFoundError(f"训练计划 {plan_id} 不存在")
         return _serialize_plan(p)
 
     def update_plan(self, plan_id: int, req: PlanUpdate) -> dict:
-        p = self.db.get(PlanPeriod, plan_id)
+        p = self._get_owned_plan(plan_id)
         if not p:
             raise NotFoundError(f"训练计划 {plan_id} 不存在")
         payload = req.model_dump(exclude_unset=True)
@@ -138,7 +141,7 @@ class TrainingService:
         return _serialize_plan(p)
 
     def delete_plan(self, plan_id: int) -> dict:
-        p = self.db.get(PlanPeriod, plan_id)
+        p = self._get_owned_plan(plan_id)
         if not p:
             raise NotFoundError(f"训练计划 {plan_id} 不存在")
         self.db.delete(p)
@@ -178,7 +181,7 @@ class TrainingService:
         }
 
     def get_workout(self, workout_id: int) -> dict:
-        w = self.db.get(Workout, workout_id)
+        w = self._get_visible_workout(workout_id)
         if not w:
             raise NotFoundError(f"课程 {workout_id} 不存在")
         return _serialize_workout(w)
@@ -203,7 +206,7 @@ class TrainingService:
         return _serialize_workout(w)
 
     def update_workout(self, workout_id: int, req: WorkoutUpdate) -> dict:
-        w = self.db.get(Workout, workout_id)
+        w = self._get_owned_workout(workout_id)
         if not w:
             raise NotFoundError(f"课程 {workout_id} 不存在")
         payload = req.model_dump(exclude_unset=True)
@@ -220,7 +223,7 @@ class TrainingService:
         return _serialize_workout(w)
 
     def delete_workout(self, workout_id: int) -> dict:
-        w = self.db.get(Workout, workout_id)
+        w = self._get_owned_workout(workout_id)
         if not w:
             raise NotFoundError(f"课程 {workout_id} 不存在")
         if w.source == "system":
@@ -228,6 +231,36 @@ class TrainingService:
         self.db.delete(w)
         self.db.commit()
         return {"ok": True, "id": workout_id}
+
+    # ---------- V0.8.1 批 2: IDOR 防护 helper ----------
+
+    def _get_owned_plan(self, plan_id: int):
+        """按 ID 取计划 + 强制 scope 到当前 athlete。
+        系统课程共享 (athlete_id IS NULL), 用户课程只属自己。
+        """
+        return self.db.query(PlanPeriod).filter(
+            PlanPeriod.id == plan_id,
+            PlanPeriod.athlete_id == self.athlete.id,
+        ).first()
+
+    def _get_owned_workout(self, workout_id: int):
+        """用户课程: 必须 athlete_id == 自己; 系统课程: 不允许改/删 (source='system' 拒绝)。"""
+        w = self.db.query(Workout).filter(
+            Workout.id == workout_id,
+            Workout.athlete_id == self.athlete.id,
+        ).first()
+        return w  # None → 视为不存在; 写操作时额外检查 source
+
+    def _get_visible_workout(self, workout_id: int):
+        """读操作: 自己的 OR 系统共享 都可见。"""
+        from sqlalchemy import or_
+        return self.db.query(Workout).filter(
+            Workout.id == workout_id,
+            or_(
+                Workout.athlete_id == self.athlete.id,
+                Workout.athlete_id.is_(None),
+            ),
+        ).first()
 
     # ---------- Phases (基础 CRUD, 完整逻辑后续版本) ----------
 

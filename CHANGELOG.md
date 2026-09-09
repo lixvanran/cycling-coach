@@ -10,6 +10,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [V0.8.1] - 2026-09-09 — 工程化收口 (批 1: CVE + 死代码 + 单例; 批 2: IDOR)
+
+### Security / 安全
+
+#### 批 1 (a7bdc36)
+- **python-multipart 0.0.9 → 0.0.31** (8 CVE, 含任意文件写 CVE-2026-24486)
+
+#### 批 2 (本批)
+- **IDOR 防护 (15 service 方法)**: 4 个 service 的所有 ID 类查询强制 scope 到当前 athlete
+  - `ActivityService`: 8 个 (get/delete/update_rpe/trigger_analyze + 4 分析端点) + `list_activities` 加 filter
+  - `TrainingService`: 6 个 (get/update/delete plan × 3 + get/update/delete workout × 3, workout 区分用户/系统)
+  - `FTPService`: 1 个 (delete_test)
+  - `RaceTacticsService`: 4 个 (get/update/delete session + add_message + delete_attachment), service 层兜底
+- 设计: `__init__` 时 `self.athlete = profile_store.get_or_create_athlete(db)`, 端点签名零改动
+
+### Fixed
+- **死代码清理** (批 1): 3 处 `if False:` 短路, 修复后核心算法 ACWR 维度从永远空转为真实计算
+- **循环依赖重构** (批 1): `core/services/tasks.py` 抽出 `run_analyze_task`, 消除 core→api 反向引用
+- **单例线程安全** (批 1): `m3_client` / `mock_engine` / `strava_provider` 用 `@functools.cache` 替换手动 + global var
+- **删 3 个 unused 依赖** (批 1): aiofiles / scipy / jieba (0 处引用)
+
+### Tests
+- **137 + 2 skip 通过** (V0.8.0: 96 + 2, +41)
+- 新增 `tests/test_idor_v081.py` 6 个测试: 跨 athlete 访问 / list_activities scope / 4 service 跨用户 IDOR 验证
+
+### Changed
+- README 数字同步: 96+2 → 137+2
+
 ## [V0.8.0] - 2026-09-05 — 战术规划 + FTP 真模型 + 架构整理
 
 ### Added / 新增

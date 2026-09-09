@@ -130,6 +130,11 @@ class ActivityService:
     """
     def __init__(self, db: Session):
         self.db = db
+        # V0.8.1 批 2: 启动时绑定当前 athlete, 所有 ID 查询自动 scope 到该 athlete,
+        # 防止 IDOR (别人猜到 ID 就能读/改/删你的活动)。
+        # 单用户 MVP: 始终 get_or_create (1 个 athlete),
+        # 多用户: 由 Services bundle 上层决定 (目前也是 1 个)
+        self.athlete = profile_store.get_or_create_athlete(db)
 
     # ---------- 解析 + 入库 ----------
 
@@ -252,9 +257,13 @@ class ActivityService:
     # ---------- 列表 / 详情 ----------
 
     def list_activities(self, f: ActivityFilters) -> dict:
-        """活动列表(多维过滤 + 排序 + 分页 + 聚合)"""
+        """活动列表(多维过滤 + 排序 + 分页 + 聚合)
+
+        V0.8.1 批 2: 强制按 self.athlete.id 过滤, 防止 IDOR 看见别人数据。
+        """
         q = (
             self.db.query(DBActivity)
+            .filter(DBActivity.athlete_id == self.athlete.id)
             .options(
                 defer(DBActivity.samples_json),
                 defer(DBActivity.laps_json),
@@ -332,13 +341,13 @@ class ActivityService:
 
     def get_activity(self, activity_id: int) -> dict:
         """活动详情 (含 1Hz 样本 + AI 报告)"""
-        a = self.db.get(DBActivity, activity_id)
+        a = self._get_owned(activity_id)
         if not a:
             raise NotFoundError(f"活动 {activity_id} 不存在")
         return _to_detail(a)
 
     def delete_activity(self, activity_id: int) -> dict:
-        a = self.db.get(DBActivity, activity_id)
+        a = self._get_owned(activity_id)
         if not a:
             raise NotFoundError(f"活动 {activity_id} 不存在")
         self.db.delete(a)
@@ -347,7 +356,7 @@ class ActivityService:
 
     def update_rpe(self, activity_id: int, payload: dict) -> dict:
         """更新 RPE 主观疲劳"""
-        a = self.db.get(DBActivity, activity_id)
+        a = self._get_owned(activity_id)
         if not a:
             raise NotFoundError(f"活动 {activity_id} 不存在")
         rpe = payload.get("rpe")
@@ -368,7 +377,7 @@ class ActivityService:
         background_tasks: Optional[Any] = None,
     ) -> dict:
         """重新生成 AI 报告"""
-        a = self.db.query(DBActivity).get(activity_id)
+        a = self._get_owned(activity_id)
         if not a:
             raise NotFoundError(f"活动 {activity_id} 不存在")
         a.report_status = "analyzing"
@@ -382,7 +391,7 @@ class ActivityService:
 
     def get_power_curve(self, activity_id: int) -> dict:
         """功率曲线 (Mean Maximal Power)"""
-        a = self.db.get(DBActivity, activity_id)
+        a = self._get_owned(activity_id)
         if not a:
             raise NotFoundError(f"活动 {activity_id} 不存在")
         samples = a.samples_json or []
@@ -417,7 +426,7 @@ class ActivityService:
         self, activity_id: int, ftp: Optional[int] = None,
     ) -> dict:
         """Coggan 7 区分布"""
-        a = self.db.get(DBActivity, activity_id)
+        a = self._get_owned(activity_id)
         if not a:
             raise NotFoundError(f"活动 {activity_id} 不存在")
         if ftp is None:
@@ -452,7 +461,7 @@ class ActivityService:
         cp: Optional[int] = None, w_prime: int = 20000,
     ) -> dict:
         """W'bal 详细分析"""
-        a = self.db.get(DBActivity, activity_id)
+        a = self._get_owned(activity_id)
         if not a:
             raise NotFoundError(f"活动 {activity_id} 不存在")
         samples_json = a.samples_json or []
@@ -488,7 +497,7 @@ class ActivityService:
     def get_decoupling(self, activity_id: int) -> dict:
         """Pa:HR Decoupling (有氧效率衰减)"""
         from cycling_coach.core.metrics.hr import pa_hr_decoupling, aerobic_decoupling_trend
-        a = self.db.get(DBActivity, activity_id)
+        a = self._get_owned(activity_id)
         if not a:
             raise NotFoundError(f"活动 {activity_id} 不存在")
         samples_json = a.samples_json or []
@@ -503,7 +512,7 @@ class ActivityService:
 
     def get_cp_estimate(self, activity_id: int) -> dict:
         """CP 3 参数自动估算"""
-        a = self.db.get(DBActivity, activity_id)
+        a = self._get_owned(activity_id)
         if not a:
             raise NotFoundError(f"活动 {activity_id} 不存在")
         samples_json = a.samples_json or []
@@ -513,6 +522,19 @@ class ActivityService:
         result = detect_cp_3param(sample_objs)
         result["activity_id"] = activity_id
         return result
+
+    # ---------- V0.8.1 批 2: IDOR 防护 helper ----------
+
+    def _get_owned(self, activity_id: int):
+        """按 ID 取活动 + 强制 scope 到当前 athlete。返回 ORM 行或 None。
+
+        所有 ID 类操作 (GET / DELETE / PATCH / POST 子资源) 都用这个 helper,
+        避免别人猜到 ID 就能读/改/删你的活动。
+        """
+        return self.db.query(DBActivity).filter(
+            DBActivity.id == activity_id,
+            DBActivity.athlete_id == self.athlete.id,
+        ).first()
 
     # ---------- 对比 ----------
 

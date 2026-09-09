@@ -216,7 +216,7 @@ cycling-coach/
 │   ├── mobile/                           # PWA 占位
 │   └── cli/                              # CLI 占位
 │
-├── tests/                                # 96 + 2 skip 测试 (41 metrics + 15 chat + 5 ml + 22 workflow + 13 ftp_predictor)
+├── tests/                                # 137 + 2 skip 测试 (41 metrics + 15 chat + 5 ml + 22 workflow + 13 ftp_predictor + 35 services + **新** 6 idor)
 ├── docs/                                 # ARCHITECTURE / ROADMAP / PLAN
 ├── assets/screenshots/                   # README 截图
 │
@@ -313,7 +313,7 @@ cycling-coach/
 | 前端 store | 1 大 | 4 拆 (UI/Chat/Athlete + App shim) |
 | 前端 lazy | 0 | 17 页面 |
 | 真实 ML 模型 | Mock | ftp-predictor joblib |
-| 测试 | 63 | 96 + 2 skip (+35) |
+| 测试 | 63 | 137 + 2 skip (+76) |
 
 ### 启动 / 升级
 
