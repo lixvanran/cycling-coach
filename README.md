@@ -15,7 +15,9 @@
 >
 > 训练百科内容来源: **潘震(公路车教练)**, 仅供本地 RAG 检索, 禁止再分发/衍生/商用
 
-## 当前版本: **V0.8.0**
+## 当前版本: **V0.8.1** (工程化收口, 24 commits ahead)
+
+V0.8.1 = **工程化收口**: 批 1 (CVE 升级 + 死代码 + 循环依赖 + 单例线程安全 + 删无用依赖) + 批 2 (4 service × 15 个 ID 类方法强制 scope 到当前 athlete) + 批 3 (GitHub Actions CI: lint+test+安全+前端 build, 待 token workflow scope 后入仓)。137 + 2 skip 测试全过。
 
 V0.8.0 = **战术规划接 multi-mind + FTP 真模型 + 架构整理**: Chat 拆 3 mode (rag/workflow/chat), 接入 lixvanran/multi-mind 思维扩散器 (6 stage pipeline), 接入 lixvanran/ftp-predictor 真实模型 (20 维特征 + Conformal 区间), 后端 service 化 + 异常统一, 前端路由分组 + store 拆分 + 17 页面懒加载。
 
@@ -28,6 +30,7 @@ V0.8.0 = **战术规划接 multi-mind + FTP 真模型 + 架构整理**: Chat 拆
 | V0.7.5.9+10 | 比赛战术规划 (后端 10 端点 + AI 流式 + 路书 + 前端 RaceTacticsPage) | ✓ |
 | V0.7.8 | Foundation 1.0: chat 持久化 + ML 骨架 + WAL + 性能 + 优雅关闭 | ✓ |
 | **V0.8.0** | **战术规划 + FTP 真模型 + 架构整理**: Chat 3 mode + multi-mind + ftp-predictor + 7 service + 路由分组 | ✓ |
+| **V0.8.1** | **工程化收口**: 批 1 (CVE / 死代码 / 循环依赖 / 单例 / 依赖) + 批 2 (IDOR 防护 4 service × 15 方法) + 批 3 (GitHub Actions CI, 待 token workflow scope) | ✓ |
 
 ## 主要功能
 
