@@ -15,9 +15,9 @@ interface Props {
 }
 
 const CONFIDENCE_LABEL: Record<string, { label: string; color: string; bg: string }> = {
-  high: { label: "高", color: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200" },
-  medium: { label: "中", color: "text-amber-700", bg: "bg-amber-50 border-amber-200" },
-  low: { label: "低", color: "text-rose-700", bg: "bg-rose-50 border-rose-200" },
+  high: { label: "高", color: "text-accent-success", bg: "bg-status-success border-border" },
+  medium: { label: "中", color: "text-accent-warning", bg: "bg-status-warning border-border" },
+  low: { label: "低", color: "text-accent-danger", bg: "bg-status-danger border-border" },
 };
 
 export function FTPPredictionCard({ athleteId: _athleteId, className }: Props) {
@@ -55,12 +55,12 @@ export function FTPPredictionCard({ athleteId: _athleteId, className }: Props) {
     return (
       <div className={clsx("panel p-5", className)}>
         <div className="flex items-center justify-between mb-3">
-          <div className="h-4 w-24 bg-bg-input rounded animate-pulse" />
-          <div className="h-3 w-12 bg-bg-input rounded animate-pulse" />
+          <div className="h-4 w-24 bg-bg-subtle rounded animate-pulse" />
+          <div className="h-3 w-12 bg-bg-subtle rounded animate-pulse" />
         </div>
-        <div className="h-12 w-40 bg-bg-input rounded animate-pulse mb-2" />
-        <div className="h-6 w-32 bg-bg-input rounded animate-pulse mb-3" />
-        <div className="h-8 w-full bg-bg-input rounded animate-pulse" />
+        <div className="h-12 w-40 bg-bg-subtle rounded animate-pulse mb-2" />
+        <div className="h-6 w-32 bg-bg-subtle rounded animate-pulse mb-3" />
+        <div className="h-8 w-full bg-bg-subtle rounded animate-pulse" />
       </div>
     );
   }
@@ -68,11 +68,11 @@ export function FTPPredictionCard({ athleteId: _athleteId, className }: Props) {
   // 错误态(模型未注册等)
   if (error) {
     return (
-      <div className={clsx("panel p-5 border-l-4 border-l-rose-400 bg-rose-50/30", className)}>
+      <div className={clsx("panel p-5 border-l-4 border-l-danger bg-status-danger/30", className)}>
         <div className="flex items-start gap-2.5">
-          <AlertCircle className="w-5 h-5 text-rose-500 mt-0.5 flex-shrink-0" />
+          <AlertCircle className="w-5 h-5 text-accent-danger mt-0.5 flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-rose-700">模型未注册</div>
+            <div className="text-sm font-semibold text-accent-danger">模型未注册</div>
             <div className="text-xs text-text-secondary mt-1 leading-relaxed">
               ftp-predictor 模型尚未注册到 MLModelMeta。{!modelRegistered && "请前往 "}
               {!modelRegistered && (
@@ -109,7 +109,7 @@ export function FTPPredictionCard({ athleteId: _athleteId, className }: Props) {
   return (
     <div className={clsx("panel p-5 relative overflow-hidden", className)}>
       {/* 顶饰 — 渐变条 */}
-      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-accent-primary via-accent-cyan to-accent-primary opacity-60" />
+      <div className="absolute top-0 left-0 right-0 h-1 bg-accent-primary from-accent-primary via-accent-cyan to-accent-primary opacity-60" />
 
       {/* 标题行 */}
       <div className="flex items-center justify-between mb-2">
@@ -136,7 +136,7 @@ export function FTPPredictionCard({ athleteId: _athleteId, className }: Props) {
         {data.delta !== null && data.delta !== undefined && (
           <div className={clsx(
             "flex items-center gap-1 text-sm font-semibold font-mono",
-            isPositive ? "text-emerald-600" : "text-rose-600",
+            isPositive ? "text-accent-success" : "text-accent-danger",
           )}>
             {isPositive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
             {isPositive ? "+" : ""}{data.delta} W

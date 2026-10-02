@@ -33,11 +33,13 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   diagnose: () => jsonFetch<DiagnoseInfo>("/diagnose"),
+  version: () => jsonFetch<{ version: string; service?: string }>("/version"),
 
   // 运动员
   getAthlete: () => jsonFetch<Athlete>("/athlete"),
   updateAthlete: (data: Partial<Athlete>) =>
     jsonFetch<Athlete>("/athlete", { method: "PATCH", body: JSON.stringify(data) }),
+  refreshAthleteFtp: () => jsonFetch<{ ok: boolean; ftp_estimated: number | null }>("/athlete/refresh-ftp", { method: "POST" }),
 
   // 活动
   listActivities: (params?: {
@@ -258,6 +260,13 @@ export const api = {
     }),
 
   phasesDelete: (id: number) => jsonFetch<{ ok: boolean; id: number }>(`/phases/${id}`, { method: "DELETE" }),
+
+  // B1-3: 一键应用到日历 — 把阶段周模板批量生成 PlannedWorkout
+  applyPhaseToCalendar: (phaseId: number, startDate: string, weeks: number) =>
+    jsonFetch<{ ok: boolean; applied_count: number; planned_ids: number[] }>(
+      `/phases/${phaseId}/apply?start_date=${encodeURIComponent(startDate)}&weeks=${weeks}`,
+      { method: "POST" },
+    ),
 
   updateRpe: (id: number, rpe: number | null, rpeNote?: string | null) =>
     jsonFetch<{ ok: boolean; activity_id: number; rpe: number | null; rpe_note: string | null }>(`/activities/${id}/rpe`, {
@@ -708,5 +717,24 @@ export const api = {
   diaryDelete: (date: string) => jsonFetch<{ ok: boolean; deleted: string }>(`/diary/${date}`, { method: "DELETE" }),
   diaryTemplate: () => jsonFetch<import("./types").DiaryTemplate>("/diary/template"),
 
-
+  // V0.8.2: race-tactics 端点 (V0.8.1 RaceTacticsPage 已经在用, 但 api.ts 缺, 加 stub)
+  // 真实端点见后端 cycling_coach/api/routers/race_tactics.py
+  raceTacticsList: () => jsonFetch<{ items: any[] }>("/race-tactics/sessions"),
+  raceTacticsGet: (id: number) => jsonFetch<any>(`/race-tactics/sessions/${id}`),
+  raceTacticsCreate: (data: any) =>
+    jsonFetch<{ ok: boolean; session: any }>("/race-tactics/sessions", { method: "POST", body: JSON.stringify(data) }),
+  raceTacticsDelete: (id: number) =>
+    jsonFetch<{ ok: boolean; deleted: number }>(`/race-tactics/sessions/${id}`, { method: "DELETE" }),
+  raceTacticsUpload: (id: number, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return fetch(BASE + `/race-tactics/sessions/${id}/attachments`, { method: "POST", body: fd }).then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    });
+  },
+  raceTacticsAddMessage: (id: number, content: string) =>
+    jsonFetch<any>(`/race-tactics/sessions/${id}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
+  raceTacticsSuggest: (id: number) =>
+    jsonFetch<any>(`/race-tactics/sessions/${id}/suggest`, { method: "POST" }),
 };

@@ -1,16 +1,14 @@
 // ConfirmDialog — V0.8.0 替代 window.confirm
-// 用法:
+// V0.8.2 UX-2: 加 useConfirm hook 让用法更顺
+// 用法 1 (传统):
 //   const [open, setOpen] = useState(false);
-//   <ConfirmDialog
-//     open={open}
-//     title="确定删除?"
-//     message="删除后无法恢复"
-//     variant="danger"
-//     onConfirm={() => { setOpen(false); doDelete(); }}
-//     onCancel={() => setOpen(false)}
-//   />
+//   <ConfirmDialog open={open} title="..." onConfirm={...} onCancel={...} />
+//
+// 用法 2 (hook, 推荐):
+//   const confirm = useConfirm();
+//   if (await confirm({ title, message, variant: "danger" })) { doDelete(); }
 import { AlertTriangle, Info, X } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState, useCallback, createContext, useContext } from "react";
 import clsx from "clsx";
 
 export interface ConfirmDialogProps {
@@ -22,6 +20,70 @@ export interface ConfirmDialogProps {
   cancelText?: string;
   onConfirm: () => void;
   onCancel: () => void;
+}
+
+// ===== useConfirm hook (V0.8.2 新增) =====
+export interface ConfirmOptions {
+  title: string;
+  message: string | React.ReactNode;
+  variant?: "default" | "danger";
+  confirmText?: string;
+  cancelText?: string;
+}
+
+interface ConfirmState extends ConfirmOptions {
+  resolve: (ok: boolean) => void;
+}
+
+interface ConfirmContextValue {
+  confirm: (opts: ConfirmOptions) => Promise<boolean>;
+}
+
+const ConfirmContext = createContext<ConfirmContextValue | null>(null);
+
+export function useConfirm(): (opts: ConfirmOptions) => Promise<boolean> {
+  const ctx = useContext(ConfirmContext);
+  if (ctx) return ctx.confirm;
+  // 没 Provider 时退化到 window.confirm (兜底, 不应走到)
+  return (opts) => Promise.resolve(window.confirm(`${opts.title}\n${opts.message}`));
+}
+
+export function ConfirmProvider({ children }: { children: React.ReactNode }) {
+  const [state, setState] = useState<ConfirmState | null>(null);
+
+  const confirm = useCallback((opts: ConfirmOptions) => {
+    return new Promise<boolean>((resolve) => {
+      setState({ ...opts, resolve });
+    });
+  }, []);
+
+  const handleConfirm = useCallback(() => {
+    state?.resolve(true);
+    setState(null);
+  }, [state]);
+
+  const handleCancel = useCallback(() => {
+    state?.resolve(false);
+    setState(null);
+  }, [state]);
+
+  return (
+    <ConfirmContext.Provider value={{ confirm }}>
+      {children}
+      {state && (
+        <ConfirmDialog
+          open={true}
+          title={state.title}
+          message={state.message}
+          variant={state.variant}
+          confirmText={state.confirmText}
+          cancelText={state.cancelText}
+          onConfirm={handleConfirm}
+          onCancel={handleCancel}
+        />
+      )}
+    </ConfirmContext.Provider>
+  );
 }
 
 export function ConfirmDialog({
@@ -47,7 +109,7 @@ export function ConfirmDialog({
   if (!open) return null;
 
   const Icon = variant === "danger" ? AlertTriangle : Info;
-  const iconClass = variant === "danger" ? "text-red-600 bg-red-100" : "text-sky-600 bg-sky-100";
+  const iconClass = variant === "danger" ? "text-accent-danger bg-status-danger" : "text-accent-primary bg-status-info";
   const btnClass = variant === "danger" ? "btn-danger" : "btn-primary";
 
   return (
@@ -56,13 +118,13 @@ export function ConfirmDialog({
       onClick={onCancel}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl border border-border max-w-md w-[90%] p-6"
+        className="bg-white rounded shadow-sm border border-border max-w-md w-[90%] p-6"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
       >
         <div className="flex items-start gap-4">
-          <div className={clsx("w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0", iconClass)}>
+          <div className={clsx("w-10 h-10 rounded flex items-center justify-center flex-shrink-0", iconClass)}>
             <Icon size={20} />
           </div>
           <div className="flex-1 min-w-0">
@@ -71,7 +133,7 @@ export function ConfirmDialog({
           </div>
           <button
             onClick={onCancel}
-            className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-elevated flex-shrink-0"
+            className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-subtle flex-shrink-0"
             aria-label="关闭"
           >
             <X size={16} />

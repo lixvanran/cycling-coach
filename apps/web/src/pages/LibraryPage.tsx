@@ -11,10 +11,14 @@ import {
   Sparkles,
   Tag,
   Clock,
+  Check,
+  Square,
   type LucideIcon,
 } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../lib/api";
+import { useToast } from "../components/Toast";
+import { useConfirm, ScheduleModal } from "../components/common";
 import type {
   Workout,
   WorkoutGoal,
@@ -29,40 +33,40 @@ const GOAL_COLOR: Record<
   { bg: string; text: string; ring: string; chip: string }
 > = {
   recovery: {
-    bg: "bg-sky-500/15",
-    text: "text-sky-300",
-    ring: "ring-sky-500/40",
-    chip: "bg-sky-500/20 text-sky-200",
+    bg: "bg-status-info",
+    text: "text-accent-primary",
+    ring: "",
+    chip: "bg-status-info text-accent-primary",
   },
   endurance: {
-    bg: "bg-emerald-500/15",
-    text: "text-emerald-300",
-    ring: "ring-emerald-500/40",
-    chip: "bg-emerald-500/20 text-emerald-200",
+    bg: "bg-status-success/15",
+    text: "text-accent-success",
+    ring: "",
+    chip: "bg-status-success/20 text-emerald-200",
   },
   tempo: {
-    bg: "bg-amber-500/15",
-    text: "text-amber-300",
-    ring: "ring-amber-500/40",
-    chip: "bg-amber-500/20 text-amber-200",
+    bg: "bg-status-warning0/15",
+    text: "text-accent-warning",
+    ring: "",
+    chip: "bg-status-warning0/20 text-amber-200",
   },
   threshold: {
-    bg: "bg-orange-500/15",
-    text: "text-orange-300",
-    ring: "ring-orange-500/40",
-    chip: "bg-orange-500/20 text-orange-200",
+    bg: "bg-status-warning0/15",
+    text: "text-accent-warning",
+    ring: "",
+    chip: "bg-status-warning0/20 text-orange-200",
   },
   vo2max: {
-    bg: "bg-red-500/15",
-    text: "text-red-300",
-    ring: "ring-red-500/40",
-    chip: "bg-red-500/20 text-red-200",
+    bg: "bg-accent-danger/15",
+    text: "text-accent-danger",
+    ring: "",
+    chip: "bg-accent-danger/20 text-accent-danger",
   },
   race: {
-    bg: "bg-fuchsia-500/15",
-    text: "text-fuchsia-300",
-    ring: "ring-fuchsia-500/40",
-    chip: "bg-fuchsia-500/20 text-fuchsia-200",
+    bg: "bg-status-info",
+    text: "text-accent-primary",
+    ring: "",
+    chip: "bg-status-info text-accent-primary",
   },
 };
 
@@ -80,6 +84,50 @@ function fmtMin(m: number) {
   return r > 0 ? `${h}h${r}min` : `${h}h`;
 }
 
+// V0.8.2 (B1-6): 批量排课 — 间隔模式
+type BulkIntervalMode = "daily" | "every2" | "weekly";
+
+const BULK_INTERVAL_LABEL: Record<BulkIntervalMode, string> = {
+  daily: "每天",
+  every2: "隔天",
+  weekly: "每周指定日",
+};
+
+// 给定起始日期 + 间隔模式 + 周几 (0=周日, 1=周一, ..., 6=周六) → 计算 N 个日期字符串 (YYYY-MM-DD)
+function computeBulkDates(
+  startDate: string,
+  n: number,
+  mode: BulkIntervalMode,
+  weekday: number
+): string[] {
+  const dates: string[] = [];
+  if (n <= 0) return dates;
+  // 起始日 00:00 本地时间
+  const [y, m, d] = startDate.split("-").map((s) => parseInt(s, 10));
+  let cur = new Date(y, m - 1, d);
+  // weekly: 如果起始日不是目标周几, 先推进到下一个目标周几
+  if (mode === "weekly") {
+    const diff = (weekday - cur.getDay() + 7) % 7;
+    if (diff > 0) {
+      cur.setDate(cur.getDate() + diff);
+    }
+  }
+  for (let i = 0; i < n; i++) {
+    const yy = cur.getFullYear();
+    const mm = String(cur.getMonth() + 1).padStart(2, "0");
+    const dd = String(cur.getDate()).padStart(2, "0");
+    dates.push(`${yy}-${mm}-${dd}`);
+    if (mode === "daily") {
+      cur.setDate(cur.getDate() + 1);
+    } else if (mode === "every2") {
+      cur.setDate(cur.getDate() + 2);
+    } else {
+      cur.setDate(cur.getDate() + 7);
+    }
+  }
+  return dates;
+}
+
 function stepSummary(s: WorkoutStep): string {
   const parts: string[] = [];
   if (s.repeat && s.repeat > 1) parts.push(`×${s.repeat}`);
@@ -93,6 +141,8 @@ function stepSummary(s: WorkoutStep): string {
 
 export function LibraryPage() {
   const navigate = useNavigate();
+  const toast = useToast();
+  const confirm = useConfirm();
 
   const [q, setQ] = useState("");
   const [goal, setGoal] = useState<WorkoutGoal | "">("");
@@ -109,10 +159,13 @@ export function LibraryPage() {
     workout: Workout;
     date: string;
   } | null>(null);
-  const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(
+  const [localToast, setLocalToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(
     null
   );
   const [repairing, setRepairing] = useState(false);
+  // V0.8.2 (B1-6): 多选 + 批量加入日历
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkScheduleOpen, setBulkScheduleOpen] = useState(false);
 
   // 加载 goals + tags
   useEffect(() => {
@@ -153,12 +206,20 @@ export function LibraryPage() {
   }, [q, goal, tag, source]);
 
   async function onRepair() {
-    if (!confirm("一键修复数据库?\n会自动加缺失列 + 重新 seed 29 个系统课程")) return;
+    const ok = await confirm({
+      title: "一键修复数据库",
+      message: "会自动加缺失列 + 重新 seed 29 个系统课程, 不会影响你的自建课程。",
+      variant: "default",
+      confirmText: "开始修复",
+    });
+    if (!ok) return;
     setRepairing(true);
     try {
       const r = await fetch("/api/dev/repair-db", { method: "POST" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
       if (data.ok) {
+        toast.success(`修复完成! 课程总数: ${JSON.stringify(data.final_count)}`);
         showToast("ok", `修复完成! 课程总数: ${JSON.stringify(data.final_count)}`);
         // 刷新列表
         setSource((s) => (s === "all" ? "all" : "all"));
@@ -167,9 +228,11 @@ export function LibraryPage() {
         setTag("");
         setLoadError(null);
       } else {
+        toast.error("修复失败: " + JSON.stringify(data));
         showToast("err", "修复失败: " + JSON.stringify(data));
       }
     } catch (e: any) {
+      toast.error("修复失败: " + (e?.message ?? e));
       showToast("err", "修复失败: " + (e?.message ?? e));
     } finally {
       setRepairing(false);
@@ -177,8 +240,8 @@ export function LibraryPage() {
   }
 
   function showToast(kind: "ok" | "err", msg: string) {
-    setToast({ kind, msg });
-    setTimeout(() => setToast(null), 2200);
+    setLocalToast({ kind, msg });
+    setTimeout(() => setLocalToast(null), 2200);
   }
 
   async function onDuplicate(w: Workout) {
@@ -197,9 +260,16 @@ export function LibraryPage() {
       showToast("err", "系统课程不能删除");
       return;
     }
-    if (!confirm(`删除课程 "${w.title}" ?`)) return;
+    const ok = await confirm({
+      title: "删除课程",
+      message: `确定删除课程 "${w.title}" ? 此操作无法撤销。`,
+      variant: "danger",
+      confirmText: "删除",
+    });
+    if (!ok) return;
     try {
       await api.deleteWorkout(w.id);
+      toast.success("已删除");
       showToast("ok", "已删除");
       setSelected(null);
       setSource(source); // 刷新
@@ -222,6 +292,50 @@ export function LibraryPage() {
     }
   }
 
+  // V0.8.2 (B1-6): 批量排课 — 多选 toggle
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  // V0.8.2 (B1-6): 批量提交 — 按间隔模式计算日期, 循环调 scheduleWorkout
+  async function onBulkScheduleSubmit(
+    startDate: string,
+    mode: BulkIntervalMode,
+    weekday: number
+  ) {
+    if (selectedIds.size === 0) return;
+    // 按列表顺序排, 取稳定顺序 (先 user 后 system 已经在 API 层排过)
+    const ordered = list.filter((w) => selectedIds.has(w.id));
+    const dates = computeBulkDates(startDate, ordered.length, mode, weekday);
+    setBulkScheduleOpen(false);
+    let okCount = 0;
+    let failCount = 0;
+    for (let i = 0; i < ordered.length; i++) {
+      try {
+        await api.scheduleWorkout(ordered[i].id, dates[i]);
+        okCount++;
+      } catch (e) {
+        failCount++;
+      }
+    }
+    clearSelection();
+    if (failCount === 0) {
+      toast.success(`已批量加入 ${okCount} 个 workout`);
+      showToast("ok", `已批量加入 ${okCount} 个 workout`);
+    } else {
+      toast.error(`成功 ${okCount}, 失败 ${failCount}`);
+      showToast("err", `成功 ${okCount}, 失败 ${failCount}`);
+    }
+  }
+
   return (
     <div className="h-full flex bg-bg-base">
       {/* 主列表 */}
@@ -231,7 +345,7 @@ export function LibraryPage() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-2xl font-bold flex items-center gap-2">
-                <Sparkles className="w-6 h-6 text-amber-400" />
+                <Sparkles className="w-6 h-6 text-accent-warning" />
                 课程库
               </h1>
               <p className="text-text-muted text-sm mt-1">
@@ -241,7 +355,7 @@ export function LibraryPage() {
             <div className="flex gap-2">
               <button
                 onClick={() => navigate("/plan")}
-                className="px-4 py-2 bg-accent text-bg-base rounded-lg font-medium hover:opacity-90"
+                className="px-4 py-2 bg-accent text-bg-base rounded font-medium hover:opacity-90"
               >
                 + 新建课程
               </button>
@@ -249,7 +363,7 @@ export function LibraryPage() {
           </div>
 
           {/* 筛选区 */}
-          <div className="bg-bg-elevated rounded-xl p-4 mb-4 border border-border">
+          <div className="bg-bg-subtle rounded p-4 mb-4 border border-border">
             <div className="flex gap-3 items-center mb-3">
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
@@ -257,13 +371,13 @@ export function LibraryPage() {
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                   placeholder="搜索标题 / 描述 / 标签..."
-                  className="w-full pl-10 pr-3 py-2 bg-bg-base border border-border rounded-lg text-sm focus:outline-none focus:border-accent"
+                  className="w-full pl-10 pr-3 py-2 bg-bg-base border border-border rounded text-sm focus:outline-none focus:border-accent"
                 />
               </div>
               <select
                 value={source}
                 onChange={(e) => setSource(e.target.value as any)}
-                className="px-3 py-2 bg-bg-base border border-border rounded-lg text-sm"
+                className="px-3 py-2 bg-bg-base border border-border rounded text-sm"
               >
                 <option value="all">全部来源</option>
                 <option value="system">系统课程</option>
@@ -342,8 +456,8 @@ export function LibraryPage() {
 
           {/* 错误 banner + 一键修复 */}
           {loadError && (
-            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-              <div className="text-sm text-red-300 mb-2">
+            <div className="mb-4 p-3 bg-accent-danger/10 border border-accent-danger rounded">
+              <div className="text-sm text-accent-danger mb-2">
                 ⚠️ 加载失败:{loadError}
               </div>
               <div className="text-xs text-text-muted mb-2">
@@ -352,7 +466,7 @@ export function LibraryPage() {
               <button
                 onClick={onRepair}
                 disabled={repairing}
-                className="px-3 py-1.5 bg-red-500/20 border border-red-500/40 text-red-200 rounded text-xs hover:bg-red-500/30 disabled:opacity-50"
+                className="px-3 py-1.5 bg-accent-danger/20 border border-accent-danger text-accent-danger rounded text-xs hover:bg-accent-danger/30 disabled:opacity-50"
               >
                 {repairing ? "修复中..." : "🔧 一键修复数据库"}
               </button>
@@ -361,7 +475,7 @@ export function LibraryPage() {
 
           {/* 我的课程快捷区(用户自建) */}
           {source === "all" && list.some((w) => w.source === "user") && (
-            <div className="mb-4 p-3 bg-bg-elevated border border-border rounded-lg">
+            <div className="mb-4 p-3 bg-bg-subtle border border-border rounded">
               <div className="text-xs font-semibold text-text-muted mb-2">
                 📌 我的课程 ({list.filter((w) => w.source === "user").length})
               </div>
@@ -390,14 +504,45 @@ export function LibraryPage() {
             {loading && <span>加载中...</span>}
           </div>
 
+          {/* V0.8.2 (B1-6): 多选批量加入日历 toolbar */}
+          {selectedIds.size > 0 && (
+            <div className="sticky top-0 z-10 mb-3 p-3 bg-accent/10 border border-accent/40 rounded flex items-center gap-3 backdrop-blur-sm">
+              <span className="text-sm font-medium text-accent">
+                已选 {selectedIds.size} 项
+              </span>
+              <div className="flex-1" />
+              <button
+                onClick={clearSelection}
+                className="px-3 py-1.5 bg-bg-base border border-border rounded text-xs hover:border-accent/50"
+              >
+                清空选择
+              </button>
+              <button
+                onClick={() => setBulkScheduleOpen(true)}
+                className="px-3 py-1.5 bg-accent text-bg-base rounded text-sm font-medium flex items-center gap-1 hover:opacity-90"
+              >
+                <Calendar className="w-4 h-4" />
+                📅 批量加入日历
+              </button>
+            </div>
+          )}
+
           {/* 列表 */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {list.map((w) => (
               <WorkoutCard
                 key={w.id}
                 w={w}
+                selected={selectedIds.has(w.id)}
+                onToggleSelect={() => toggleSelect(w.id)}
                 onClick={() => setSelected(w)}
                 onDuplicate={() => onDuplicate(w)}
+                onSchedule={() =>
+                  setScheduleTarget({
+                    workout: w,
+                    date: new Date().toISOString().slice(0, 10),
+                  })
+                }
               />
             ))}
           </div>
@@ -432,17 +577,26 @@ export function LibraryPage() {
         />
       )}
 
-      {/* Toast */}
-      {toast && (
+      {/* V0.8.2 (B1-6): 批量排课 modal */}
+      {bulkScheduleOpen && (
+        <BulkScheduleModal
+          count={selectedIds.size}
+          onCancel={() => setBulkScheduleOpen(false)}
+          onConfirm={onBulkScheduleSubmit}
+        />
+      )}
+
+      {/* Toast (局部, 只在 LibraryPage 用) */}
+      {localToast && (
         <div
           className={clsx(
-            "fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg text-sm shadow-lg z-50",
-            toast.kind === "ok"
-              ? "bg-emerald-500/90 text-white"
-              : "bg-red-500/90 text-white"
+            "fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded text-sm shadow-sm z-50",
+            localToast.kind === "ok"
+              ? "bg-status-success/90 text-white"
+              : "bg-accent-danger/90 text-white"
           )}
         >
-          {toast.msg}
+          {localToast.msg}
         </div>
       )}
     </div>
@@ -451,20 +605,81 @@ export function LibraryPage() {
 
 function WorkoutCard({
   w,
+  selected,
+  onToggleSelect,
   onClick,
   onDuplicate,
+  onSchedule,
 }: {
   w: Workout;
+  selected: boolean;
+  onToggleSelect: () => void;
   onClick: () => void;
   onDuplicate: () => void;
+  onSchedule: () => void;
 }) {
   const c = GOAL_COLOR[w.goal];
+  const [isDragging, setIsDragging] = useState(false);
+
+  // V0.8.3 (B1-1): HTML5 DnD 跨页 — 拖到 CalendarPage 加入计划
+  function handleDragStart(e: React.DragEvent<HTMLDivElement>) {
+    const payload = JSON.stringify({
+      id: w.id,
+      title: w.title,
+      duration_min: w.duration_min,
+      tss: null,
+    });
+    e.dataTransfer.setData("application/x-library-workout", payload);
+    e.dataTransfer.setData("text/plain", w.title);
+    e.dataTransfer.effectAllowed = "copy";
+    setIsDragging(true);
+
+    // 自定义 ghost 元素 (Safari 友好)
+    if (e.dataTransfer.setDragImage) {
+      const ghost = document.createElement("div");
+      ghost.textContent = `📅 ${w.title} (${w.duration_min}min)`;
+      ghost.style.cssText =
+        "position:absolute;top:-1000px;left:0;padding:8px 12px;background:#1e293b;color:#fff;border-radius:8px;font-size:12px;font-family:system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,0.3);white-space:nowrap;";
+      document.body.appendChild(ghost);
+      e.dataTransfer.setDragImage(ghost, 0, 0);
+      // 下一帧清理 (dragImage 必须仍在 DOM)
+      requestAnimationFrame(() => document.body.removeChild(ghost));
+    }
+  }
+
+  function handleDragEnd() {
+    setIsDragging(false);
+  }
+
   return (
     <div
       onClick={onClick}
-      className="bg-bg-elevated border border-border rounded-xl p-4 hover:border-accent/40 cursor-pointer transition group"
+      draggable={true}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      className={clsx(
+        "bg-bg-subtle border rounded p-4 hover:border-accent/40 cursor-pointer transition group relative",
+        selected ? "border-accent ring-1 ring-accent/40" : "border-border",
+        isDragging && "opacity-50"
+      )}
     >
-      <div className="flex items-start justify-between mb-2">
+      {/* V0.8.2 (B1-6): 多选 checkbox (hover 显示, 选中常显) */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleSelect();
+        }}
+        title={selected ? "取消选择" : "加入批量"}
+        className={clsx(
+          "absolute top-3 right-3 w-5 h-5 rounded border flex items-center justify-center transition",
+          selected
+            ? "opacity-100 bg-accent border-accent text-bg-base"
+            : "opacity-0 group-hover:opacity-100 bg-bg-base border-border text-text-muted hover:border-accent"
+        )}
+      >
+        {selected ? <Check className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
+      </button>
+      <div className="flex items-start justify-between mb-2 pr-7">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span
@@ -512,8 +727,19 @@ function WorkoutCard({
         )}
       </div>
 
-      {w.source === "system" && (
-        <div className="mt-2 pt-2 border-t border-border/50 flex justify-end">
+      <div className="mt-2 pt-2 border-t border-border/50 flex justify-between items-center gap-1">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSchedule();
+          }}
+          title="加到日历 (拖拽备用入口)"
+          className="text-[10px] text-text-muted hover:text-accent flex items-center gap-1"
+        >
+          <Calendar className="w-3 h-3" />
+          + 加到日历
+        </button>
+        {w.source === "system" && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -524,8 +750,8 @@ function WorkoutCard({
             <Copy className="w-3 h-3" />
             复制到我的
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -549,7 +775,7 @@ function WorkoutDetailDrawer({
   );
 
   return (
-    <div className="w-[480px] bg-bg-elevated border-l border-border flex flex-col">
+    <div className="w-[480px] bg-bg-subtle border-l border-border flex flex-col">
       <div className="p-5 border-b border-border flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2">
@@ -603,10 +829,10 @@ function WorkoutDetailDrawer({
                     <span
                       className={clsx(
                         "w-12 text-[10px] text-center px-1.5 py-0.5 rounded",
-                        s.kind === "warmup" && "bg-sky-500/20 text-sky-300",
-                        s.kind === "main" && "bg-amber-500/20 text-amber-300",
-                        s.kind === "recovery" && "bg-emerald-500/20 text-emerald-300",
-                        s.kind === "cooldown" && "bg-slate-500/30 text-slate-300"
+                        s.kind === "warmup" && "bg-status-info text-accent-primary",
+                        s.kind === "main" && "bg-status-warning0/20 text-accent-warning",
+                        s.kind === "recovery" && "bg-status-success/20 text-accent-success",
+                        s.kind === "cooldown" && "bg-bg-subtle0/30 text-text-muted"
                       )}
                     >
                       {KIND_LABEL[s.kind] ?? s.kind}
@@ -658,11 +884,11 @@ function WorkoutDetailDrawer({
             type="date"
             value={scheduleDate}
             onChange={(e) => setScheduleDate(e.target.value)}
-            className="flex-1 px-3 py-2 bg-bg-base border border-border rounded-lg text-sm"
+            className="flex-1 px-3 py-2 bg-bg-base border border-border rounded text-sm"
           />
           <button
             onClick={() => onSchedule(scheduleDate)}
-            className="px-3 py-2 bg-accent text-bg-base rounded-lg text-sm font-medium flex items-center gap-1 hover:opacity-90"
+            className="px-3 py-2 bg-accent text-bg-base rounded text-sm font-medium flex items-center gap-1 hover:opacity-90"
           >
             <Calendar className="w-4 h-4" />
             排到日历
@@ -672,7 +898,7 @@ function WorkoutDetailDrawer({
         <div className="flex gap-2">
           <button
             onClick={() => downloadExport(workout.id, "zwo", workout.title)}
-            className="flex-1 px-2 py-2 bg-indigo-500/10 border border-indigo-500/30 text-indigo-700 rounded-lg text-xs hover:bg-indigo-500/20 font-medium"
+            className="flex-1 px-2 py-2 bg-accent-primary-soft0/10 border border-accent-primary/30 text-accent-primary rounded text-xs hover:bg-accent-primary-soft0/20 font-medium"
             title="Zwift 训练课程 (XML)"
           >
             <Download className="w-3 h-3 inline mr-1" />
@@ -680,7 +906,7 @@ function WorkoutDetailDrawer({
           </button>
           <button
             onClick={() => downloadExport(workout.id, "mrc", workout.title)}
-            className="flex-1 px-2 py-2 bg-cyan-500/10 border border-cyan-500/30 text-cyan-700 rounded-lg text-xs hover:bg-cyan-500/20 font-medium"
+            className="flex-1 px-2 py-2 bg-cyan-500/10 border border-cyan-500/30 text-cyan-700 rounded text-xs hover:bg-cyan-500/20 font-medium"
             title="Rouvy / MiniRoad"
           >
             <Download className="w-3 h-3 inline mr-1" />
@@ -688,7 +914,7 @@ function WorkoutDetailDrawer({
           </button>
           <button
             onClick={() => downloadExport(workout.id, "erg", workout.title)}
-            className="flex-1 px-2 py-2 bg-amber-500/10 border border-amber-500/30 text-amber-700 rounded-lg text-xs hover:bg-amber-500/20 font-medium"
+            className="flex-1 px-2 py-2 bg-status-warning0/10 border border-accent-warning/30 text-accent-warning rounded text-xs hover:bg-status-warning0/20 font-medium"
             title="训练台通用 (CompuTrainer / TrainerRoad)"
           >
             <Download className="w-3 h-3 inline mr-1" />
@@ -699,7 +925,7 @@ function WorkoutDetailDrawer({
           {workout.source === "system" && (
             <button
               onClick={onDuplicate}
-              className="flex-1 px-3 py-2 bg-bg-base border border-border rounded-lg text-sm hover:border-accent/50"
+              className="flex-1 px-3 py-2 bg-bg-base border border-border rounded text-sm hover:border-accent/50"
             >
               <Copy className="w-3.5 h-3.5 inline mr-1" />
               复制到我的
@@ -708,7 +934,7 @@ function WorkoutDetailDrawer({
           {workout.source !== "system" && (
             <button
               onClick={onDelete}
-              className="flex-1 px-3 py-2 bg-red-500/10 border border-red-500/30 text-red-300 rounded-lg text-sm hover:bg-red-500/20"
+              className="flex-1 px-3 py-2 bg-accent-danger/10 border border-accent-danger text-accent-danger rounded text-sm hover:bg-accent-danger/20"
             >
               <Trash2 className="w-3.5 h-3.5 inline mr-1" />
               删除
@@ -727,44 +953,133 @@ function downloadExport(workoutId: number, format: "zwo" | "mrc" | "erg" | "json
   window.open(url, "_blank");
 }
 
-function ScheduleModal({
-  workoutTitle,
+// V0.8.2 (B1-6): 批量排课 modal — 起始日 + 间隔模式
+const WEEKDAY_LABEL: Record<number, string> = {
+  0: "周日",
+  1: "周一",
+  2: "周二",
+  3: "周三",
+  4: "周四",
+  5: "周五",
+  6: "周六",
+};
+
+function BulkScheduleModal({
+  count,
   onCancel,
   onConfirm,
 }: {
-  workoutTitle: string;
+  count: number;
   onCancel: () => void;
-  onConfirm: (date: string) => void;
+  onConfirm: (startDate: string, mode: BulkIntervalMode, weekday: number) => void;
 }) {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const today = new Date().toISOString().slice(0, 10);
+  const [startDate, setStartDate] = useState(today);
+  const [mode, setMode] = useState<BulkIntervalMode>("daily");
+  const [weekday, setWeekday] = useState<number>(1);
+
+  // 预览前 5 个日期
+  const previewDates = computeBulkDates(startDate, Math.min(count, 5), mode, weekday);
+
   return (
     <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center">
-      <div className="bg-bg-elevated rounded-xl p-5 w-[360px] border border-border">
-        <h3 className="font-semibold mb-2">排到日历</h3>
+      <div className="bg-bg-subtle rounded p-5 w-[420px] border border-border">
+        <h3 className="font-semibold mb-1">批量加入日历</h3>
         <p className="text-xs text-text-muted mb-3">
-          将课程 <span className="text-accent">{workoutTitle}</span> 加到:
+          将 <span className="text-accent">{count}</span> 个 workout 按间隔排到日历:
         </p>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="w-full px-3 py-2 bg-bg-base border border-border rounded-lg text-sm mb-3"
-        />
-        <p className="text-[10px] text-text-muted mb-3">
-          💡 当天有活动会自动关联,完成度会更新
-        </p>
-        <div className="flex gap-2">
+
+        <div className="space-y-3">
+          {/* 起始日期 */}
+          <div>
+            <label className="text-xs text-text-muted block mb-1">起始日期</label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full px-3 py-2 bg-bg-base border border-border rounded text-sm"
+            />
+          </div>
+
+          {/* 间隔模式 */}
+          <div>
+            <label className="text-xs text-text-muted block mb-1">间隔模式</label>
+            <div className="flex gap-2">
+              {(["daily", "every2", "weekly"] as BulkIntervalMode[]).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMode(m)}
+                  className={clsx(
+                    "flex-1 px-2 py-2 rounded text-xs font-medium border transition",
+                    mode === m
+                      ? "bg-accent text-bg-base border-accent"
+                      : "bg-bg-base border-border text-text-muted hover:border-accent/50"
+                  )}
+                >
+                  {BULK_INTERVAL_LABEL[m]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* weekly 模式: 选择周几 */}
+          {mode === "weekly" && (
+            <div>
+              <label className="text-xs text-text-muted block mb-1">每周几</label>
+              <div className="flex gap-1">
+                {[0, 1, 2, 3, 4, 5, 6].map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => setWeekday(d)}
+                    className={clsx(
+                      "flex-1 px-1 py-1.5 rounded text-[11px] font-medium border transition",
+                      weekday === d
+                        ? "bg-accent text-bg-base border-accent"
+                        : "bg-bg-base border-border text-text-muted hover:border-accent/50"
+                    )}
+                  >
+                    {WEEKDAY_LABEL[d]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 预览 */}
+          <div className="bg-bg-base border border-border rounded p-2">
+            <div className="text-[10px] text-text-muted mb-1">
+              预览 (前 {previewDates.length} 个):
+            </div>
+            <div className="text-xs font-mono space-y-0.5">
+              {previewDates.map((d, i) => (
+                <div key={i} className="text-text-primary">
+                  #{i + 1} → {d}
+                </div>
+              ))}
+              {count > previewDates.length && (
+                <div className="text-text-muted">... 共 {count} 个</div>
+              )}
+            </div>
+          </div>
+
+          <p className="text-[10px] text-text-muted">
+            💡 每个 workout 调用 <code className="text-accent">/workouts/:id/schedule</code> 一次
+          </p>
+        </div>
+
+        <div className="flex gap-2 mt-4">
           <button
             onClick={onCancel}
-            className="flex-1 px-3 py-2 bg-bg-base border border-border rounded-lg text-sm"
+            className="flex-1 px-3 py-2 bg-bg-base border border-border rounded text-sm"
           >
             取消
           </button>
           <button
-            onClick={() => onConfirm(date)}
-            className="flex-1 px-3 py-2 bg-accent text-bg-base rounded-lg text-sm font-medium"
+            onClick={() => onConfirm(startDate, mode, weekday)}
+            disabled={count === 0}
+            className="flex-1 px-3 py-2 bg-accent text-bg-base rounded text-sm font-medium disabled:opacity-50"
           >
-            确认
+            确认 ({count})
           </button>
         </div>
       </div>

@@ -16,23 +16,23 @@ import type { InsightsToday, Insight } from "../lib/types";
 const SEVERITY_CONFIG = {
   alert: {
     icon: AlertTriangle,
-    bg: "bg-rose-50",
-    border: "border-rose-300",
-    text: "text-rose-700",
+    bg: "bg-status-danger",
+    border: "border-accent-danger",
+    text: "text-accent-danger",
     label: "严重",
   },
   warning: {
     icon: AlertCircle,
-    bg: "bg-amber-50",
-    border: "border-amber-300",
-    text: "text-amber-700",
+    bg: "bg-status-warning",
+    border: "border-border",
+    text: "text-accent-warning",
     label: "注意",
   },
   info: {
     icon: Info,
-    bg: "bg-emerald-50",
-    border: "border-emerald-300",
-    text: "text-emerald-700",
+    bg: "bg-status-success",
+    border: "border-border",
+    text: "text-accent-success",
     label: "提示",
   },
 };
@@ -162,18 +162,18 @@ export function InsightsHealthCard() {
   return (
     <div className={clsx(
       "panel p-3 border-l-4",
-      color === "emerald" ? "border-emerald-400" :
-      color === "amber" ? "border-amber-400" :
-      "border-rose-400"
+      color === "emerald" ? "border-border" :
+      color === "amber" ? "border-border" :
+      "border-accent-danger"
     )}>
       <div className="text-xs text-text-muted flex items-center gap-1">
         <Sparkles className="w-3 h-3" /> 训练健康分
       </div>
       <div className={clsx(
         "text-3xl font-bold font-mono mt-1",
-        color === "emerald" ? "text-emerald-600" :
-        color === "amber" ? "text-amber-600" :
-        "text-rose-600"
+        color === "emerald" ? "text-accent-success" :
+        color === "amber" ? "text-accent-warning" :
+        "text-accent-danger"
       )}>
         {score}
         <span className="text-sm text-text-muted ml-1">/ 100</span>

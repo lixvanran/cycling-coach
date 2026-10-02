@@ -33,10 +33,10 @@ interface Props {
 }
 
 const COLOR_MAP: Record<string, { bg: string; text: string; border: string }> = {
-  excellent: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" },
-  normal: { bg: "bg-sky-50", text: "text-sky-700", border: "border-sky-200" },
-  high: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" },
-  warning: { bg: "bg-rose-50", text: "text-rose-700", border: "border-rose-200" },
+  excellent: { bg: "bg-status-success", text: "text-accent-success", border: "border-border" },
+  normal: { bg: "bg-status-info", text: "text-accent-primary", border: "border-border" },
+  high: { bg: "bg-status-warning", text: "text-accent-warning", border: "border-border" },
+  warning: { bg: "bg-status-danger", text: "text-accent-danger", border: "border-border" },
 };
 
 export function DecouplingCard({ data, loading }: Props) {
@@ -58,7 +58,7 @@ export function DecouplingCard({ data, loading }: Props) {
 
   if (!data.applicable) {
     return (
-      <div className="text-text-muted text-sm p-4 flex items-start gap-2 bg-slate-50 rounded-md">
+      <div className="text-text-muted text-sm p-4 flex items-start gap-2 bg-bg-subtle rounded-md">
         <AlertCircle className="w-4 h-4 mt-0.5" />
         <div>
           <div className="font-medium">不适用 (活动时长 &lt; 30min 或缺数据)</div>

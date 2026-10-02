@@ -106,7 +106,7 @@ export function TrendsPage() {
         )}
 
         {error && (
-          <div className="panel border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 flex items-start gap-2">
+          <div className="panel border-border bg-status-danger p-3 text-sm text-accent-danger flex items-start gap-2">
             <AlertCircle className="w-4 h-4 mt-0.5" />
             <span>{error}</span>
             <button onClick={() => setError(null)} className="ml-auto">
@@ -180,7 +180,7 @@ function OverviewView({ overview, rpe, acwr }: { overview: any; rpe: any; acwr: 
                   contentStyle={{ backgroundColor: "rgba(255,255,255,0.95)", border: "1px solid rgba(15,23,42,0.12)", borderRadius: 8, fontSize: 12 }}
                   formatter={(v: number, n: string) => [v, n]}
                 />
-                <Bar dataKey="tss" fill="#6366f1" name="TSS" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="tss" fill="#2563eb" name="TSS" radius={[3, 3, 0, 0]} />
                 <Bar dataKey="distance_km" fill="#10b981" name="距离 (km)" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -270,13 +270,13 @@ function OverviewView({ overview, rpe, acwr }: { overview: any; rpe: any; acwr: 
                 {rpe.series.slice(-14).map((d: any) => (
                   <div key={d.date} className="flex items-center gap-2 text-xs">
                     <div className="w-20 text-text-muted font-mono">{d.date.slice(5)}</div>
-                    <div className="flex-1 h-5 bg-slate-50 rounded relative overflow-hidden">
+                    <div className="flex-1 h-5 bg-bg-subtle rounded relative overflow-hidden">
                       <div
                         className={`h-full rounded ${
-                          d.avg_rpe >= 8 ? "bg-rose-300" :
-                          d.avg_rpe >= 6 ? "bg-amber-300" :
+                          d.avg_rpe >= 8 ? "bg-status-danger" :
+                          d.avg_rpe >= 6 ? "bg-accent-warning" :
                           d.avg_rpe >= 4 ? "bg-lime-300" :
-                          "bg-emerald-300"
+                          "bg-accent-success"
                         }`}
                         style={{ width: `${(d.avg_rpe / 10) * 100}%` }}
                       />
@@ -300,7 +300,7 @@ function OverviewView({ overview, rpe, acwr }: { overview: any; rpe: any; acwr: 
         <section className="panel">
           <div className="panel-header">
             <div className="text-sm font-medium text-text-primary flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              <AlertTriangle className="w-4 h-4 text-accent-warning" />
               ACWR 急慢性负荷比
             </div>
             <div className="text-xs text-text-muted">Gabbett 2016 学术标准 · 7d / 28d TSS</div>
@@ -324,7 +324,7 @@ function OverviewView({ overview, rpe, acwr }: { overview: any; rpe: any; acwr: 
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="date" stroke="#86909d" style={{ fontSize: 10, fontFamily: "monospace" }} tickFormatter={(d) => d.slice(5)} />
                 <YAxis yAxisId="left" stroke="#3b82f6" style={{ fontSize: 10, fontFamily: "monospace" }} />
-                <YAxis yAxisId="right" orientation="right" stroke="#8b5cf6" style={{ fontSize: 10, fontFamily: "monospace" }} />
+                <YAxis yAxisId="right" orientation="right" stroke="#2563eb" style={{ fontSize: 10, fontFamily: "monospace" }} />
                 <Tooltip
                   contentStyle={{ backgroundColor: "rgba(255,255,255,0.95)", border: "1px solid rgba(15,23,42,0.12)", borderRadius: 8, fontSize: 12 }}
                 />
@@ -332,7 +332,7 @@ function OverviewView({ overview, rpe, acwr }: { overview: any; rpe: any; acwr: 
                 <ReferenceLine yAxisId="right" y={0} stroke="#94a3b8" strokeDasharray="2 2" />
                 <Line yAxisId="left" type="monotone" dataKey="ctl" stroke="#3b82f6" name="CTL" strokeWidth={2} dot={false} />
                 <Line yAxisId="left" type="monotone" dataKey="atl" stroke="#f59e0b" name="ATL" strokeWidth={2} dot={false} />
-                <Line yAxisId="right" type="monotone" dataKey="tsb" stroke="#8b5cf6" name="TSB" strokeWidth={2} dot={false} />
+                <Line yAxisId="right" type="monotone" dataKey="tsb" stroke="#2563eb" name="TSB" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -360,7 +360,7 @@ function StatCard({ icon, label, value, sub, yoy }: { icon: React.ReactNode; lab
       <div className="text-xs text-text-muted mt-0.5 flex items-center gap-2">
         {sub}
         {yoy != null && yoy !== 0 && (
-          <span className={yoy > 0 ? "text-emerald-600" : "text-rose-600"}>
+          <span className={yoy > 0 ? "text-accent-success" : "text-accent-danger"}>
             {yoy > 0 ? "↑" : "↓"} {Math.abs(yoy)}%
           </span>
         )}

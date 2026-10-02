@@ -12,12 +12,12 @@ Joe Friel Periodization 框架:
 from __future__ import annotations
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from cycling_coach.data.sqlite.database import get_db
-from cycling_coach.data.sqlite.models import TrainingPhase, Activity
+from cycling_coach.data.sqlite.models import TrainingPhase, Activity, PhaseWorkout, PlannedWorkout
 from cycling_coach.core.profile import store as profile_store
 
 router = APIRouter(prefix="/api/phases", tags=["phases"])
@@ -240,6 +240,185 @@ def delete_phase(phase_id: int, db: Session = Depends(get_db)):
     db.delete(p)
     db.commit()
     return {"ok": True, "id": phase_id}
+
+
+# ---------- 阶段周模板 CRUD (B1-3) ----------
+
+class PhaseWorkoutCreate(BaseModel):
+    week_index: int = Field(..., ge=1, le=52)
+    day_of_week: int = Field(..., ge=1, le=7)  # 1=Mon .. 7=Sun
+    title: str = Field(..., min_length=1, max_length=128)
+    intent: str = Field("endurance", max_length=32)
+    duration_target_min: int | None = None
+    tss_target: int | None = None
+    notes: str | None = None
+    workout_id: int | None = None
+
+
+class PhaseWorkoutOut(BaseModel):
+    id: int
+    week_index: int
+    day_of_week: int
+    title: str
+    intent: str
+    duration_target_min: int | None
+    tss_target: int | None
+    notes: str | None
+    workout_id: int | None
+    class Config:
+        from_attributes = True
+
+
+@router.get("/{phase_id}/workouts", response_model=list[PhaseWorkoutOut])
+def list_phase_workouts(phase_id: int, db: Session = Depends(get_db)):
+    """列出阶段的所有周模板(按 week_index, day_of_week 排序)"""
+    phase = db.get(TrainingPhase, phase_id)
+    if not phase:
+        raise HTTPException(404, f"阶段 {phase_id} 不存在")
+    rows = (
+        db.query(PhaseWorkout)
+        .filter(PhaseWorkout.phase_id == phase_id)
+        .order_by(PhaseWorkout.week_index.asc(), PhaseWorkout.day_of_week.asc())
+        .all()
+    )
+    return rows
+
+
+@router.post("/{phase_id}/workouts", response_model=PhaseWorkoutOut, status_code=201)
+def add_phase_workout(
+    phase_id: int, payload: PhaseWorkoutCreate, db: Session = Depends(get_db)
+):
+    """新增阶段周模板的一个格子"""
+    phase = db.get(TrainingPhase, phase_id)
+    if not phase:
+        raise HTTPException(404, f"阶段 {phase_id} 不存在")
+    # 校验 workout 存在
+    if payload.workout_id is not None:
+        from cycling_coach.data.sqlite.models import Workout
+        if not db.get(Workout, payload.workout_id):
+            raise HTTPException(400, f"workout_id {payload.workout_id} 不存在")
+    # 唯一性 (week_index, day_of_week) — 用 INSERT OR FAIL 行为
+    existing = (
+        db.query(PhaseWorkout)
+        .filter(PhaseWorkout.phase_id == phase_id)
+        .filter(PhaseWorkout.week_index == payload.week_index)
+        .filter(PhaseWorkout.day_of_week == payload.day_of_week)
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            409,
+            f"phase #{phase_id} 已有 week {payload.week_index} / day {payload.day_of_week} 的模板",
+        )
+    pw = PhaseWorkout(
+        phase_id=phase_id,
+        week_index=payload.week_index,
+        day_of_week=payload.day_of_week,
+        title=payload.title,
+        intent=payload.intent,
+        duration_target_min=payload.duration_target_min,
+        tss_target=payload.tss_target,
+        notes=payload.notes,
+        workout_id=payload.workout_id,
+    )
+    db.add(pw)
+    db.commit()
+    db.refresh(pw)
+    return pw
+
+
+@router.delete("/{phase_id}/workouts/{pw_id}")
+def delete_phase_workout(phase_id: int, pw_id: int, db: Session = Depends(get_db)):
+    """删除阶段周模板"""
+    pw = db.get(PhaseWorkout, pw_id)
+    if not pw or pw.phase_id != phase_id:
+        raise HTTPException(404, f"模板 {pw_id} 不属于阶段 {phase_id}")
+    db.delete(pw)
+    db.commit()
+    return {"ok": True, "id": pw_id}
+
+
+# ---------- 一键应用到日历 (B1-3) ----------
+
+@router.post("/{phase_id}/apply")
+def apply_phase_to_calendar(
+    phase_id: int,
+    start_date: str = Query(..., description="YYYY-MM-DD, 起始周一"),
+    weeks: int = Query(..., ge=1, le=52),
+    db: Session = Depends(get_db),
+):
+    """把阶段的周模板批量生成 PlannedWorkout 到日历
+
+    算法:
+      a. 拉 phase 关联的 PhaseWorkout(按 week_index + day_of_week 排序)
+      b. 每周 7 天, 按 day_of_week 计算实际日期:
+           cycle_week = ((target_week - 1) % max_week_index) + 1
+           scheduled_date = start_date + (target_week-1)*7 + (day_of_week-1)
+      c. 调 internal PlannedCreate 批量创建 (直接 ORM 写入 + 自动关联)
+      d. 返回所有 planned_id
+
+    返回: { ok, applied_count, planned_ids: [int] }
+    """
+    phase = db.get(TrainingPhase, phase_id)
+    if not phase:
+        raise HTTPException(404, f"阶段 {phase_id} 不存在")
+
+    # 1. 校验 start_date
+    try:
+        sd = datetime.fromisoformat(start_date)
+    except ValueError:
+        raise HTTPException(400, f"start_date 格式错误: {start_date}, 需 YYYY-MM-DD")
+
+    # 2. 拉模板
+    templates = (
+        db.query(PhaseWorkout)
+        .filter(PhaseWorkout.phase_id == phase_id)
+        .order_by(PhaseWorkout.week_index.asc(), PhaseWorkout.day_of_week.asc())
+        .all()
+    )
+    if not templates:
+        raise HTTPException(
+            400,
+            f"阶段 {phase_id} 没有周模板, 先在阶段里定义 (week_index, day_of_week, title) 再应用",
+        )
+
+    # 3. 计算 max_week_index 用于 cycle
+    max_week_index = max(t.week_index for t in templates)
+
+    # 4. 对 weeks 范围内的每周, 取出 cycle_week + day_of_week 对应的模板, 写入 PlannedWorkout
+    athlete = profile_store.get_or_create_athlete(db)
+    planned_ids: list[int] = []
+    from cycling_coach.api.routers.calendar import _try_auto_link
+
+    for target_week in range(1, weeks + 1):
+        cycle_week = ((target_week - 1) % max_week_index) + 1
+        for tpl in templates:
+            if tpl.week_index != cycle_week:
+                continue
+            offset_days = (target_week - 1) * 7 + (tpl.day_of_week - 1)
+            scheduled = sd + timedelta(days=offset_days)
+            pw = PlannedWorkout(
+                scheduled_date=scheduled,
+                title=tpl.title,
+                intent=tpl.intent,
+                duration_target_min=tpl.duration_target_min,
+                tss_target=tpl.tss_target,
+                notes=tpl.notes,
+                # 不挂 plan_period(phase 与 plan_period 是两个层级),不挂 workout_id(由 calendar 解析)
+                period_id=None,
+                workout_id=tpl.workout_id,
+            )
+            db.add(pw)
+            db.flush()  # 拿到 id 再 auto-link
+            _try_auto_link(db, pw)
+            planned_ids.append(pw.id)
+
+    db.commit()
+    return {
+        "ok": True,
+        "applied_count": len(planned_ids),
+        "planned_ids": planned_ids,
+    }
 
 
 # ---------- 智能推荐 (基于过去 30 天 TSS) ----------

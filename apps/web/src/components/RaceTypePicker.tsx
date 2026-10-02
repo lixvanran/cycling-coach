@@ -39,14 +39,14 @@ export function RaceTypePicker({ value, onChange }: Props) {
               key={t.code}
               type="button"
               onClick={() => onChange(t.code)}
-              className={`text-left p-3 rounded-lg border transition ${
+              className={`text-left p-3 rounded border transition ${
                 isActive
-                  ? "border-[#1621FF] bg-blue-50 ring-1 ring-[#1621FF]"
-                  : "border-slate-200 hover:border-slate-300 bg-white"
+                  ? "border-accent-primary bg-status-info ring-1 ring-accent-primary"
+                  : "border-border hover:border-slate-300 bg-white"
               }`}
             >
-              <div className="text-sm font-semibold text-slate-800">{t.label}</div>
-              <div className="text-[10px] text-slate-500 mt-0.5">
+              <div className="text-sm font-semibold text-text-primary">{t.label}</div>
+              <div className="text-[10px] text-text-secondary mt-0.5">
                 TSB {`${t.tsb_target[0] >= 0 ? "+" : ""}${t.tsb_target[0]}`}~{`${t.tsb_target[1] >= 0 ? "+" : ""}${t.tsb_target[1]}`} · Taper {t.taper.short.days}d
               </div>
             </button>
@@ -54,10 +54,10 @@ export function RaceTypePicker({ value, onChange }: Props) {
         })}
       </div>
       {current && (
-        <div className="text-xs text-slate-600 bg-slate-50 rounded-lg p-3 border border-slate-200">
-          <div className="font-semibold text-slate-700 mb-1">{current.label}</div>
+        <div className="text-xs text-text-secondary bg-bg-subtle rounded p-3 border border-border">
+          <div className="font-semibold text-text-secondary mb-1">{current.label}</div>
           <div className="leading-relaxed">{current.description}</div>
-          <div className="text-slate-500 mt-1 italic">{current.notes}</div>
+          <div className="text-text-secondary mt-1 italic">{current.notes}</div>
         </div>
       )}
     </div>

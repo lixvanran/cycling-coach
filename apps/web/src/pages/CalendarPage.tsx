@@ -14,6 +14,7 @@ import {
 import clsx from "clsx";
 import { api } from "../lib/api";
 import { useToast } from "../components/Toast";
+import { useConfirm } from "../components/common";
 import type {
   CalendarMonth, PlanPeriod, PlannedWorkout, PlannedStatus, WorkoutIntent, ActualActivity, ActivitySummary,
 } from "../lib/types";
@@ -21,12 +22,12 @@ import { useNavigate } from "react-router-dom";
 
 // 训练意图 → 颜色 (TP 风格, 更饱和)
 const INTENT_COLORS: Record<WorkoutIntent, { bg: string; border: string; text: string; light: string; ring: string }> = {
-  recovery:    { bg: "bg-sky-500",    border: "border-sky-500/60",    text: "text-white",     light: "bg-sky-50",    ring: "ring-sky-500/30" },
-  endurance:   { bg: "bg-emerald-500", border: "border-emerald-500/60", text: "text-white",     light: "bg-emerald-50", ring: "ring-emerald-500/30" },
-  tempo:       { bg: "bg-amber-500",  border: "border-amber-500/60",  text: "text-white",     light: "bg-amber-50",  ring: "ring-amber-500/30" },
-  threshold:   { bg: "bg-orange-500", border: "border-orange-500/60", text: "text-white",     light: "bg-orange-50", ring: "ring-orange-500/30" },
-  vo2max:      { bg: "bg-red-500",    border: "border-red-500/60",    text: "text-white",     light: "bg-red-50",    ring: "ring-red-500/30" },
-  race:        { bg: "bg-fuchsia-500",border: "border-fuchsia-500/60",text: "text-white",     light: "bg-fuchsia-50",ring: "ring-fuchsia-500/30" },
+  recovery:    { bg: "bg-status-info",    border: "border-accent-primary/60",    text: "text-white",     light: "bg-status-info" },
+  endurance:   { bg: "bg-status-success", border: "border-accent-success", text: "text-white",     light: "bg-status-success" },
+  tempo:       { bg: "bg-status-warning0",  border: "border-accent-warning/60",  text: "text-white",     light: "bg-status-warning" },
+  threshold:   { bg: "bg-status-warning0", border: "border-orange-500/60", text: "text-white",     light: "bg-status-warning" },
+  vo2max:      { bg: "bg-accent-danger",    border: "border-accent-danger",    text: "text-white",     light: "bg-status-danger" },
+  race:        { bg: "bg-status-info",border: "border-accent-primary/60",text: "text-white",     light: "bg-status-info" },
 };
 
 const INTENT_LABEL: Record<WorkoutIntent, string> = {
@@ -46,12 +47,12 @@ const INTENT_DEFAULT: Record<WorkoutIntent, { duration: number; tss: number }> =
 
 // 快速排课模板 (点 → 弹窗创建)
 const QUICK_PLANS: { key: WorkoutIntent; label: string; icon: any; color: string; defaultTitle: string }[] = [
-  { key: "endurance", label: "耐力 Z2", icon: Target, color: "from-emerald-500 to-emerald-600", defaultTitle: "耐力骑行" },
-  { key: "tempo",     label: "节奏 Z3", icon: Flame, color: "from-amber-500 to-amber-600", defaultTitle: "节奏训练" },
-  { key: "threshold", label: "阈值 Z4", icon: Flame, color: "from-orange-500 to-orange-600", defaultTitle: "阈值训练" },
-  { key: "vo2max",    label: "VO2 Z5", icon: Flame, color: "from-red-500 to-red-600", defaultTitle: "VO2max 训练" },
-  { key: "recovery",  label: "恢复", icon: Activity, color: "from-sky-500 to-sky-600", defaultTitle: "恢复骑行" },
-  { key: "race",      label: "比赛", icon: Sparkles, color: "from-fuchsia-500 to-fuchsia-600", defaultTitle: "比赛日" },
+  { key: "endurance", label: "耐力 Z2", icon: Target, color: "bg-accent-success", defaultTitle: "耐力骑行" },
+  { key: "tempo",     label: "节奏 Z3", icon: Flame, color: "bg-accent-warning", defaultTitle: "节奏训练" },
+  { key: "threshold", label: "阈值 Z4", icon: Flame, color: "bg-accent-warning", defaultTitle: "阈值训练" },
+  { key: "vo2max",    label: "VO2 Z5", icon: Flame, color: "bg-accent-danger", defaultTitle: "VO2max 训练" },
+  { key: "recovery",  label: "恢复", icon: Activity, color: "bg-accent-cyan", defaultTitle: "恢复骑行" },
+  { key: "race",      label: "比赛", icon: Sparkles, color: "bg-accent-primary", defaultTitle: "比赛日" },
 ];
 
 export function CalendarPage() {
@@ -76,6 +77,8 @@ export function CalendarPage() {
   // 拖拽 (跨日)
   const [draggingPlannedId, setDraggingPlannedId] = useState<number | null>(null);
   const [dropDate, setDropDate] = useState<string | null>(null);
+  // V0.8.3 (B1-1): LibraryPage 拖入 — 检测 application/x-library-workout MIME
+  const [libraryHoverDate, setLibraryHoverDate] = useState<string | null>(null);
 
   const navigate = useNavigate();
 
@@ -96,6 +99,18 @@ export function CalendarPage() {
   };
 
   useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [year, month]);
+
+  // V0.8.3 (B1-1): 拖出日历区/意外丢 drop → 清掉 library hover
+  useEffect(() => {
+    const onWindowDragEnd = () => setLibraryHoverDate(null);
+    const onWindowDrop = () => setLibraryHoverDate(null);
+    window.addEventListener("dragend", onWindowDragEnd);
+    window.addEventListener("drop", onWindowDrop);
+    return () => {
+      window.removeEventListener("dragend", onWindowDragEnd);
+      window.removeEventListener("drop", onWindowDrop);
+    };
+  }, []);
 
   // 点 popover 外关闭
   useEffect(() => {
@@ -138,7 +153,7 @@ export function CalendarPage() {
     setDraggingPlannedId(id);
     e.dataTransfer.effectAllowed = "move";
   }
-  function onPlannedDragEnd() { setDraggingPlannedId(null); setDropDate(null); }
+  function onPlannedDragEnd() { setDraggingPlannedId(null); setDropDate(null); setLibraryHoverDate(null); }
   async function onPlannedDrop(date: string) {
     if (!draggingPlannedId) return;
     try {
@@ -149,6 +164,33 @@ export function CalendarPage() {
     }
     setDraggingPlannedId(null);
     setDropDate(null);
+  }
+
+  // V0.8.3 (B1-1): LibraryPage workout 拖入 → scheduleWorkout
+  async function onLibraryDrop(e: React.DragEvent, date: string, hasActual: boolean) {
+    e.preventDefault();
+    e.stopPropagation();
+    setLibraryHoverDate(null);
+    if (hasActual) {
+      toast.error("该日已有活动,不可拖入");
+      return;
+    }
+    const raw = e.dataTransfer.getData("application/x-library-workout");
+    if (!raw) return;
+    let payload: { id: number; title?: string };
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (!payload?.id) return;
+    try {
+      await api.scheduleWorkout(payload.id, date);
+      toast.success(`已加入 ${date} 的计划`);
+      refresh();
+    } catch (err: any) {
+      toast.error("加入计划失败: " + (err?.message ?? err));
+    }
   }
 
   return (
@@ -175,11 +217,11 @@ export function CalendarPage() {
 
         {/* 月份切换 + 快速排课模板 */}
         <div className="flex items-center gap-2 panel p-2.5">
-          <button onClick={prev} className="p-1.5 rounded-md hover:bg-bg-elevated text-text-secondary">
+          <button onClick={prev} className="p-1.5 rounded-md hover:bg-bg-subtle text-text-secondary">
             <ChevronLeft size={18} />
           </button>
           <div className="px-3 text-base font-bold min-w-[110px] text-center">{monthLabel}</div>
-          <button onClick={next} className="p-1.5 rounded-md hover:bg-bg-elevated text-text-secondary">
+          <button onClick={next} className="p-1.5 rounded-md hover:bg-bg-subtle text-text-secondary">
             <ChevronRight size={18} />
           </button>
           <button onClick={jumpToday} className="text-xs px-2 py-1 rounded text-accent hover:bg-accent/10 font-medium">今天</button>
@@ -196,7 +238,7 @@ export function CalendarPage() {
                 <button
                   key={qp.key}
                   onClick={() => setPopover({ mode: "new", date: todayIso(today), intent: qp.key, x: 200, y: 200 })}
-                  className={clsx("px-2 py-1 rounded text-[11px] font-medium text-white bg-gradient-to-r flex items-center gap-1 hover:opacity-90 hover:scale-105 transition-all flex-shrink-0", qp.color)}
+                  className={clsx("px-2 py-1 rounded text-[11px] font-medium text-white bg-accent-primary flex items-center gap-1 hover:opacity-90 transition-all flex-shrink-0", qp.color)}
                   title={`快速创建 ${qp.label} 课`}
                 >
                   <Icon className="w-3 h-3" />
@@ -248,6 +290,7 @@ export function CalendarPage() {
                     actual={actual}
                     dropDate={dropDate}
                     isDraggingPlannedId={draggingPlannedId}
+                    libraryHoverDate={libraryHoverDate}
                     onCellClick={(e) => {
                       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                       setPopover({ mode: "new", date: dateStr, intent: "endurance", x: rect.left, y: rect.bottom + 4 });
@@ -266,6 +309,9 @@ export function CalendarPage() {
                     onPlannedDragEnd={onPlannedDragEnd}
                     onPlannedDrop={onPlannedDrop}
                     onDropHover={(d) => setDropDate(d)}
+                    onLibraryHover={(_e, d) => setLibraryHoverDate(d)}
+                    onLibraryLeave={() => setLibraryHoverDate(null)}
+                    onLibraryDrop={onLibraryDrop}
                   />
                 );
               })}
@@ -283,8 +329,8 @@ export function CalendarPage() {
                 {v}
               </span>
             ))}
-            <span className="px-2 py-1 rounded-md border-2 border-emerald-500/60 bg-emerald-50 text-emerald-700 font-medium">
-              <span className="inline-block w-2 h-2 rounded-full mr-1 align-middle bg-emerald-500" />已完成
+            <span className="px-2 py-1 rounded-md border-2 border-accent-success bg-status-success text-accent-success font-medium">
+              <span className="inline-block w-2 h-2 rounded-full mr-1 align-middle bg-status-success" />已完成
             </span>
           </div>
         </div>
@@ -296,7 +342,7 @@ export function CalendarPage() {
       {popover && (
         <div
           ref={popoverRef}
-          className="fixed z-50 bg-white rounded-xl shadow-2xl border border-border w-80 overflow-hidden"
+          className="fixed z-50 bg-white rounded shadow-sm border border-border w-80 overflow-hidden"
           style={{ left: Math.min(popover.x, window.innerWidth - 340), top: Math.min(popover.y, window.innerHeight - 400) }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -340,6 +386,7 @@ function DayCell(props: {
   day: number; dateStr: string; isToday: boolean;
   planned: PlannedWorkout[]; actual: ActualActivity[];
   dropDate: string | null; isDraggingPlannedId: number | null;
+  libraryHoverDate: string | null;
   onCellClick: (e: React.MouseEvent) => void;
   onPlannedClick: (e: React.MouseEvent, p: PlannedWorkout) => void;
   onActualClick: (e: React.MouseEvent) => void;
@@ -347,24 +394,66 @@ function DayCell(props: {
   onPlannedDragEnd: () => void;
   onPlannedDrop: (date: string) => void;
   onDropHover: (date: string | null) => void;
+  onLibraryHover: (e: React.DragEvent, date: string) => void;
+  onLibraryLeave: () => void;
+  onLibraryDrop: (e: React.DragEvent, date: string, hasActual: boolean) => void;
 }) {
   const isDropTarget = props.dropDate === props.dateStr;
+  const isLibraryHover = props.libraryHoverDate === props.dateStr;
+  const hasActual = props.actual.length > 0;
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    const types = Array.from(e.dataTransfer.types);
+    if (types.includes("application/x-library-workout")) {
+      e.dataTransfer.dropEffect = hasActual ? "none" : "copy";
+      props.onLibraryHover(e, props.dateStr);
+    } else {
+      e.dataTransfer.dropEffect = "move";
+      props.onDropHover(props.dateStr);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    const types = Array.from(e.dataTransfer.types);
+    if (types.includes("application/x-library-workout")) {
+      props.onLibraryDrop(e, props.dateStr, hasActual);
+    } else {
+      e.preventDefault();
+      props.onPlannedDrop(props.dateStr);
+    }
+  }
+
   return (
     <button
       onClick={props.onCellClick}
-      onDragOver={(e) => { e.preventDefault(); props.onDropHover(props.dateStr); }}
-      onDragLeave={() => props.onDropHover(null)}
-      onDrop={(e) => { e.preventDefault(); props.onPlannedDrop(props.dateStr); }}
+      onDragOver={handleDragOver}
+      onDragLeave={props.onLibraryLeave}
+      onDrop={handleDrop}
+      title={hasActual ? "该日已有活动,不可拖入" : undefined}
       className={clsx(
-        "aspect-square min-h-[100px] p-1.5 rounded-lg text-left transition-all flex flex-col gap-0.5 overflow-hidden",
+        "aspect-square min-h-[100px] p-1.5 rounded text-left transition-all flex flex-col gap-0.5 overflow-hidden relative",
         props.isToday
-          ? "bg-accent/15 ring-2 ring-accent/50 shadow-md"
-          : isDropTarget
-            ? "bg-amber-100 ring-2 ring-amber-500/60 scale-[1.02]"
-            : "bg-bg-input/50 hover:bg-bg-input ring-1 ring-border/40",
+          ? "bg-accent/15 border-2 border-accent shadow-md"
+          : isLibraryHover
+            ? hasActual
+              ? "bg-bg-subtle/40 border border-border opacity-60 cursor-not-allowed"
+              : "bg-status-info border-2 border-dashed border-blue-500/60"
+            : isDropTarget
+              ? "bg-status-warning border-2 border-accent-warning"
+              : "bg-bg-subtle/50 hover:bg-bg-subtle border border-border",
         "cursor-pointer"
       )}
     >
+      {/* V0.8.3 (B1-1): library hover 提示 */}
+      {isLibraryHover && (
+        <div className={clsx(
+          "absolute inset-0 flex items-center justify-center pointer-events-none z-10 text-[10px] font-semibold",
+          hasActual ? "text-text-muted" : "text-accent-primary"
+        )}>
+          {hasActual ? "该日已有活动" : "放下加入日历"}
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <span className={clsx("text-sm font-mono font-semibold", props.isToday ? "text-accent" : "text-text-secondary")}>
           {props.day}
@@ -373,20 +462,20 @@ function DayCell(props: {
           {props.actual.length > 0 && (
             <span
               onClick={props.onActualClick}
-              className="text-[9px] bg-emerald-500 text-white rounded-full px-1.5 font-bold shadow-sm"
+              className="text-[9px] bg-status-success text-white rounded-full px-1.5 font-bold shadow-sm"
               title={`${props.actual.length} 个实际活动`}
             >
               ✓{props.actual.length}
             </span>
           )}
           {props.planned.length > 0 && (
-            <span className="text-[9px] bg-bg-elevated text-text-muted rounded-full px-1.5 font-bold">
+            <span className="text-[9px] bg-bg-subtle text-text-muted rounded-full px-1.5 font-bold">
               {props.planned.length}
             </span>
           )}
         </div>
       </div>
-      <div className="flex-1 flex flex-col gap-0.5 overflow-hidden">
+      <div className={clsx("flex-1 flex flex-col gap-0.5 overflow-hidden", isLibraryHover && "opacity-30")}>
         {props.planned.slice(0, 3).map((p) => (
           <div
             key={p.id}
@@ -397,10 +486,10 @@ function DayCell(props: {
             className={clsx(
               "text-[10px] px-1.5 py-0.5 rounded-md font-medium truncate border-2 cursor-grab active:cursor-grabbing flex items-center gap-1",
               p.status === "done"
-                ? "bg-emerald-500 text-white border-emerald-600"
+                ? "bg-status-success text-white border-accent-success"
                 : p.status === "skipped"
-                  ? "bg-bg-elevated text-text-muted border-border line-through opacity-60"
-                  : clsx(INTENT_COLORS[p.intent].bg, INTENT_COLORS[p.intent].text, INTENT_COLORS[p.intent].border, "hover:scale-105 transition-transform")
+                  ? "bg-bg-subtle text-text-muted border-border line-through opacity-60"
+                  : clsx(INTENT_COLORS[p.intent].bg, INTENT_COLORS[p.intent].text, INTENT_COLORS[p.intent].border, "")
             )}
             title={`${p.title} · ${INTENT_LABEL[p.intent]} · ${p.duration_target_min ?? "?"}min`}
           >
@@ -422,6 +511,7 @@ function NewPlannedPopover(props: {
   plans: PlanPeriod[];
   onClose: () => void; onSaved: () => void;
 }) {
+  const toast = useToast();
   const [date, setDate] = useState(props.defaultDate);
   const [title, setTitle] = useState(QUICK_PLANS.find((q) => q.key === props.defaultIntent)?.defaultTitle || "");
   const [intent, setIntent] = useState<WorkoutIntent>(props.defaultIntent);
@@ -458,12 +548,12 @@ function NewPlannedPopover(props: {
 
   return (
     <div>
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-gradient-to-r from-accent/5 to-accent/10">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-accent-primary-soft">
         <h2 className="text-sm font-bold flex items-center gap-1.5">
           <Plus className="w-4 h-4 text-accent" />
           新建计划课
         </h2>
-        <button onClick={props.onClose} className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-elevated">
+        <button onClick={props.onClose} className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-subtle">
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -482,8 +572,8 @@ function NewPlannedPopover(props: {
                   onClick={() => onIntentChange(q.key)}
                   className={clsx("px-1.5 py-1.5 rounded text-[11px] font-semibold flex flex-col items-center gap-0.5 transition-all",
                     isActive
-                      ? `${c.bg} ${c.text} ring-2 ring-current scale-105 shadow-md`
-                      : "bg-bg-elevated text-text-muted hover:bg-bg-input border border-border"
+                      ? `${c.bg} ${c.text} border-2 border-current`
+                      : "bg-bg-subtle text-text-muted hover:bg-bg-subtle border border-border"
                   )}
                 >
                   <Icon className="w-3 h-3" />
@@ -529,7 +619,7 @@ function NewPlannedPopover(props: {
           </div>
         )}
       </div>
-      <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-border bg-bg-elevated/50">
+      <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-border bg-bg-subtle/50">
         <button onClick={props.onClose} className="btn-ghost text-xs">取消</button>
         <button onClick={save} disabled={busy || !title.trim()} className="btn-primary text-xs">
           {busy ? "..." : <><Plus className="w-3 h-3" />创建</>}
@@ -553,6 +643,8 @@ function EditPlannedPopover(props: {
   const [status, setStatus] = useState<PlannedStatus>(props.planned.status || "planned");
   const [periodId, setPeriodId] = useState<number | "">(props.planned.period_id || "");
   const [busy, setBusy] = useState(false);
+  const confirm = useConfirm();
+  const toast = useToast();
 
   async function save() {
     if (!title.trim()) { toast.error("请填写标题"); return; }
@@ -572,7 +664,13 @@ function EditPlannedPopover(props: {
   }
 
   async function del() {
-    if (!confirm(`删除计划课「${props.planned.title}」?`)) return;
+    const ok = await confirm({
+      title: "删除计划课",
+      message: `确定删除「${props.planned.title}」? 此操作无法撤销。`,
+      variant: "danger",
+      confirmText: "删除",
+    });
+    if (!ok) return;
     setBusy(true);
     try { await api.deletePlanned(props.planned.id); props.onSaved(); }
     finally { setBusy(false); }
@@ -602,12 +700,12 @@ function EditPlannedPopover(props: {
 
   return (
     <div>
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-gradient-to-r from-accent/5 to-accent/10">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-accent-primary-soft">
         <h2 className="text-sm font-bold flex items-center gap-1.5">
           <Sparkles className="w-4 h-4 text-accent" />
           {props.planned.title}
         </h2>
-        <button onClick={props.onClose} className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-elevated">
+        <button onClick={props.onClose} className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-subtle">
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -627,7 +725,7 @@ function EditPlannedPopover(props: {
                   key={q.key}
                   onClick={() => setIntent(q.key)}
                   className={clsx("px-1.5 py-1 rounded text-[10px] font-semibold transition-all",
-                    isActive ? `${c.bg} ${c.text} ring-2 ring-current scale-105` : "bg-bg-elevated text-text-muted hover:bg-bg-input border border-border"
+                    isActive ? `${c.bg} ${c.text} border-2 border-current` : "bg-bg-subtle text-text-muted hover:bg-bg-subtle border border-border"
                   )}
                 >
                   {q.label}
@@ -654,15 +752,15 @@ function EditPlannedPopover(props: {
           <label className="block text-[10px] uppercase tracking-wider text-text-muted mb-1 font-semibold">状态</label>
           <div className="grid grid-cols-4 gap-1">
             {([
-              { k: "planned", l: "已计划", c: "bg-bg-elevated text-text-muted" },
-              { k: "done", l: "完成", c: "bg-emerald-500 text-white" },
-              { k: "skipped", l: "跳过", c: "bg-bg-input text-text-muted" },
-              { k: "moved", l: "改期", c: "bg-amber-500 text-white" },
+              { k: "planned", l: "已计划", c: "bg-bg-subtle text-text-muted" },
+              { k: "done", l: "完成", c: "bg-status-success text-white" },
+              { k: "skipped", l: "跳过", c: "bg-bg-subtle text-text-muted" },
+              { k: "moved", l: "改期", c: "bg-status-warning0 text-white" },
             ] as const).map((s) => (
               <button
                 key={s.k}
                 onClick={() => setStatus(s.k as PlannedStatus)}
-                className={clsx("px-2 py-1 rounded text-[10px] font-medium transition-all", status === s.k ? `${s.c} ring-2 ring-current` : "bg-bg-elevated text-text-muted hover:bg-bg-input")}
+                className={clsx("px-2 py-1 rounded text-[10px] font-medium transition-all", status === s.k ? `${s.c} border-2 border-current` : "bg-bg-subtle text-text-muted hover:bg-bg-subtle")}
               >
                 {s.l}
               </button>
@@ -681,21 +779,21 @@ function EditPlannedPopover(props: {
           </div>
         )}
         {props.planned.actual_activity_id && (
-          <div className="rounded-md bg-emerald-50 ring-1 ring-emerald-300 p-2.5 text-xs">
-            <div className="text-emerald-700 font-semibold mb-1">已关联真实活动 #{props.planned.actual_activity_id}</div>
+          <div className="rounded-md bg-status-success border border-status-success p-2.5 text-xs">
+            <div className="text-accent-success font-semibold mb-1">已关联真实活动 #{props.planned.actual_activity_id}</div>
             <div className="flex gap-1.5">
-              <button onClick={() => props.onViewActivity(props.planned.actual_activity_id!)} className="flex-1 px-2 py-1 rounded bg-emerald-500 text-white text-[10px] font-medium">查看活动</button>
-              <button onClick={unlink} className="px-2 py-1 rounded bg-bg-elevated text-text-secondary text-[10px]">解除</button>
+              <button onClick={() => props.onViewActivity(props.planned.actual_activity_id!)} className="flex-1 px-2 py-1 rounded bg-status-success text-white text-[10px] font-medium">查看活动</button>
+              <button onClick={unlink} className="px-2 py-1 rounded bg-bg-subtle text-text-secondary text-[10px]">解除</button>
             </div>
           </div>
         )}
       </div>
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-border bg-bg-elevated/50">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-border bg-bg-subtle/50">
         <div className="flex gap-1.5">
           {props.planned.status !== "done" && (
-            <button onClick={markDone} className="text-[10px] text-emerald-600 hover:text-emerald-700 font-medium">✓ 标完成</button>
+            <button onClick={markDone} className="text-[10px] text-accent-success hover:text-accent-success font-medium">✓ 标完成</button>
           )}
-          <button onClick={del} className="text-[10px] text-red-500 hover:text-red-600 font-medium">删除</button>
+          <button onClick={del} className="text-[10px] text-accent-danger hover:text-accent-danger font-medium">删除</button>
         </div>
         <div className="flex gap-1.5">
           <button onClick={props.onClose} className="btn-ghost text-xs">取消</button>
@@ -714,14 +812,15 @@ function ActualPopover(props: {
   onClose: () => void;
   onViewActivity: (id: number) => void;
 }) {
+  const toast = useToast();
   return (
     <div>
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-gradient-to-r from-emerald-50 to-emerald-100">
-        <h2 className="text-sm font-bold flex items-center gap-1.5 text-emerald-700">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-status-success">
+        <h2 className="text-sm font-bold flex items-center gap-1.5 text-accent-success">
           <Activity className="w-4 h-4" />
           实际活动 ({props.activities.length})
         </h2>
-        <button onClick={props.onClose} className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-elevated">
+        <button onClick={props.onClose} className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-subtle">
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -730,14 +829,14 @@ function ActualPopover(props: {
           <button
             key={a.id}
             onClick={() => props.onViewActivity(a.id)}
-            className="w-full text-left px-3 py-2 hover:bg-emerald-50 border-b border-border/40 flex items-center gap-2"
+            className="w-full text-left px-3 py-2 hover:bg-status-success border-b border-border/40 flex items-center gap-2"
           >
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium truncate">{a.start_time?.slice(0, 16) || a.id}</div>
               <div className="text-[10px] text-text-muted flex items-center gap-2 mt-0.5">
                 <span>{Math.round((a.duration_s || 0) / 60)}min</span>
                 {a.distance_m != null && <span>{(a.distance_m / 1000).toFixed(1)}km</span>}
-                {a.tss != null && <span className="text-amber-600 font-semibold">TSS {Math.round(a.tss)}</span>}
+                {a.tss != null && <span className="text-accent-warning font-semibold">TSS {Math.round(a.tss)}</span>}
               </div>
             </div>
             <ArrowRight className="w-3 h-3 text-text-muted" />
@@ -750,9 +849,9 @@ function ActualPopover(props: {
 
 // =============== Stat Box ===============
 function StatBox({ label, value, unit, hint, accent }: any) {
-  const color = accent === "good" ? "text-emerald-600" : accent === "warn" ? "text-amber-600" : accent === "bad" ? "text-red-600" : "text-text-primary";
+  const color = accent === "good" ? "text-accent-success" : accent === "warn" ? "text-accent-warning" : accent === "bad" ? "text-accent-danger" : "text-text-primary";
   return (
-    <div className="bg-white rounded-lg border border-border/50 p-2.5 shadow-sm">
+    <div className="bg-white rounded border border-border/50 p-2.5 shadow-sm">
       <div className="text-[10px] text-text-muted uppercase tracking-wider mb-0.5">{label}</div>
       <div className="flex items-baseline gap-1">
         <div className={clsx("text-2xl font-bold tabular-nums", color)}>

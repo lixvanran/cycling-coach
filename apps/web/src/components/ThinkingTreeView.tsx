@@ -38,38 +38,38 @@ const STAGE_META: Record<string, { label: string; track: "shared" | "aggressive"
 
 const STATUS_STYLE: Record<ThinkingNodeStatus, { bg: string; border: string; text: string; icon: any; ring: string }> = {
   pending: {
-    bg: "bg-slate-50",
+    bg: "bg-bg-subtle",
     border: "border-slate-300",
-    text: "text-slate-500",
+    text: "text-text-secondary",
     ring: "ring-slate-200",
     icon: null,
   },
   running: {
-    bg: "bg-blue-50",
-    border: "border-blue-400",
-    text: "text-blue-700",
-    ring: "ring-blue-200",
+    bg: "bg-status-info",
+    border: "border-border",
+    text: "text-accent-primary",
+    ring: "",
     icon: Loader2,
   },
   done: {
-    bg: "bg-emerald-50",
-    border: "border-emerald-400",
-    text: "text-emerald-700",
-    ring: "ring-emerald-200",
+    bg: "bg-status-success",
+    border: "border-border",
+    text: "text-accent-success",
+    ring: "",
     icon: CheckCircle2,
   },
   pruned: {
-    bg: "bg-rose-50",
-    border: "border-rose-300",
-    text: "text-rose-500 line-through",
-    ring: "ring-rose-200",
+    bg: "bg-status-danger",
+    border: "border-accent-danger",
+    text: "text-accent-danger line-through",
+    ring: "",
     icon: XCircle,
   },
 };
 
 const TRACK_COLOR: Record<string, string> = {
-  shared: "text-slate-500",
-  aggressive: "text-orange-600",
+  shared: "text-text-secondary",
+  aggressive: "text-accent-warning",
   conservative: "text-cyan-700",
 };
 
@@ -338,7 +338,7 @@ export function ThinkingTreeView({ nodes, onNodeClick }: Props) {
   return (
     <div className="flex flex-col h-full">
       {/* 顶部状态栏 */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-bg-elevated/50">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-bg-subtle/50">
         <div className="flex items-center gap-2">
           <GitBranch className="w-3.5 h-3.5 text-text-secondary" />
           <span className="text-xs font-semibold text-text-primary">思维树</span>
@@ -348,19 +348,19 @@ export function ThinkingTreeView({ nodes, onNodeClick }: Props) {
         </div>
         <div className="flex items-center gap-2 text-[10px]">
           {stats.running > 0 && (
-            <span className="flex items-center gap-1 text-blue-600">
+            <span className="flex items-center gap-1 text-accent-primary">
               <Loader2 className="w-3 h-3 animate-spin" />
               {stats.running} 进行中
             </span>
           )}
           {stats.pruned > 0 && (
-            <span className="flex items-center gap-1 text-rose-500">
+            <span className="flex items-center gap-1 text-accent-danger">
               <XCircle className="w-3 h-3" />
               {stats.pruned} 已剪枝
             </span>
           )}
           {stats.done === stats.total && stats.total > 0 && (
-            <span className="flex items-center gap-1 text-emerald-600">
+            <span className="flex items-center gap-1 text-accent-success">
               <CheckCircle2 className="w-3 h-3" />
               完成
             </span>
@@ -412,18 +412,18 @@ export function ThinkingTreeView({ nodes, onNodeClick }: Props) {
       </div>
 
       {/* 图例 */}
-      <div className="px-3 py-1.5 border-t border-border flex items-center gap-3 text-[10px] text-text-muted bg-bg-elevated/30">
+      <div className="px-3 py-1.5 border-t border-border flex items-center gap-3 text-[10px] text-text-muted bg-bg-subtle/30">
         <span className="flex items-center gap-1">
           <span className="w-2 h-2 rounded-full bg-slate-400" /> 等待
         </span>
         <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-blue-500" /> 进行中
+          <span className="w-2 h-2 rounded-full bg-status-info" /> 进行中
         </span>
         <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-emerald-500" /> 完成
+          <span className="w-2 h-2 rounded-full bg-status-success" /> 完成
         </span>
         <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-rose-500" /> 已剪枝
+          <span className="w-2 h-2 rounded-full bg-status-danger0" /> 已剪枝
         </span>
         <span className="ml-auto">点节点查看详情 →</span>
       </div>
@@ -438,7 +438,7 @@ export function ThinkingTreeView({ nodes, onNodeClick }: Props) {
 function NodeDetailPanel({ node, onClose }: { node: ThinkingNode; onClose: () => void }) {
   const meta = STAGE_META[node.stage.toLowerCase().split("_")[0]] || { label: node.stage, track: "shared" };
   return (
-    <div className="absolute top-3 right-3 w-80 max-h-[80%] panel p-3 z-10 shadow-elevated overflow-auto">
+    <div className="absolute top-3 right-3 w-80 max-h-[80%] panel p-3 z-10 shadow-sm overflow-auto">
       <div className="flex items-start justify-between mb-2">
         <div>
           <div className="flex items-center gap-1.5">
@@ -449,7 +449,7 @@ function NodeDetailPanel({ node, onClose }: { node: ThinkingNode; onClose: () =>
           <div className="text-[10px] text-text-muted mt-0.5">
             状态: <span className={STATUS_STYLE[node.status].text}>{node.status}</span>
             {typeof node.score === "number" && (
-              <> · 评分: <span className="font-mono text-amber-600">{node.score.toFixed(2)}</span></>
+              <> · 评分: <span className="font-mono text-accent-warning">{node.score.toFixed(2)}</span></>
             )}
           </div>
         </div>
@@ -465,7 +465,7 @@ function NodeDetailPanel({ node, onClose }: { node: ThinkingNode; onClose: () =>
         {node.content ? (
           <pre className="whitespace-pre-wrap font-sans">{node.content}</pre>
         ) : node.error ? (
-          <span className="text-rose-600">⚠ {node.error}</span>
+          <span className="text-accent-danger">⚠ {node.error}</span>
         ) : (
           <span className="text-text-muted italic">暂无输出 (等待后端推送)</span>
         )}

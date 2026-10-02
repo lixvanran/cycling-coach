@@ -2,8 +2,10 @@
 // 流程: 1) 多选活动 (checkbox 列表) 2) 调 compare API 3) 显示指标表 + MMP 叠加图
 import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { GitCompare, Loader2, AlertCircle, Check, X } from "lucide-react";
+import { GitCompare, Loader2, AlertCircle, Check, X, RefreshCw } from "lucide-react";
 import { api } from "../lib/api";
+import { useToast } from "../components/Toast";
+import { EmptyState } from "../components/common";
 import {
   LineChart,
   Line,
@@ -15,7 +17,7 @@ import {
   Legend,
 } from "recharts";
 
-const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16"];
+const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#2563eb", "#ec4899", "#14b8a6", "#f97316", "#06b6d4", "#84cc16"];
 
 interface CompareActivity {
   id: number;
@@ -36,6 +38,7 @@ interface CompareActivity {
 
 export function ComparePage() {
   const navigate = useNavigate();
+  const toast = useToast();
 
   const [allActivities, setAllActivities] = useState<any[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -48,7 +51,10 @@ export function ComparePage() {
     setLoadingList(true);
     api.listActivities({ limit: 200 })
       .then((d: any) => setAllActivities(d.activities || []))
-      .catch((e) => setError(String(e)))
+      .catch((e) => {
+        setError(String(e?.message || e));
+        toast.error("加载活动列表失败");
+      })
       .finally(() => setLoadingList(false));
   }, []);
 
@@ -71,8 +77,10 @@ export function ComparePage() {
     try {
       const data = await api.compareActivities(Array.from(selected));
       setCompare(data);
+      toast.success(`已对比 ${data.activities?.length || 0} 个活动`);
     } catch (e: any) {
       setError(String(e?.message || e));
+      toast.error("对比失败: " + (e?.message || e));
     } finally {
       setLoading(false);
     }
@@ -139,7 +147,7 @@ export function ComparePage() {
                       className={`flex items-center gap-3 px-3 py-2 rounded-md cursor-pointer transition-colors ${
                         isSelected
                           ? "bg-primary/10 border border-primary/30"
-                          : "hover:bg-slate-50 border border-transparent"
+                          : "hover:bg-bg-subtle border border-transparent"
                       }`}
                     >
                       <input
@@ -178,11 +186,31 @@ export function ComparePage() {
         </section>
 
         {error && (
-          <div className="panel border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 mt-0.5" />
-            <span>{error}</span>
-            <button onClick={() => setError(null)} className="ml-auto"><X className="w-4 h-4" /></button>
+          <div className="panel border-border bg-status-danger p-3 text-sm text-accent-danger flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="font-medium">对比失败</div>
+              <div className="text-xs text-accent-danger mt-0.5">{error}</div>
+            </div>
+            <button
+              onClick={() => { setError(null); doCompare(); }}
+              className="px-2 py-1 text-xs text-accent-danger hover:bg-status-danger rounded flex items-center gap-1"
+            >
+              <RefreshCw size={12} />
+              重试
+            </button>
+            <button onClick={() => setError(null)} className="text-accent-danger hover:text-accent-danger">
+              <X className="w-4 h-4" />
+            </button>
           </div>
+        )}
+
+        {!loadingList && allActivities.length === 0 && !error && (
+          <EmptyState
+            icon={<GitCompare size={28} />}
+            title="还没有可对比的活动"
+            description={'先去"导入"页上传 FIT/TCX 文件, 或者生成一些模拟训练。'}
+          />
         )}
 
         {/* 2. 指标对比表 */}
@@ -200,7 +228,7 @@ export function ComparePage() {
                     {compare.activities.map((a: CompareActivity, i: number) => (
                       <th
                         key={a.id}
-                        className="text-left font-medium py-2 px-2 cursor-pointer hover:bg-slate-50"
+                        className="text-left font-medium py-2 px-2 cursor-pointer hover:bg-bg-subtle"
                         style={{ color: COLORS[i % COLORS.length] }}
                         onClick={() => {
                           navigate(`/training/activities/${a.id}`);
@@ -236,7 +264,7 @@ export function ComparePage() {
                           <td
                             key={i}
                             className={`py-1.5 px-2 font-mono text-xs ${
-                              bestIdx === i ? "bg-emerald-50 text-emerald-700 font-semibold" : ""
+                              bestIdx === i ? "bg-status-success text-accent-success font-semibold" : ""
                             }`}
                           >
                             {v ?? <span className="text-text-muted">—</span>}

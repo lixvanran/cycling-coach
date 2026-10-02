@@ -30,8 +30,14 @@ class AthleteView(BaseModel):
 
 
 class AthleteUpdate(BaseModel):
+    """PATCH /api/athlete body
+    - 显式传 None 表示"清空该字段"
+    - 不传该字段表示"不动"
+    Pydantic 默认是"None 等同于未传", 所以用 model_fields_set 区分
+    """
     name: str | None = None
     ftp: int | None = None
+    ftp_estimated: int | None = None  # V0.8.3 B4 fix: 加进 schema, 否则前端改完被静默 ignore
     max_hr: int | None = None
     lthr: int | None = None
     weight_kg: float | None = None
@@ -58,9 +64,14 @@ def get_athlete(db: Session = Depends(get_db)):
 @router.patch("", response_model=AthleteView)
 def update_athlete(req: AthleteUpdate, db: Session = Depends(get_db)):
     a = profile_store.get_or_create_athlete(db)
-    fields = {k: v for k, v in req.model_dump().items() if v is not None}
-    if fields:
-        a = profile_store.update_athlete(db, a.id, **fields)
+    # V0.8.3 B4 fix: 区分"显式传 null"(清空) vs "未传"(不动)
+    # model_fields_set 里只包含客户端实际传的字段
+    explicit_fields = req.model_dump(include=req.model_fields_set)
+    if explicit_fields:
+        # name 字段不允许为空字符串 (改成 "Rider" 兜底)
+        if "name" in explicit_fields and not (explicit_fields["name"] or "").strip():
+            explicit_fields["name"] = "Rider"
+        a = profile_store.update_athlete(db, a.id, **explicit_fields)
     # 重算估算
     a = profile_builder.refresh_athlete_profile(db, a.id)
     return get_athlete(db)

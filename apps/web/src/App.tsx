@@ -1,10 +1,16 @@
 // V0.8.0 主 App — react-router-dom 路由分组 + 路由级 code splitting
 // 5 个 layout 按功能分组 (training / ai / plan / data / settings)
 // 每个 page 走 lazy(), 配合 Suspense + LoadingSkeleton
+//
+// V0.8.2: 接入 usePlatform() — 检测运行环境 (web / desktop)
+// 当前 web 模式: usePlatform() 返回 { env: "web", ... } (no-op, 不影响行为)
+// 未来 desktop (Tauri/Electron): 启动时 window.__CYCLING_COACH_PLATFORM__ 会被注入,
+// 自动切换 capabilities 实现 (文件 dialog / 系统通知 / 快捷键)
 import { lazy, Suspense } from "react";
 import { BrowserRouter, HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useLegacyRedirect } from "./hooks/useLegacyRedirect";
 import { LoadingSkeleton, ErrorBoundary } from "./components/common";
+import { useAppEnv } from "./lib/platform";
 
 // 5 个 layout — 共用 AppShell
 import { TrainingLayout } from "./components/layout/TrainingLayout";
@@ -147,6 +153,15 @@ function AppRoutes() {
                 </ErrorBoundary>
               }
             />
+            {/* V0.8.2 B1-5: 显式 /plan/builder 路由 (支持 ?from_activity=N 跳转) */}
+            <Route
+              path="builder"
+              element={
+                <ErrorBoundary>
+                  <BuilderPage />
+                </ErrorBoundary>
+              }
+            />
             <Route
               path="calendar"
               element={
@@ -227,6 +242,11 @@ function AppRoutes() {
 
 export default function App() {
   const Router = useRouterType();
+  const env = useAppEnv(); // "web" / "desktop" — 当前 web 模式 no-op, 未来 desktop 触发不同行为
+  if (import.meta.env.DEV) {
+    // 开发模式 console.log, 确认 platform 探测正常
+    console.info(`[Cycling Coach] App env: ${env}`);
+  }
   return (
     <Router>
       <AppRoutes />

@@ -422,6 +422,60 @@ class TrainingPhase(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    # V0.8.2 B1-3: 阶段周模板关联 (week_index + day_of_week → 一次计划课)
+    workouts: Mapped[list["PhaseWorkout"]] = relationship(
+        back_populates="phase",
+        cascade="all, delete-orphan",
+        order_by="PhaseWorkout.week_index, PhaseWorkout.day_of_week",
+    )
+
+
+class PhaseWorkout(Base):
+    """阶段周模板 (V0.8.2 B1-3)
+
+    一个 Phase 可包含 N 个 PhaseWorkout,按 (week_index, day_of_week) 唯一
+    - week_index: 第几周 (1..N, 循环应用)
+    - day_of_week: 周几 (1=Mon .. 7=Sun)
+    应用时: 对 N 周 target range 的每周
+      cycle_week = ((target_week - 1) % max_week_index) + 1
+      取出该 cycle_week + day_of_week 的所有 PhaseWorkout
+      计算实际日期 = start_date + (target_week-1)*7 + (day_of_week-1)
+    """
+    __tablename__ = "phase_workouts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    phase_id: Mapped[int] = mapped_column(
+        ForeignKey("training_phases.id", ondelete="CASCADE"), index=True,
+    )
+
+    # 模板定位
+    week_index: Mapped[int] = mapped_column(Integer)  # 1..N
+    day_of_week: Mapped[int] = mapped_column(Integer)  # 1=Mon .. 7=Sun
+
+    # 课程内容
+    title: Mapped[str] = mapped_column(String(128))
+    intent: Mapped[str] = mapped_column(String(32), default="endurance")
+    duration_target_min: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    tss_target: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # 可选: 引用 Workout 模板库(留空只走简易课表)
+    workout_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("workouts.id"), nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow,
+    )
+
+    __table_args__ = (
+        # 同一 phase 内 (week_index, day_of_week) 唯一 — 不允许重复定义
+        Index("ix_pw_phase_week_day", "phase_id", "week_index", "day_of_week", unique=True),
+    )
+
+    phase: Mapped["TrainingPhase"] = relationship(back_populates="workouts")
+
 
 class FTPTest(Base):
     """FTP 测试记录 (V0.6.1)

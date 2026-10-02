@@ -1,5 +1,5 @@
 // Card — V0.8.0 统一卡片组件
-// 替换 26 个组件里重复的 "border rounded-lg shadow p-4" 模式
+// 替换 26 个组件里重复的 "border rounded shadow p-4" 模式
 // 用法:
 //   <Card>内容</Card>
 //   <Card hoverable>可悬浮</Card>
@@ -36,8 +36,8 @@ export function Card({
     <div
       onClick={onClick}
       className={clsx(
-        "bg-white/80 backdrop-blur-glass border border-border rounded-xl shadow-panel",
-        hoverable && "transition-all hover:shadow-elevated cursor-pointer",
+        "bg-white border border-border rounded shadow-panel",
+        hoverable && "transition-all hover:shadow-sm cursor-pointer",
         PAD[padding],
         onClick && "cursor-pointer",
         className

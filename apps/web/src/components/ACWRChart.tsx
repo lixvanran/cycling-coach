@@ -26,15 +26,15 @@ interface Props {
 }
 
 const RISK_COLOR: Record<string, string> = {
-  low: "text-emerald-600",
-  medium: "text-amber-600",
-  high: "text-rose-600",
+  low: "text-accent-success",
+  medium: "text-accent-warning",
+  high: "text-accent-danger",
 };
 
 const RISK_BG: Record<string, string> = {
-  low: "bg-emerald-50 border-emerald-200",
-  medium: "bg-amber-50 border-amber-200",
-  high: "bg-rose-50 border-rose-200",
+  low: "bg-status-success border-border",
+  medium: "bg-status-warning border-border",
+  high: "bg-status-danger border-border",
 };
 
 export function ACWRChart({ data }: Props) {
@@ -46,10 +46,10 @@ export function ACWRChart({ data }: Props) {
   return (
     <div className="space-y-3">
       {/* V0.7.1: 学术说明 — 区分 ACWR chronic (28d 简单平均) vs PMC CTL (42d EWMA) */}
-      <div className="text-[10px] text-text-muted bg-amber-50/60 border border-amber-200/40 rounded px-2 py-1 leading-relaxed">
+      <div className="text-[10px] text-text-muted bg-status-warning/60 border border-border/40 rounded px-2 py-1 leading-relaxed">
         <strong>ACWR 急慢性负荷比 (Gabbett 2016)</strong>: 7d 急性 TSS / 28d 慢性 TSS (简单均值)
         <br />
-        <span className="text-amber-700">注意</span>: 与 PMC 的 CTL (42d EWMA) 是不同概念, 不可混用
+        <span className="text-accent-warning">注意</span>: 与 PMC 的 CTL (42d EWMA) 是不同概念, 不可混用
       </div>
 
       {/* 头部状态卡 */}
@@ -69,7 +69,7 @@ export function ACWRChart({ data }: Props) {
             {data.weekly_change != null && (
               <div className="text-right">
                 <div className="text-xs text-text-muted">周环比</div>
-                <div className={`text-sm font-mono ${data.weekly_change > 0.2 ? "text-rose-600" : data.weekly_change < -0.2 ? "text-amber-600" : "text-emerald-600"}`}>
+                <div className={`text-sm font-mono ${data.weekly_change > 0.2 ? "text-accent-danger" : data.weekly_change < -0.2 ? "text-accent-warning" : "text-accent-success"}`}>
                   {data.weekly_change > 0 ? "+" : ""}{data.weekly_change.toFixed(2)}
                 </div>
               </div>

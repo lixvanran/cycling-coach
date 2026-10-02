@@ -61,15 +61,15 @@ export function TrainingRadarChart() {
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-6">
-        <div className="text-sm text-slate-500">训练状态加载中…</div>
+      <div className="rounded border border-border bg-white p-6">
+        <div className="text-sm text-text-secondary">训练状态加载中…</div>
       </div>
     );
   }
   if (err || !data) {
     return (
-      <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
-        <div className="text-sm text-red-600">加载失败: {err}</div>
+      <div className="rounded border border-border bg-status-danger p-6">
+        <div className="text-sm text-accent-danger">加载失败: {err}</div>
       </div>
     );
   }
@@ -82,11 +82,11 @@ export function TrainingRadarChart() {
   );
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5">
+    <div className="rounded border border-border bg-white p-5">
       <div className="flex items-baseline justify-between mb-2">
         <div>
-          <h3 className="text-base font-semibold text-slate-800">5 维训练状态</h3>
-          <p className="text-xs text-slate-500 mt-0.5">借鉴 Joe Friel Form Chart</p>
+          <h3 className="text-base font-semibold text-text-primary">5 维训练状态</h3>
+          <p className="text-xs text-text-secondary mt-0.5">借鉴 Joe Friel Form Chart</p>
         </div>
         <div className="text-right">
           <div
@@ -95,7 +95,7 @@ export function TrainingRadarChart() {
           >
             {data.overall}
           </div>
-          <div className="text-xs text-slate-500">综合分</div>
+          <div className="text-xs text-text-secondary">综合分</div>
         </div>
       </div>
 
@@ -145,7 +145,7 @@ export function TrainingRadarChart() {
               >
                 {score}
               </div>
-              <div className="text-slate-500 mt-0.5 leading-tight">
+              <div className="text-text-secondary mt-0.5 leading-tight">
                 {data.interpretation[k] || ""}
               </div>
             </div>
@@ -153,7 +153,7 @@ export function TrainingRadarChart() {
         })}
       </div>
 
-      <div className="text-[10px] text-slate-400 mt-3 pt-2 border-t border-slate-100">
+      <div className="text-[10px] text-text-muted mt-3 pt-2 border-t border-slate-100">
         {data.source}
       </div>
     </div>

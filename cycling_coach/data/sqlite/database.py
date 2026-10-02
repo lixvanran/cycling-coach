@@ -62,6 +62,8 @@ _ALLOWED_TABLES: set[str] = {
     "chat_messages",
     "ml_predictions",
     "ml_model_meta",
+    # V0.8.2 B1-3: 阶段周模板
+    "phase_workouts",
 }
 
 

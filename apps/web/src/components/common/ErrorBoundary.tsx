@@ -44,8 +44,8 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         <div className="h-full flex items-center justify-center p-6">
           <div className="max-w-lg w-full text-center">
-            <div className="w-16 h-16 rounded-2xl bg-red-100 mx-auto mb-4 flex items-center justify-center">
-              <AlertTriangle size={28} className="text-red-600" />
+            <div className="w-16 h-16 rounded bg-status-danger mx-auto mb-4 flex items-center justify-center">
+              <AlertTriangle size={28} className="text-accent-danger" />
             </div>
             <h2 className="text-lg font-semibold text-text-primary mb-2">
               页面出错了
@@ -54,7 +54,7 @@ export class ErrorBoundary extends Component<Props, State> {
               组件渲染时遇到问题, 已经隔离, 其他页面不受影响。
             </p>
             {showDetails && this.state.error && (
-              <pre className="text-left text-[11px] text-text-muted bg-bg-elevated rounded-lg p-3 mb-4 overflow-auto max-h-40 font-mono">
+              <pre className="text-left text-[11px] text-text-muted bg-bg-subtle rounded p-3 mb-4 overflow-auto max-h-40 font-mono">
                 {this.state.error.message}
                 {this.state.errorInfo?.componentStack?.slice(0, 600)}
               </pre>

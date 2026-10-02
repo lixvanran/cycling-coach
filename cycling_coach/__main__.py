@@ -8,6 +8,28 @@ V0.7.6 Foundation 1.0: 优雅关闭
 - 显式 Server.should_exit = True → uvicorn Server.run() 退出 → os._exit(0) 兜底
   避免 uvicorn 0.52 asyncio loop 不干净退出的 known issue
 - SQLite 单写锁, 多 worker 不启用 (workers=1)
+
+────────────────────────────────────────────────────────────
+V0.8.2 架构预留: Desktop 模式集成点
+────────────────────────────────────────────────────────────
+当未来 (V0.9.x) 引入 Tauri / Electron 桌面打包时, 后端有两条集成路径:
+
+【路径 A】保留 FastAPI 服务, desktop shell 通过 HTTP 调用 (推荐, 改动小)
+   - 当前 main() 函数无需改动
+   - Tauri 启动时只需 spawn 本进程 + 自动开窗口
+   - 见 apps/web/src/lib/platform.ts 的 platform.cap 抽象
+
+【路径 B】完全内嵌, desktop shell 直接 import Python (改动大)
+   - 移除 uvicorn, 改用 ASGI 直接挂载
+   - 写一个 cycling_coach.desktop.run_app() 包装
+   - 用 __desktop_app_marker__ 钩子识别模式:
+        import sys
+        if getattr(sys, "_CYCLING_COACH_DESKTOP", False):
+            from .desktop import run_app
+            run_app()
+        else:
+            main()  # 当前 uvicorn 路径
+────────────────────────────────────────────────────────────
 """
 import logging
 import os

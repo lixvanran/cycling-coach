@@ -21,7 +21,7 @@ interface Props {
 type SeriesKey = "power" | "hr" | "cadence";
 
 const SERIES_META: Record<SeriesKey, { label: string; color: string; yAxisId: string }> = {
-  power:   { label: "功率 (W)",       color: "#6366f1", yAxisId: "power" },
+  power:   { label: "功率 (W)",       color: "#2563eb", yAxisId: "power" },
   hr:      { label: "心率 (bpm)",      color: "#ef4444", yAxisId: "hr" },
   cadence: { label: "踏频 (rpm)",      color: "#10b981", yAxisId: "cadence" },
 };
@@ -109,7 +109,7 @@ export function PowerHrTimeChart({ samples }: Props) {
           />
           <YAxis
             yAxisId="power"
-            stroke="#6366f1"
+            stroke="#2563eb"
             style={{ fontSize: 11, fontFamily: "monospace" }}
             unit="W"
             domain={["auto", "auto"]}
@@ -168,7 +168,7 @@ export function PowerHrTimeChart({ samples }: Props) {
               yAxisId="power"
               type="monotone"
               dataKey="power"
-              stroke="#6366f1"
+              stroke="#2563eb"
               strokeWidth={1.5}
               dot={false}
               name="功率 (W)"

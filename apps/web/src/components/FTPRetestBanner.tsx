@@ -23,9 +23,9 @@ interface FTPRecommend {
 }
 
 const PRIORITY_STYLE: Record<string, { bg: string; border: string; text: string; icon: string }> = {
-  high: { bg: "bg-rose-50", border: "border-rose-200", text: "text-rose-700", icon: "text-rose-500" },
-  medium: { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700", icon: "text-amber-500" },
-  low: { bg: "bg-slate-50", border: "border-slate-200", text: "text-slate-600", icon: "text-slate-400" },
+  high: { bg: "bg-status-danger", border: "border-border", text: "text-accent-danger", icon: "text-accent-danger" },
+  medium: { bg: "bg-status-warning", border: "border-border", text: "text-accent-warning", icon: "text-accent-warning" },
+  low: { bg: "bg-bg-subtle", border: "border-border", text: "text-text-secondary", icon: "text-text-muted" },
 };
 
 const METHOD_LABEL: Record<string, string> = {
@@ -54,13 +54,13 @@ export function FTPRetestBanner() {
   const style = PRIORITY_STYLE[data.priority] || PRIORITY_STYLE.low;
 
   return (
-    <div className={`rounded-2xl border ${style.border} ${style.bg} p-4 mb-4 relative`}>
+    <div className={`rounded border ${style.border} ${style.bg} p-4 mb-4 relative`}>
       <button
         onClick={() => setDismissed(true)}
         className="absolute top-2 right-2 p-1 rounded hover:bg-white/50"
         aria-label="关闭"
       >
-        <X className="w-3.5 h-3.5 text-slate-400" />
+        <X className="w-3.5 h-3.5 text-text-muted" />
       </button>
 
       <div className="flex items-start gap-3 pr-6">
@@ -74,9 +74,9 @@ export function FTPRetestBanner() {
               优先级 {data.priority}
             </span>
           </div>
-          <div className="text-xs text-slate-600 mt-1 leading-relaxed">{data.reason}</div>
+          <div className="text-xs text-text-secondary mt-1 leading-relaxed">{data.reason}</div>
           {data.last_test_date && (
-            <div className="text-[10px] text-slate-500 mt-1.5">
+            <div className="text-[10px] text-text-secondary mt-1.5">
               上次测试: {data.last_ftp_w}W ({data.last_method}) · {data.days_since} 天前 · 近期 IF {data.avg_if_last_14d.toFixed(2)}
             </div>
           )}
@@ -88,7 +88,7 @@ export function FTPRetestBanner() {
               去测试
               <ArrowRight className="w-3 h-3" />
             </button>
-            <span className="text-[10px] text-slate-500">
+            <span className="text-[10px] text-text-secondary">
               推荐协议: {METHOD_LABEL[data.recommended_method] || data.recommended_method}
             </span>
           </div>

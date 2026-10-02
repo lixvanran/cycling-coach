@@ -32,9 +32,12 @@ import {
 import clsx from "clsx";
 import { api } from "../lib/api";
 import { useToast } from "../components/Toast";
+import { useConfirm } from "../components/common";
 import type { FTPTest, FTPRecommend, FTPEstimate } from "../lib/types";
 
 export function FTPTestPage() {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [methods, setMethods] = useState<Record<string, any>>({});
   const [history, setHistory] = useState<FTPTest[]>([]);
   const [recommend, setRecommend] = useState<FTPRecommend | null>(null);
@@ -76,9 +79,20 @@ export function FTPTestPage() {
   };
 
   const onDelete = async (id: number) => {
-    if (!confirm("确定删除这次 FTP 测试记录?")) return;
-    await api.ftpDelete(id);
-    load();
+    const ok = await confirm({
+      title: "删除 FTP 测试",
+      message: "将删除这次 FTP 测试记录, 无法恢复。",
+      variant: "danger",
+      confirmText: "删除",
+    });
+    if (!ok) return;
+    try {
+      await api.ftpDelete(id);
+      toast.success("已删除");
+      load();
+    } catch (e: any) {
+      toast.error("删除失败: " + (e?.message || e));
+    }
   };
 
   const onSaveEstimate = async () => {
@@ -152,9 +166,9 @@ export function FTPTestPage() {
           <div
             className={clsx(
               "panel p-4 border-l-4",
-              recommend.priority === "high" ? "border-rose-300 bg-rose-50" :
-              recommend.priority === "medium" ? "border-amber-300 bg-amber-50" :
-              "border-emerald-300 bg-emerald-50"
+              recommend.priority === "high" ? "border-accent-danger bg-status-danger" :
+              recommend.priority === "medium" ? "border-border bg-status-warning" :
+              "border-border bg-status-success"
             )}
           >
             <div className="text-xs text-text-muted flex items-center gap-1">
@@ -163,9 +177,9 @@ export function FTPTestPage() {
             <div
               className={clsx(
                 "text-sm font-semibold mt-1",
-                recommend.priority === "high" ? "text-rose-700" :
-                recommend.priority === "medium" ? "text-amber-700" :
-                "text-emerald-700"
+                recommend.priority === "high" ? "text-accent-danger" :
+                recommend.priority === "medium" ? "text-accent-warning" :
+                "text-accent-success"
               )}
             >
               {recommend.should_test ? "✓ 建议测试" : "— 暂不需要"}
@@ -182,11 +196,11 @@ export function FTPTestPage() {
         )}
 
         {/* 估算入口 */}
-        <div className="panel p-4 border-l-4 border-blue-300 bg-blue-50">
+        <div className="panel p-4 border-l-4 border-l-primary bg-status-info">
           <div className="text-xs text-text-muted flex items-center gap-1">
             <Zap className="w-3 h-3" /> 快速估算
           </div>
-          <div className="text-sm font-semibold text-blue-700 mt-1">
+          <div className="text-sm font-semibold text-accent-primary mt-1">
             从已有活动估算
           </div>
           <div className="mt-2 space-y-1">
@@ -215,7 +229,7 @@ export function FTPTestPage() {
               <button
                 onClick={onEstimate}
                 disabled={!estimateActivityId}
-                className="px-2 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 disabled:opacity-50"
+                className="px-2 py-1 bg-status-info text-white rounded text-xs hover:bg-blue-600 disabled:opacity-50"
               >
                 估算
               </button>
@@ -226,10 +240,10 @@ export function FTPTestPage() {
 
       {/* 估算结果 */}
       {estimate && (
-        <div className="panel p-4 border-2 border-blue-300 space-y-3">
+        <div className="panel p-4 border-2 border-l-primary space-y-3">
           <div className="flex items-center justify-between">
             <div className="font-semibold flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-blue-500" />
+              <Sparkles className="w-4 h-4 text-accent-primary" />
               估算结果
               {estimate.activity_summary && (
                 <span className="text-xs text-text-muted font-normal">
@@ -259,9 +273,9 @@ export function FTPTestPage() {
                   <div
                     className={clsx(
                       "h-full",
-                      estimate.confidence > 0.7 ? "bg-emerald-500" :
-                      estimate.confidence > 0.4 ? "bg-amber-500" :
-                      "bg-rose-500"
+                      estimate.confidence > 0.7 ? "bg-status-success" :
+                      estimate.confidence > 0.4 ? "bg-status-warning0" :
+                      "bg-status-danger0"
                     )}
                     style={{ width: `${estimate.confidence * 100}%` }}
                   />
@@ -275,7 +289,7 @@ export function FTPTestPage() {
             <div className="space-y-0.5">
               {estimate.notes.map((n, i) => (
                 <div key={i} className="text-xs flex gap-1.5">
-                  <span className={n.startsWith("⚠") ? "text-rose-500" : "text-text-muted"}>
+                  <span className={n.startsWith("⚠") ? "text-accent-danger" : "text-text-muted"}>
                     {n.startsWith("⚠") ? "⚠" : "·"}
                   </span>
                   <span>{n.replace(/^[⚠·]\s*/, "")}</span>
@@ -310,7 +324,7 @@ export function FTPTestPage() {
                 </div>
               </div>
               <div className="text-xs text-text-muted mt-2 leading-relaxed">
-                <div className="font-mono text-[10px] text-text-primary bg-slate-50 px-1.5 py-0.5 rounded mb-1">
+                <div className="font-mono text-[10px] text-text-primary bg-bg-subtle px-1.5 py-0.5 rounded mb-1">
                   {m.formula}
                 </div>
                 <div className="text-[10px]">{m.protocol}</div>
@@ -363,7 +377,7 @@ export function FTPTestPage() {
                       <span
                         className={clsx(
                           "text-xs font-mono",
-                          t.ftp_change_w > 0 ? "text-emerald-500" : "text-rose-500"
+                          t.ftp_change_w > 0 ? "text-accent-success" : "text-accent-danger"
                         )}
                       >
                         {t.ftp_change_w > 0 ? "↑" : "↓"}{Math.abs(t.ftp_change_w)}W
@@ -382,7 +396,7 @@ export function FTPTestPage() {
                       <span>📊 CP {t.cp_w}W, W' {t.w_prime_kj}kJ</span>
                     )}
                     {t.confidence < 1 && (
-                      <span className={t.confidence > 0.7 ? "text-emerald-500" : t.confidence > 0.4 ? "text-amber-500" : "text-rose-500"}>
+                      <span className={t.confidence > 0.7 ? "text-accent-success" : t.confidence > 0.4 ? "text-accent-warning" : "text-accent-danger"}>
                         置信度 {Math.round(t.confidence * 100)}%
                       </span>
                     )}
@@ -393,10 +407,10 @@ export function FTPTestPage() {
                 </div>
                 <button
                   onClick={() => onDelete(t.id)}
-                  className="p-1.5 rounded hover:bg-rose-50"
+                  className="p-1.5 rounded hover:bg-status-danger"
                   title="删除"
                 >
-                  <Trash2 className="w-3.5 h-3.5 text-text-muted hover:text-rose-500" />
+                  <Trash2 className="w-3.5 h-3.5 text-text-muted hover:text-accent-danger" />
                 </button>
               </div>
             ))}
@@ -478,7 +492,7 @@ function FTPForm({ methods, onClose, onSaved }: any) {
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+      <div className="bg-white rounded shadow-sm w-full max-w-md">
         <div className="p-4 border-b border-border flex items-center justify-between">
           <div className="text-lg font-semibold flex items-center gap-2">
             <Plus className="w-4 h-4" /> 录入 FTP 测试
@@ -560,7 +574,7 @@ function FTPForm({ methods, onClose, onSaved }: any) {
               className="w-full mt-1 px-2 py-1.5 text-sm border border-border rounded resize-none"
             />
           </div>
-          {error && <div className="text-xs text-rose-500">{error}</div>}
+          {error && <div className="text-xs text-accent-danger">{error}</div>}
         </div>
         <div className="p-4 border-t border-border flex justify-end gap-2">
           <button onClick={onClose} className="px-3 py-1.5 text-sm rounded hover:bg-slate-100">

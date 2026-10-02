@@ -43,10 +43,10 @@ const SORT_OPTIONS = [
 // 状态色 - 基于 TSS
 function tssColor(tss: number | null | undefined): { bg: string; text: string; label: string } {
   if (tss == null) return { bg: "bg-bg-base", text: "text-text-muted", label: "—" };
-  if (tss < 50) return { bg: "bg-sky-500/15", text: "text-sky-300", label: "轻松" };
-  if (tss < 100) return { bg: "bg-emerald-500/15", text: "text-emerald-300", label: "中等" };
-  if (tss < 150) return { bg: "bg-amber-500/15", text: "text-amber-300", label: "高强度" };
-  return { bg: "bg-red-500/15", text: "text-red-300", label: "非常难" };
+  if (tss < 50) return { bg: "bg-status-info/15", text: "text-accent-primary", label: "轻松" };
+  if (tss < 100) return { bg: "bg-status-success/15", text: "text-accent-success", label: "中等" };
+  if (tss < 150) return { bg: "bg-status-warning/15", text: "text-accent-warning", label: "高强度" };
+  return { bg: "bg-status-danger", text: "text-accent-danger", label: "非常难" };
 }
 
 function fmtDur(seconds: number) {
@@ -165,7 +165,7 @@ export function ActivityList() {
   return (
     <div className="h-full flex flex-col bg-bg-base">
       {/* ============== 顶部 sticky 工具栏 ============== */}
-      <div className="flex-shrink-0 bg-bg-elevated border-b border-border px-6 py-3 flex items-center justify-between sticky top-0 z-20">
+      <div className="flex-shrink-0 bg-bg-subtle border-b border-border px-6 py-3 flex items-center justify-between sticky top-0 z-20">
         <div className="flex items-center gap-3">
           <Bike className="w-5 h-5 text-accent" />
           <h1 className="text-lg font-semibold">训练列表</h1>
@@ -175,7 +175,7 @@ export function ActivityList() {
         </div>
         <button
           onClick={() => navigate("/data/import")}
-          className="px-3 py-1.5 bg-accent text-bg-base rounded-lg text-sm font-medium flex items-center gap-1.5"
+          className="px-3 py-1.5 bg-accent text-bg-base rounded text-sm font-medium flex items-center gap-1.5"
         >
           <Zap className="w-3.5 h-3.5" />
           上传 FIT
@@ -183,7 +183,7 @@ export function ActivityList() {
       </div>
 
       {/* ============== 聚合统计卡 ============== */}
-      <div className="flex-shrink-0 grid grid-cols-4 gap-3 px-6 py-3 border-b border-border bg-bg-elevated/50">
+      <div className="flex-shrink-0 grid grid-cols-4 gap-3 px-6 py-3 border-b border-border bg-bg-subtle/50">
         <StatCard icon={ActivityIcon} label="活动数" value={String(aggregate.count)} unit="次" color="accent" />
         <StatCard icon={Clock} label="总时长" value={fmtDur(aggregate.total_duration_s)} color="emerald" />
         <StatCard icon={Mountain} label="总距离" value={fmtKm(aggregate.total_distance_m)} color="sky" />
@@ -191,7 +191,7 @@ export function ActivityList() {
       </div>
 
       {/* ============== 过滤栏 ============== */}
-      <div className="flex-shrink-0 px-6 py-3 border-b border-border bg-bg-elevated/30">
+      <div className="flex-shrink-0 px-6 py-3 border-b border-border bg-bg-subtle/30">
         <div className="grid grid-cols-12 gap-2 items-end">
           {/* 日期范围 */}
           <div className="col-span-2">
@@ -245,14 +245,14 @@ export function ActivityList() {
         <div className="flex gap-2 mt-3">
           <button
             onClick={applyFilters}
-            className="px-4 py-1.5 bg-accent text-bg-base rounded-lg text-sm font-medium flex items-center gap-1.5"
+            className="px-4 py-1.5 bg-accent text-bg-base rounded text-sm font-medium flex items-center gap-1.5"
           >
             <Search className="w-3.5 h-3.5" />
             应用过滤
           </button>
           <button
             onClick={resetFilters}
-            className="px-4 py-1.5 bg-bg-base border border-border rounded-lg text-sm text-text-muted flex items-center gap-1.5 hover:border-accent/50"
+            className="px-4 py-1.5 bg-bg-base border border-border rounded text-sm text-text-muted flex items-center gap-1.5 hover:border-accent/50"
           >
             <X className="w-3.5 h-3.5" />
             重置
@@ -271,7 +271,7 @@ export function ActivityList() {
           </div>
         )}
         {!loading && activities.length > 0 && (
-          <div className="bg-bg-elevated border border-border rounded-xl overflow-hidden">
+          <div className="bg-bg-subtle border border-border rounded overflow-hidden">
             {/* 表头 */}
             <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-bg-base border-b border-border text-[10px] font-semibold text-text-muted uppercase">
               <SortHeader field="start_time" sort={sort} order={order} onClick={toggleSort} className="col-span-2">日期</SortHeader>
@@ -327,7 +327,7 @@ export function ActivityList() {
 
       {/* ============== 底部 sticky 分页 ============== */}
       {total > pageSize && (
-        <div className="flex-shrink-0 bg-bg-elevated border-t border-border px-6 py-3 flex items-center justify-between sticky bottom-0">
+        <div className="flex-shrink-0 bg-bg-subtle border-t border-border px-6 py-3 flex items-center justify-between sticky bottom-0">
           <div className="text-xs text-text-muted">
             第 {page * pageSize + 1} - {Math.min((page + 1) * pageSize, total)} 条 / 共 {total} 条
           </div>
@@ -360,7 +360,7 @@ export function ActivityList() {
 
 function StatCard({ icon: Icon, label, value, unit, color }: { icon: LucideIcon; label: string; value: string; unit?: string; color: string }) {
   return (
-    <div className="bg-bg-base border border-border rounded-lg px-3 py-2 flex items-center gap-3">
+    <div className="bg-bg-base border border-border rounded px-3 py-2 flex items-center gap-3">
       <Icon className={clsx("w-5 h-5", `text-${color}-400`)} />
       <div>
         <div className="text-[10px] text-text-muted">{label}</div>

@@ -104,22 +104,22 @@ export function WbalChart({ wbal }: WbalChartProps) {
           label="最低 W'bal"
           value={`${minKJ.toFixed(1)} kJ`}
           sub={`${wbal.min_wbal_pct.toFixed(1)}% W' @ ${(wbal.min_wbal_at_s/60).toFixed(1)}min`}
-          color={wbal.min_wbal_pct < 30 ? "text-rose-600" : wbal.min_wbal_pct < 50 ? "text-amber-600" : "text-emerald-600"}
+          color={wbal.min_wbal_pct < 30 ? "text-accent-danger" : wbal.min_wbal_pct < 50 ? "text-accent-warning" : "text-accent-success"}
         />
         <Stat
           label="比赛匹配潜力"
           value={`${(wbal.match_potential * 100).toFixed(0)}%`}
           sub={wbal.depleted ? "⚠️ 已耗尽" : wbal.match_potential > 0.7 ? "剩余少, 难再加速" : "尚有余力"}
-          color={wbal.depleted ? "text-rose-700 font-semibold" : wbal.match_potential > 0.7 ? "text-amber-600" : "text-emerald-600"}
+          color={wbal.depleted ? "text-accent-danger font-semibold" : wbal.match_potential > 0.7 ? "text-accent-warning" : "text-accent-success"}
         />
       </div>
 
       {/* 临界事件 */}
       {wbal.critical_events && wbal.critical_events.length > 0 && (
-        <div className="text-xs bg-rose-50 border border-rose-200 rounded-md p-2">
-          <div className="font-semibold text-rose-700 mb-1">⚠️ 临界事件 (W'bal &lt; 30% W'):</div>
+        <div className="text-xs bg-status-danger border border-border rounded-md p-2">
+          <div className="font-semibold text-accent-danger mb-1">⚠️ 临界事件 (W'bal &lt; 30% W'):</div>
           {wbal.critical_events.map((e, i) => (
-            <div key={i} className="text-rose-600">
+            <div key={i} className="text-accent-danger">
               • {e.start_s}s → {e.end_s}s ({e.duration_s}s), 最低 {e.min_wbal}J ({e.min_wbal_pct}%)
             </div>
           ))}
@@ -131,9 +131,9 @@ export function WbalChart({ wbal }: WbalChartProps) {
 
 function Stat({ label, value, sub, color }: { label: string; value: string; sub: string; color?: string }) {
   return (
-    <div className="px-3 py-2 rounded-md bg-slate-50">
+    <div className="px-3 py-2 rounded-md bg-bg-subtle">
       <div className="text-text-muted">{label}</div>
-      <div className={`text-lg font-semibold ${color || "text-slate-700"}`}>{value}</div>
+      <div className={`text-lg font-semibold ${color || "text-text-secondary"}`}>{value}</div>
       <div className="text-[10px] text-text-muted">{sub}</div>
     </div>
   );

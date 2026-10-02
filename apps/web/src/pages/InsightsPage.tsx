@@ -24,6 +24,8 @@ import {
 import clsx from "clsx";
 import { api } from "../lib/api";
 import { HRVCard } from "../components/HRVCard";
+import { EmptyState, LoadingSkeleton } from "../components/common";
+import { BookOpen } from "lucide-react";
 import type { WeeklyReview, InsightsToday } from "../lib/types";
 
 const ZONE_COLORS = [
@@ -46,25 +48,23 @@ export function InsightsPage() {
   }, []);
 
   if (loading) {
-    return (
-      <div className="p-6">
-        <div className="text-text-muted text-sm">加载中...</div>
-      </div>
-    );
+    return <LoadingSkeleton variant="card" />;
   }
 
   if (!weekly || !today) {
     return (
-      <div className="p-6">
-        <div className="text-text-muted text-sm">暂无数据</div>
-      </div>
+      <EmptyState
+        icon={<Sparkles size={28} />}
+        title="还没有洞察数据"
+        description="先导入几次训练, AI 会基于你的训练数据生成个性化洞察。"
+      />
     );
   }
 
   const tssChange = weekly.comparison.tss_change;
   const trend = tssChange > 20 ? "up" : tssChange < -20 ? "down" : "stable";
   const TrendIcon = trend === "up" ? TrendingUp : trend === "down" ? TrendingDown : Minus;
-  const trendColor = trend === "up" ? "text-amber-600" : trend === "down" ? "text-emerald-600" : "text-text-muted";
+  const trendColor = trend === "up" ? "text-accent-warning" : trend === "down" ? "text-accent-success" : "text-text-muted";
 
   // 强度分布 (Z1-Z7)
   const zoneData = Object.entries(weekly.this_week.zone_pct).map(([zone, pct], i) => ({
@@ -89,16 +89,16 @@ export function InsightsPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className={clsx(
           "panel p-4 border-l-4",
-          today.summary.health_score >= 85 ? "border-emerald-400" :
-          today.summary.health_score >= 60 ? "border-amber-400" :
-          "border-rose-400"
+          today.summary.health_score >= 85 ? "border-border" :
+          today.summary.health_score >= 60 ? "border-border" :
+          "border-accent-danger"
         )}>
           <div className="text-xs text-text-muted">训练健康分</div>
           <div className={clsx(
             "text-4xl font-bold font-mono mt-1",
-            today.summary.health_score >= 85 ? "text-emerald-600" :
-            today.summary.health_score >= 60 ? "text-amber-600" :
-            "text-rose-600"
+            today.summary.health_score >= 85 ? "text-accent-success" :
+            today.summary.health_score >= 60 ? "text-accent-warning" :
+            "text-accent-danger"
           )}>
             {today.summary.health_score}
             <span className="text-base text-text-muted ml-1">/ 100</span>
@@ -111,9 +111,9 @@ export function InsightsPage() {
         </div>
 
         <HRVCard />
-          <div className="panel p-4 border-l-4 border-blue-400">
+          <div className="panel p-4 border-l-4 border-border">
           <div className="text-xs text-text-muted">今日洞察</div>
-          <div className="text-4xl font-bold font-mono mt-1 text-blue-600">
+          <div className="text-4xl font-bold font-mono mt-1 text-accent-primary">
             {today.insights.length}
           </div>
           <div className="text-xs text-text-muted mt-1">
@@ -121,7 +121,7 @@ export function InsightsPage() {
           </div>
         </div>
 
-        <div className="panel p-4 border-l-4 border-purple-400">
+        <div className="panel p-4 border-l-4 border-accent-primary">
           <div className="text-xs text-text-muted">本周 TSS 趋势</div>
           <div className="flex items-center gap-2 mt-1">
             <TrendIcon className={clsx("w-5 h-5", trendColor)} />
@@ -200,11 +200,11 @@ export function InsightsPage() {
           </ResponsiveContainer>
           <div className="mt-3 text-xs text-text-muted leading-relaxed">
             {weekly.this_week.zone_pct.Z1 + weekly.this_week.zone_pct.Z2 > 75 ? (
-              <span className="text-emerald-600">✓ 低强度占比高, 训练分布健康</span>
+              <span className="text-accent-success">✓ 低强度占比高, 训练分布健康</span>
             ) : weekly.this_week.zone_pct.Z3 + weekly.this_week.zone_pct.Z4 > 25 ? (
-              <span className="text-amber-600">⚠ Z3+Z4 偏多, 灰色地带, 建议调整训练配比</span>
+              <span className="text-accent-warning">⚠ Z3+Z4 偏多, 灰色地带, 建议调整训练配比</span>
             ) : weekly.this_week.zone_pct.Z5 + weekly.this_week.zone_pct.Z6 + weekly.this_week.zone_pct.Z7 > 25 ? (
-              <span className="text-amber-600">⚠ 高强度偏多, 累积疲劳风险</span>
+              <span className="text-accent-warning">⚠ 高强度偏多, 累积疲劳风险</span>
             ) : (
               <span>分布可接受</span>
             )}
@@ -213,10 +213,10 @@ export function InsightsPage() {
       </section>
 
       {/* 下周建议 */}
-      <section className="panel p-4 bg-blue-50/50 border-blue-200">
+      <section className="panel p-4 bg-status-info/50 border-border">
         <div className="flex items-center gap-2 mb-2">
-          <ArrowRight className="w-4 h-4 text-blue-600" />
-          <div className="text-sm font-semibold text-blue-700">下周计划建议</div>
+          <ArrowRight className="w-4 h-4 text-accent-primary" />
+          <div className="text-sm font-semibold text-accent-primary">下周计划建议</div>
         </div>
         <div className="text-sm text-text-primary leading-relaxed">
           {weekly.next_week_advice}
@@ -234,16 +234,16 @@ export function InsightsPage() {
             {today.insights.map((i) => (
               <div key={i.id} className={clsx(
                 "p-3 rounded-md border",
-                i.severity === "alert" ? "bg-rose-50 border-rose-200" :
-                i.severity === "warning" ? "bg-amber-50 border-amber-200" :
-                "bg-emerald-50 border-emerald-200"
+                i.severity === "alert" ? "bg-status-danger border-border" :
+                i.severity === "warning" ? "bg-status-warning border-border" :
+                "bg-status-success border-border"
               )}>
                 <div className="flex items-start gap-2">
                   <div className={clsx(
                     "px-1.5 py-0.5 rounded text-[10px] font-bold uppercase",
-                    i.severity === "alert" ? "bg-rose-200 text-rose-800" :
-                    i.severity === "warning" ? "bg-amber-200 text-amber-800" :
-                    "bg-emerald-200 text-emerald-800"
+                    i.severity === "alert" ? "bg-status-danger text-accent-danger" :
+                    i.severity === "warning" ? "bg-status-warning text-accent-warning" :
+                    "bg-status-success text-accent-success"
                   )}>
                     {i.severity}
                   </div>
@@ -274,7 +274,7 @@ function WeekStat({ icon: Icon, label, value, color, muted }: any) {
   return (
     <div className={clsx(
       "flex items-center justify-between px-3 py-1.5 rounded",
-      muted ? "bg-slate-50" : `bg-${color}-50`
+      muted ? "bg-bg-subtle" : `bg-${color}-50`
     )}>
       <div className="flex items-center gap-2 text-xs text-text-muted">
         <Icon className="w-3.5 h-3.5" />

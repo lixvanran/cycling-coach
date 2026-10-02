@@ -99,7 +99,7 @@ export function PowerCurveChart({ data, powerCurve, ftp }: PowerCurveChartProps)
               "px-2.5 py-1 rounded text-xs font-medium transition",
               windowKey === k
                 ? "bg-accent-primary text-white shadow"
-                : "bg-bg-input text-text-muted hover:bg-bg-hover hover:text-text-primary"
+                : "bg-bg-subtle text-text-muted hover:bg-bg-hover hover:text-text-primary"
             )}
           >
             {w.label}
@@ -164,7 +164,7 @@ export function PowerCurveChart({ data, powerCurve, ftp }: PowerCurveChartProps)
       )}
       {inferredFtp && (
         <div className="mt-2 text-[10px] text-text-muted text-center">
-          💡 估算 FTP <span className="text-emerald-300 font-bold">{inferredFtp}W</span>
+          💡 估算 FTP <span className="text-accent-success font-bold">{inferredFtp}W</span>
           <span className="ml-1">(基于 20min 最佳功率 × 0.95)</span>
         </div>
       )}

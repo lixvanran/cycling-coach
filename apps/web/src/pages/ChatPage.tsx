@@ -1,15 +1,18 @@
 // 聊天页 — V0.8.0 3 tab 模式: 训练答疑 (rag) | 战术规划 (workflow) | 随便聊聊 (chat)
-import { useEffect, useRef, useState, useMemo } from "react";
+// V0.8.3: AI 回复里检测 workout JSON, 显示 "加入 Builder" 按钮
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Send, StopCircle, Trash2, Sparkles, Brain, MessageSquare, ChevronDown, ChevronUp, GitBranch, Zap } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../lib/api";
 import { useToast } from "../components/Toast";
-import { ChatMessage } from "../components/ChatMessage";
+import { useConfirm } from "../components/common";
+import { ChatMessage, extractWorkoutFromContent } from "../components/ChatMessage";
 import { ThinkingTreeView, makeNode } from "../components/ThinkingTreeView";
 import { useChatStore, type ChatMode } from "../store/chat";
 import type { ChatMsg } from "../store/useAppStore";
 import type { ThinkingNode } from "../lib/types";
+import type { Block } from "../lib/builderBlocks";
 
 // ============================================================
 // 3 个 tab 定义
@@ -43,7 +46,7 @@ const TABS: TabDef[] = [
     label: "战术规划",
     icon: GitBranch,
     description: "multi-mind 9 stage 思维扩散",
-    color: "text-amber-600",
+    color: "text-accent-warning",
     suggestions: [
       "周末 100km 公路赛,配速怎么安排?",
       "FTP 220W 备战 60km 山地赛,赛前 4 周怎么练?",
@@ -72,6 +75,7 @@ const TABS: TabDef[] = [
 
 export function ChatPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const navigate = useNavigate();
 
   // V0.8.0: 直接用 useChatStore(V0.8.0 拆分的 chat store)
@@ -159,36 +163,43 @@ export function ChatPage() {
 
     let fullText = "";
     let fullThink = "";
+    // V0.8.2 U-12: 改用 markdown 标题切分 (## Thinking / ## Answer)
+    // 比 [THINK]xxx[/THINK] 健壮, LLM 半路切也不会乱
+    let inThink = false;
+    let phase: "pre" | "thinking" | "answer" = "pre";
     // workflow 模式下的思维树节点缓冲
     const nodeMap = new Map<string, ThinkingNode>();
 
     try {
       for await (const evt of api.chatStreamV2(chatMode, history.slice(0, -1), content, ctrl.signal)) {
         if (evt.type === "text") {
-          // 区分 [THINK]xxx[/THINK] 和普通文本
           const chunk = evt.data;
-          let i = 0;
-          while (i < chunk.length) {
-            const thinkStart = chunk.indexOf("[THINK]", i);
-            if (thinkStart === -1) {
-              fullText += chunk.slice(i);
-              i = chunk.length;
-              updateLastMessage(chatMode, { content: fullText, thinking: fullThink } as any);
-            } else {
-              if (thinkStart > i) {
-                fullText += chunk.slice(i, thinkStart);
-              }
-              const thinkEnd = chunk.indexOf("[/THINK]", thinkStart);
-              if (thinkEnd === -1) {
-                fullText += chunk.slice(i);
-                i = chunk.length;
-                updateLastMessage(chatMode, { content: fullText, thinking: fullThink } as any);
-                break;
-              }
-              fullThink += chunk.slice(thinkStart + 7, thinkEnd);
-              i = thinkEnd + 8;
-              updateLastMessage(chatMode, { content: fullText, thinking: fullThink } as any);
-            }
+          // 流式拼到 raw buffer, 按"## Thinking" / "## Answer" 切分
+          fullText += chunk;
+          const lower = fullText.toLowerCase();
+          const thinkIdx = lower.indexOf("## thinking");
+          const answerIdx = lower.indexOf("## answer");
+          if (thinkIdx >= 0 && answerIdx > thinkIdx) {
+            // 完整拿到两个标题了
+            const thinkContent = fullText.slice(thinkIdx + "## thinking".length, answerIdx).trim();
+            const answerContent = fullText.slice(answerIdx + "## answer".length).trim();
+            updateLastMessage(chatMode, {
+              content: answerContent,
+              thinking: thinkContent,
+            } as any);
+          } else if (thinkIdx >= 0) {
+            // 只看到 Thinking, 还在流式
+            const thinkContent = fullText.slice(thinkIdx + "## thinking".length).trim();
+            updateLastMessage(chatMode, {
+              content: "",
+              thinking: thinkContent,
+            } as any);
+          } else {
+            // pre 阶段 (LLM 还没切到 Thinking), 全当 answer 显示
+            updateLastMessage(chatMode, {
+              content: fullText,
+              thinking: fullThink,
+            } as any);
           }
         } else if (evt.type === "node") {
           // workflow: 思维树节点事件
@@ -261,11 +272,11 @@ export function ChatPage() {
   useEffect(() => {
     if (!isStreaming) return;
     const slowTimer = setTimeout(() => {
-      toast.warn("AI 响应较慢 (已等 30s), 可点停止按钮取消", 5000);
+      toast.warn("AI 响应较慢 (已等 30s), 可点停止按钮取消", { ttl: 5000 });
     }, 30_000);
     const hardTimer = setTimeout(() => {
       abortRef.current?.abort();
-      toast.error("AI 响应超时 (120s), 已自动取消", 5000);
+      toast.error("AI 响应超时 (120s), 已自动取消", { ttl: 5000 });
     }, 120_000);
     return () => {
       clearTimeout(slowTimer);
@@ -283,12 +294,33 @@ export function ChatPage() {
     setStreaming(false);
   };
 
-  const onClear = () => {
-    if (confirm(`清空"${currentTab.label}"模式的所有对话?`)) {
+  const onClear = async () => {
+    const ok = await confirm({
+      title: `清空"${currentTab.label}"对话`,
+      message: "将删除当前模式的所有对话历史, 此操作无法撤销。",
+      variant: "danger",
+      confirmText: "清空",
+    });
+    if (ok) {
       onStop();
       clearMessages(chatMode);
     }
   };
+
+  // V0.8.3: 把 Chat 里的 workout 块推到 Builder
+  const addToBuilder = useCallback((blocks: Block[], title: string) => {
+    try {
+      // 序列化 payload (含 title, 便于 Builder 套用)
+      sessionStorage.setItem(
+        "cc:pending_builder_blocks",
+        JSON.stringify({ title, blocks }),
+      );
+    } catch (e) {
+      toast.error("写入 sessionStorage 失败, 浏览器可能禁用了本地存储");
+      return;
+    }
+    navigate("/plan/builder?from_chat=1");
+  }, [navigate, toast]);
 
   // ============================================================
   // 渲染
@@ -296,7 +328,7 @@ export function ChatPage() {
   return (
     <div className="flex flex-col h-full">
       {/* 顶部 — 标题 + tab + 清空 */}
-      <div className="border-b border-border bg-bg-elevated/50 backdrop-blur">
+      <div className="border-b border-border bg-bg-subtle/50 backdrop-blur">
         <div className="px-6 py-3 flex items-center justify-between">
           <div>
             <h1 className="text-lg font-semibold text-text-primary flex items-center gap-2">
@@ -353,6 +385,7 @@ export function ChatPage() {
           isStreaming={isStreaming}
           onSuggestion={send}
           onNavigate={navigate}
+          onAddToBuilder={addToBuilder}
         />
       ) : (
         <DefaultLayout
@@ -362,6 +395,8 @@ export function ChatPage() {
           currentTab={currentTab}
           isStreaming={isStreaming}
           onSuggestion={send}
+          onNavigate={(p) => navigate(p)}
+          onAddToBuilder={addToBuilder}
         />
       )}
 
@@ -389,7 +424,7 @@ export function ChatPage() {
             }
             disabled={isStreaming}
             rows={1}
-            className="flex-1 bg-bg-input border border-border rounded-lg px-3 py-2.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary resize-none max-h-32 disabled:opacity-50"
+            className="flex-1 bg-bg-subtle border border-border rounded px-3 py-2.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-primary resize-none max-h-32 disabled:opacity-50"
           />
           {isStreaming ? (
             <button
@@ -436,7 +471,7 @@ function SegmentedControl<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="relative inline-flex bg-bg-input rounded-lg p-1 w-full">
+    <div className="relative inline-flex bg-bg-subtle rounded p-1 w-full">
       {/* 高亮背景(动) */}
       <div
         className="absolute top-1 bottom-1 rounded-md bg-white shadow-sm transition-all duration-200 ease-out"
@@ -480,6 +515,8 @@ function DefaultLayout({
   currentTab,
   isStreaming,
   onSuggestion,
+  onNavigate,
+  onAddToBuilder,
 }: {
   messages: ChatMsg[];
   sources: Array<{title: string; path: string; snippet: string}> | null;
@@ -487,12 +524,14 @@ function DefaultLayout({
   currentTab: TabDef;
   isStreaming: boolean;
   onSuggestion: (s: string) => void;
+  onNavigate: (path: string) => void;
+  onAddToBuilder?: (blocks: Block[], title: string) => void;
 }) {
   return (
     <div className="flex-1 overflow-y-auto px-6 py-4">
       {messages.length === 0 ? (
         <div className="h-full flex flex-col items-center justify-center text-center max-w-2xl mx-auto">
-          <div className="w-16 h-16 rounded-2xl bg-accent-primary/10 flex items-center justify-center mb-4">
+          <div className="w-16 h-16 rounded bg-accent-primary/10 flex items-center justify-center mb-4">
             <currentTab.icon size={28} className="text-accent-primary" />
           </div>
           <h2 className="text-lg font-semibold text-text-primary mb-2">
@@ -516,9 +555,20 @@ function DefaultLayout({
         </div>
       ) : (
         <>
-          {messages.map((m) => (
-            <ChatMessage key={m.id} msg={m} />
-          ))}
+          {messages.map((m) => {
+            // V0.8.3: 算 workout 块 (assistant 消息才检查)
+            const extracted =
+              m.role === "assistant" && m.content ? extractWorkoutFromContent(m.content) : null;
+            return (
+              <ChatMessage
+                key={m.id}
+                msg={m}
+                workoutBlocks={extracted?.blocks ?? null}
+                workoutTitle={extracted?.title}
+                onAddToBuilder={onAddToBuilder}
+              />
+            );
+          })}
           {sources && sources.length > 0 && (
             <div className="mt-4 panel p-3 bg-accent-primary/5 border-accent-primary/20">
               <div className="text-xs font-semibold text-accent-primary mb-2 flex items-center gap-1.5">
@@ -526,10 +576,24 @@ function DefaultLayout({
               </div>
               <div className="space-y-2">
                 {sources.map((s, i) => (
-                  <details key={i} className="text-xs">
-                    <summary className="cursor-pointer text-text-secondary hover:text-text-primary">
-                      {i + 1}. {s.title}
-                      <span className="text-text-muted ml-2 text-[10px]">— {s.path}</span>
+                  <details key={i} className="text-xs group">
+                    <summary className="cursor-pointer text-text-secondary hover:text-text-primary flex items-center gap-1.5">
+                      <span className="flex-1 min-w-0">
+                        {i + 1}. {s.title}
+                        <span className="text-text-muted ml-2 text-[10px]">— {s.path}</span>
+                      </span>
+                      {s.path && (
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onNavigate(`/data/knowledge?path=${encodeURIComponent(s.path)}`);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 text-[10px] text-accent-primary hover:underline flex-shrink-0"
+                        >
+                          打开 →
+                        </button>
+                      )}
                     </summary>
                     <div className="mt-1 p-2 bg-bg-base rounded text-text-muted text-[11px] leading-relaxed">
                       {s.snippet}
@@ -561,6 +625,7 @@ function WorkflowLayout({
   isStreaming,
   onSuggestion,
   onNavigate,
+  onAddToBuilder,
 }: {
   messages: ChatMsg[];
   thinkingNodes: ThinkingNode[];
@@ -572,6 +637,7 @@ function WorkflowLayout({
   isStreaming: boolean;
   onSuggestion: (s: string) => void;
   onNavigate: (path: string) => void;
+  onAddToBuilder?: (blocks: Block[], title: string) => void;
 }) {
   // 思维树只在 streaming / 有节点时显示
   const showTree = thinkingNodes.length > 0 || isStreaming;
@@ -595,9 +661,9 @@ function WorkflowLayout({
           )}
         >
           {/* 折叠条 */}
-          <div className="h-9 px-4 flex items-center justify-between border-b border-border bg-bg-elevated/40">
+          <div className="h-9 px-4 flex items-center justify-between border-b border-border bg-bg-subtle/40">
             <div className="flex items-center gap-2">
-              <Zap className="w-3.5 h-3.5 text-amber-500" />
+              <Zap className="w-3.5 h-3.5 text-accent-warning" />
               <span className="text-xs font-semibold text-text-primary">思维树 (multi-mind)</span>
               <span className="text-[10px] text-text-muted font-mono">
                 {thinkingNodes.filter((n) => n.status === "done").length}/
@@ -624,8 +690,8 @@ function WorkflowLayout({
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {messages.length === 0 && !showTree ? (
           <div className="h-full flex flex-col items-center justify-center text-center max-w-2xl mx-auto">
-            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 flex items-center justify-center mb-4">
-              <GitBranch size={28} className="text-amber-600" />
+            <div className="w-16 h-16 rounded bg-status-warning0/10 flex items-center justify-center mb-4">
+              <GitBranch size={28} className="text-accent-warning" />
             </div>
             <h2 className="text-lg font-semibold text-text-primary mb-2">
               战术规划
@@ -639,7 +705,7 @@ function WorkflowLayout({
                   key={s}
                   onClick={() => onSuggestion(s)}
                   disabled={isStreaming}
-                  className="panel p-3 text-left text-sm text-text-secondary hover:text-text-primary hover:border-amber-500 transition-colors disabled:opacity-50"
+                  className="panel p-3 text-left text-sm text-text-secondary hover:text-text-primary hover:border-accent-warning transition-colors disabled:opacity-50"
                 >
                   {s}
                 </button>
@@ -655,34 +721,60 @@ function WorkflowLayout({
         ) : (
           <>
             {/* 思维树隐藏时, 显示完整历史 */}
-            {!showTree && messages.map((m) => (
-              <ChatMessage key={m.id} msg={m} />
-            ))}
+            {!showTree && messages.map((m) => {
+              const extracted = m.role === "assistant" && m.content ? extractWorkoutFromContent(m.content) : null;
+              return (
+                <ChatMessage
+                  key={m.id}
+                  msg={m}
+                  workoutBlocks={extracted?.blocks ?? null}
+                  workoutTitle={extracted?.title}
+                  onAddToBuilder={onAddToBuilder}
+                />
+              );
+            })}
 
             {/* 思维树显示时, 只显示最后一条 assistant 的最终建议(详情在思维树里看) */}
-            {showTree && lastAssistant && (
-              <div className="panel p-4 border-amber-200/50 bg-amber-50/20">
-                <div className="text-[10px] font-semibold text-amber-700 mb-1.5 flex items-center gap-1">
-                  <Sparkles size={11} /> 最终建议
-                </div>
-                <ChatMessage msg={lastAssistant} />
-                {sources && sources.length > 0 && (
-                  <div className="mt-3 panel p-2 bg-white/60 text-xs">
-                    <div className="text-text-secondary font-semibold mb-1">📚 知识库参考</div>
-                    {sources.map((s, i) => (
-                      <div key={i} className="text-text-muted">
-                        {i + 1}. {s.title} <span className="text-[10px]">— {s.path}</span>
-                      </div>
-                    ))}
+            {showTree && lastAssistant && (() => {
+              const extracted = lastAssistant.content ? extractWorkoutFromContent(lastAssistant.content) : null;
+              return (
+                <div className="panel p-4 border-border/50 bg-status-warning/20">
+                  <div className="text-[10px] font-semibold text-accent-warning mb-1.5 flex items-center gap-1">
+                    <Sparkles size={11} /> 最终建议
                   </div>
-                )}
-              </div>
-            )}
+                  <ChatMessage
+                    msg={lastAssistant}
+                    workoutBlocks={extracted?.blocks ?? null}
+                    workoutTitle={extracted?.title}
+                    onAddToBuilder={onAddToBuilder}
+                  />
+                  {sources && sources.length > 0 && (
+                    <div className="mt-3 panel p-2 bg-white/60 text-xs">
+                      <div className="text-text-secondary font-semibold mb-1">📚 知识库参考</div>
+                      {sources.map((s, i) => (
+                        <div key={i} className="text-text-muted">
+                          {i + 1}. {s.title} <span className="text-[10px]">— {s.path}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* 空 + tree 显示中(用户消息刚发出, assistant 还在跑) */}
-            {showTree && !lastAssistant && messages.length > 0 && messages.map((m) => (
-              <ChatMessage key={m.id} msg={m} />
-            ))}
+            {showTree && !lastAssistant && messages.length > 0 && messages.map((m) => {
+              const extracted = m.role === "assistant" && m.content ? extractWorkoutFromContent(m.content) : null;
+              return (
+                <ChatMessage
+                  key={m.id}
+                  msg={m}
+                  workoutBlocks={extracted?.blocks ?? null}
+                  workoutTitle={extracted?.title}
+                  onAddToBuilder={onAddToBuilder}
+                />
+              );
+            })}
 
             <div ref={messagesEndRef} />
           </>

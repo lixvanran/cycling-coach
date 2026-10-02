@@ -16,6 +16,7 @@ import {
   TrendingUp,
   Activity,
   BarChart3,
+  CalendarPlus,
 } from "lucide-react";
 import {
   BarChart,
@@ -28,22 +29,27 @@ import {
 } from "recharts";
 import clsx from "clsx";
 import { api } from "../lib/api";
+import { useToast } from "../components/Toast";
+import { useConfirm } from "../components/common";
 import { PhaseSignalsCard } from "../components/PhaseSignalsCard";
 import { TrainingRadarChart } from "../components/TrainingRadarChart";
 import { RaceTypePicker } from "../components/RaceTypePicker";
 import type { TrainingPhase } from "../lib/types";
 
-const PHASE_COLORS: Record<string, { bg: string; border: string; text: string; bar: string; ring: string }> = {
-  base: { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700", bar: "bg-blue-500", ring: "ring-blue-300" },
-  build: { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700", bar: "bg-amber-500", ring: "ring-amber-300" },
-  peak: { bg: "bg-rose-50", border: "border-rose-200", text: "text-rose-700", bar: "bg-rose-500", ring: "ring-rose-300" },
-  taper: { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", bar: "bg-emerald-500", ring: "ring-emerald-300" },
-  recovery: { bg: "bg-slate-50", border: "border-slate-200", text: "text-slate-700", bar: "bg-slate-400", ring: "ring-slate-300" },
-  race: { bg: "bg-purple-50", border: "border-purple-300", text: "text-purple-700", bar: "bg-purple-500", ring: "ring-purple-300" },
-  rest: { bg: "bg-slate-50", border: "border-slate-200", text: "text-slate-500", bar: "bg-slate-300", ring: "ring-slate-300" },
+const PHASE_COLORS: Record<string, { bg: string; border: string; text: string; bar: string }> = {
+  // V0.8.3 B3: TP 老钱风 — 砍 ring, 用 1px 边 (边框表达选中)
+  base: { bg: "bg-status-info", border: "border-l-primary", text: "text-accent-primary", bar: "bg-status-info" },
+  build: { bg: "bg-status-warning", border: "border-border", text: "text-accent-warning", bar: "bg-status-warning0" },
+  peak: { bg: "bg-status-danger", border: "border-accent-danger", text: "text-accent-danger", bar: "bg-status-danger0" },
+  taper: { bg: "bg-status-success", border: "border-border", text: "text-accent-success", bar: "bg-status-success" },
+  recovery: { bg: "bg-bg-subtle", border: "border-slate-300", text: "text-text-secondary", bar: "bg-slate-400" },
+  race: { bg: "bg-status-info", border: "border-accent-primary", text: "text-accent-primary", bar: "bg-status-info" },
+  rest: { bg: "bg-bg-subtle", border: "border-slate-300", text: "text-text-secondary", bar: "bg-slate-300" },
 };
 
 export function PhasesPage() {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [phases, setPhases] = useState<TrainingPhase[]>([]);
   const [meta, setMeta] = useState<Record<string, { label: string; color: string; description: string; icon: string }>>({});
   const [current, setCurrent] = useState<TrainingPhase | null>(null);
@@ -54,6 +60,7 @@ export function PhasesPage() {
   const [showRacePlan, setShowRacePlan] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
+  const [applyPhase, setApplyPhase] = useState<TrainingPhase | null>(null);
 
   const load = () => {
     Promise.all([
@@ -79,7 +86,7 @@ export function PhasesPage() {
       setRacePlan(plan);
       setShowRacePlan(true);
     } catch (e: any) {
-      alert("生成失败: " + (e?.message || e));
+      toast.error("生成失败: " + (e?.message || e));
     }
   };
 
@@ -88,9 +95,24 @@ export function PhasesPage() {
   }, []);
 
   const onDelete = async (id: number) => {
-    if (!confirm("确定删除这个训练阶段?")) return;
-    await api.phasesDelete(id);
-    load();
+    const ok = await confirm({
+      title: "删除训练阶段",
+      message: "删除后无法恢复, 关联的训练计划也会受影响。",
+      variant: "danger",
+      confirmText: "删除",
+    });
+    if (!ok) return;
+    try {
+      await api.phasesDelete(id);
+      toast.success("已删除");
+      load();
+    } catch (e: any) {
+      toast.error("删除失败: " + (e?.message || e));
+    }
+  };
+
+  const openApply = (p: TrainingPhase) => {
+    setApplyPhase(p);
   };
 
   return (
@@ -181,9 +203,9 @@ export function PhasesPage() {
             </ResponsiveContainer>
             <div className={clsx(
               "text-sm mt-2 px-3 py-2 rounded-md",
-              polarized.polarized_score > 0.7 ? "bg-emerald-50 text-emerald-700" :
-              polarized.polarized_score > 0.4 ? "bg-amber-50 text-amber-700" :
-              "bg-rose-50 text-rose-700"
+              polarized.polarized_score > 0.7 ? "bg-status-success text-accent-success" :
+              polarized.polarized_score > 0.4 ? "bg-status-warning text-accent-warning" :
+              "bg-status-danger text-accent-danger"
             )}>
               {polarized.interpretation} (极化分数 {polarized.polarized_score})
             </div>
@@ -245,7 +267,7 @@ export function PhasesPage() {
                         {m?.label || p.phase_type}
                       </span>
                       {p.is_race && (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700">
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-status-info text-accent-primary">
                           🏁 比赛
                         </span>
                       )}
@@ -259,7 +281,7 @@ export function PhasesPage() {
                         <span>
                           ✓ 实际: {p.actual_count} 次训练
                           {p.actual_avg_tss_week != null && (
-                            <span className={targetRatio && targetRatio > 1.2 ? " text-rose-500" : targetRatio && targetRatio < 0.6 ? " text-amber-500" : " text-emerald-600"}>
+                            <span className={targetRatio && targetRatio > 1.2 ? " text-accent-danger" : targetRatio && targetRatio < 0.6 ? " text-accent-warning" : " text-accent-success"}>
                               {" "}(周均 {p.actual_avg_tss_week})
                             </span>
                           )}
@@ -272,6 +294,14 @@ export function PhasesPage() {
                   </div>
                   <div className="flex items-center gap-1">
                     <button
+                      onClick={() => openApply(p)}
+                      className="px-2 py-1 rounded text-xs font-medium bg-status-success text-accent-success hover:bg-status-success border border-border flex items-center gap-1"
+                      title="把阶段所有 workout 一键生成到日历"
+                    >
+                      <CalendarPlus className="w-3 h-3" />
+                      应用到日历
+                    </button>
+                    <button
                       onClick={() => {
                         setEditId(p.id);
                         setShowForm(true);
@@ -283,10 +313,10 @@ export function PhasesPage() {
                     </button>
                     <button
                       onClick={() => onDelete(p.id)}
-                      className="p-1.5 rounded hover:bg-rose-50"
+                      className="p-1.5 rounded hover:bg-status-danger"
                       title="删除"
                     >
-                      <Trash2 className="w-3.5 h-3.5 text-text-muted hover:text-rose-500" />
+                      <Trash2 className="w-3.5 h-3.5 text-text-muted hover:text-accent-danger" />
                     </button>
                   </div>
                 </div>
@@ -316,6 +346,17 @@ export function PhasesPage() {
           }}
         />
       )}
+
+      {applyPhase && (
+        <ApplyToCalendarModal
+          phase={applyPhase}
+          onClose={() => setApplyPhase(null)}
+          onApplied={() => {
+            setApplyPhase(null);
+            load();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -325,7 +366,7 @@ function PolarStat({ label, value, target, color, inverse }: any) {
   const good = inverse ? value <= target : Math.abs(value - target) < 10;
   return (
     <div className={clsx("px-3 py-2 rounded-md border",
-      good ? "bg-emerald-50 border-emerald-200" : "bg-amber-50 border-amber-200"
+      good ? "bg-status-success border-border" : "bg-status-warning border-border"
     )}>
       <div className="text-xs text-text-muted">{label}</div>
       <div className="text-2xl font-bold font-mono">
@@ -340,12 +381,13 @@ function PolarStat({ label, value, target, color, inverse }: any) {
 
 // 比赛日倒推表单 + 计划展示
 function RacePlanForm({ onClose, onGenerate, plan }: any) {
+  const toast = useToast();
   const [raceDate, setRaceDate] = useState("");
   const [raceName, setRaceName] = useState("");
 
   const submit = () => {
     if (!raceDate || !raceName) {
-      alert("请填写比赛日和名称");
+      toast.warn("请填写比赛日和名称");
       return;
     }
     onGenerate(raceDate, raceName);
@@ -353,10 +395,10 @@ function RacePlanForm({ onClose, onGenerate, plan }: any) {
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl my-8 max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded shadow-sm w-full max-w-3xl my-8 max-h-[90vh] overflow-y-auto">
         <div className="p-4 border-b border-border sticky top-0 bg-white flex items-center justify-between z-10">
           <div className="text-lg font-semibold flex items-center gap-2">
-            <Trophy className="w-5 h-5 text-amber-500" />
+            <Trophy className="w-5 h-5 text-accent-warning" />
             比赛日倒推周期计划 (Joe Friel 框架)
           </div>
           <button onClick={onClose} className="p-1 rounded hover:bg-slate-100">
@@ -506,13 +548,13 @@ function NextRaceCard({ nextRace }: any) {
     );
   }
   const days = nextRace.days_to_race;
-  const color = days <= 7 ? "text-rose-500" : days <= 21 ? "text-amber-500" : "text-emerald-600";
+  const color = days <= 7 ? "text-accent-danger" : days <= 21 ? "text-accent-warning" : "text-accent-success";
   return (
-    <div className="panel p-3 border-l-4 border-purple-300 bg-purple-50">
+    <div className="panel p-3 border-l-4 border-accent-primary bg-status-info">
       <div className="text-xs text-text-muted flex items-center gap-1">
         <Trophy className="w-3 h-3" /> 下一场比赛
       </div>
-      <div className="text-lg font-semibold text-purple-700 mt-1">
+      <div className="text-lg font-semibold text-accent-primary mt-1">
         🏁 {nextRace.name}
       </div>
       <div className="text-xs text-text-muted mt-1">
@@ -573,7 +615,7 @@ function PhaseForm({ meta, editPhase, onClose, onSaved }: any) {
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded shadow-sm w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="p-4 border-b border-border flex items-center justify-between">
           <div className="text-lg font-semibold">
             {editPhase ? "编辑训练阶段" : "新建训练阶段"}
@@ -597,7 +639,7 @@ function PhaseForm({ meta, editPhase, onClose, onSaved }: any) {
                     onClick={() => setPhaseType(key)}
                     className={clsx(
                       "p-2 rounded border-2 text-center transition-all",
-                      sel ? `${c.bg} ${c.border} ring-2 ${c.ring}` : "border-border hover:border-slate-300"
+                      sel ? `${c.bg} ${c.border} ` : "border-border hover:border-slate-300"
                     )}
                   >
                     <div className="text-xl">{m.icon}</div>
@@ -693,7 +735,7 @@ function PhaseForm({ meta, editPhase, onClose, onSaved }: any) {
           </label>
 
           {isRace && (
-            <div className="space-y-2 pl-6 border-l-2 border-slate-200">
+            <div className="space-y-2 pl-6 border-l-2 border-border">
               <div>
                 <label className="text-xs text-text-muted">比赛类型</label>
                 <div className="mt-1">
@@ -704,9 +746,9 @@ function PhaseForm({ meta, editPhase, onClose, onSaved }: any) {
                 <label className="text-xs text-text-muted">比赛优先级</label>
                 <div className="grid grid-cols-3 gap-2 mt-1">
                   {[
-                    { v: "A", label: "A · 最重要", color: "border-rose-300 bg-rose-50 text-rose-700" },
-                    { v: "B", label: "B · 重要", color: "border-amber-300 bg-amber-50 text-amber-700" },
-                    { v: "C", label: "C · 训练赛", color: "border-slate-300 bg-slate-50 text-slate-700" },
+                    { v: "A", label: "A · 最重要", color: "border-accent-danger bg-status-danger text-accent-danger" },
+                    { v: "B", label: "B · 重要", color: "border-border bg-status-warning text-accent-warning" },
+                    { v: "C", label: "C · 训练赛", color: "border-slate-300 bg-bg-subtle text-text-secondary" },
                   ].map((p) => (
                     <button
                       key={p.v}
@@ -715,8 +757,8 @@ function PhaseForm({ meta, editPhase, onClose, onSaved }: any) {
                       className={clsx(
                         "px-2 py-1.5 text-xs rounded border-2 transition",
                         racePriority === p.v
-                          ? `${p.color} ring-1 ring-slate-400`
-                          : "border-slate-200 hover:border-slate-300"
+                          ? `${p.color} ring-1 ring-accent-primary`
+                          : "border-border hover:border-slate-300"
                       )}
                     >
                       {p.label}
@@ -727,7 +769,7 @@ function PhaseForm({ meta, editPhase, onClose, onSaved }: any) {
             </div>
           )}
 
-          {error && <div className="text-xs text-rose-500">{error}</div>}
+          {error && <div className="text-xs text-accent-danger">{error}</div>}
         </div>
 
         <div className="p-4 border-t border-border flex justify-end gap-2">
@@ -741,6 +783,133 @@ function PhaseForm({ meta, editPhase, onClose, onSaved }: any) {
           >
             <Save className="w-3.5 h-3.5" />
             {saving ? "保存中..." : editPhase ? "更新" : "创建"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ----- B1-3: 应用到日历模态框 -----
+
+function ApplyToCalendarModal({ phase, onClose, onApplied }: {
+  phase: TrainingPhase;
+  onClose: () => void;
+  onApplied: () => void;
+}) {
+  const toast = useToast();
+  const today = new Date();
+  // 默认起始日期: 阶段开始日期 (or 今天 if later)
+  const defaultStart = (() => {
+    const phaseStart = new Date(phase.start_date);
+    return (phaseStart > today ? phaseStart : today).toISOString().slice(0, 10);
+  })();
+  const [startDate, setStartDate] = useState(defaultStart);
+  const [weeks, setWeeks] = useState(4);
+  const [applying, setApplying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (!startDate) {
+      setError("请选择起始日期");
+      return;
+    }
+    if (weeks < 1 || weeks > 52) {
+      setError("周数需在 1-52 之间");
+      return;
+    }
+    setApplying(true);
+    setError(null);
+    try {
+      const res = await api.applyPhaseToCalendar(phase.id, startDate, weeks);
+      toast.success(`已生成 ${res.applied_count} 个 workout 到日历`);
+      onApplied();
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      setError(msg);
+      toast.error("应用失败: " + msg);
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const phaseWeeks = Math.max(
+    1,
+    Math.round(
+      (new Date(phase.end_date).getTime() - new Date(phase.start_date).getTime()) / (7 * 86400_000)
+    ) + 1
+  );
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded shadow-sm w-full max-w-md">
+        <div className="p-4 border-b border-border flex items-center justify-between">
+          <div className="text-lg font-semibold flex items-center gap-2">
+            <CalendarPlus className="w-5 h-5 text-accent-success" />
+            应用阶段到日历
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-slate-100">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          <div className="text-sm text-text-muted">
+            <div>阶段: <span className="font-medium text-text-primary">{phase.name}</span></div>
+            <div>范围: {phase.start_date} → {phase.end_date} ({phaseWeeks} 周)</div>
+          </div>
+
+          <div className="p-3 bg-status-warning border border-border rounded-md text-xs text-accent-warning leading-relaxed">
+            💡 将按阶段周模板 (week_index + day_of_week) 循环生成 PlannedWorkout。
+            例如 4 周阶段 → 4 周各 1 次循环。
+          </div>
+
+          <div>
+            <label className="text-xs text-text-muted">起始日期</label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full mt-1 px-3 py-1.5 text-sm border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-text-muted">应用周数</label>
+            <input
+              type="number"
+              value={weeks}
+              onChange={(e) => setWeeks(parseInt(e.target.value || "0"))}
+              min={1}
+              max={52}
+              className="w-full mt-1 px-3 py-1.5 text-sm border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <div className="text-[10px] text-text-muted mt-1">
+              week_index 超出阶段定义的最大周时会自动循环回 week 1
+            </div>
+          </div>
+
+          {error && (
+            <div className="text-xs text-accent-danger bg-status-danger border border-border rounded p-2">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="p-4 border-t border-border flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-sm rounded hover:bg-slate-100"
+          >
+            取消
+          </button>
+          <button
+            onClick={submit}
+            disabled={applying}
+            className="px-3 py-1.5 text-sm rounded bg-accent-success text-white hover:bg-accent-success-hover disabled:opacity-50 flex items-center gap-1.5"
+          >
+            <CalendarPlus className="w-3.5 h-3.5" />
+            {applying ? "应用中..." : `生成 ${weeks} 周`}
           </button>
         </div>
       </div>

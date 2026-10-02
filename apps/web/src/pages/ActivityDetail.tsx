@@ -1,5 +1,6 @@
 // 单次训练详情 — 模仿 TP 风格布局 (V0.8.0: URL :id 参数)
-import { useEffect, useState } from "react";
+// V0.8.2: U-4 AI 报告超时 60s → 120s, U-9 加"取消"按钮, U-16 加进度
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -8,6 +9,8 @@ import {
   AlertCircle,
   Clock,
   Target,
+  X,
+  ClipboardList,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useToast } from "../components/Toast";
@@ -95,26 +98,62 @@ export function ActivityDetail() {
   const ftp = athlete?.ftp || m?.ftp_estimated || 250;
   const lthr = athlete?.lthr || Math.round((athlete?.max_hr || 190) * 0.89);
 
+  // V0.8.2 U-4 + U-9: AI 报告生成支持取消 + 友好超时
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+
+  const clearTimers = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  };
+
+  // 清理
+  useEffect(() => {
+    return () => clearTimers();
+  }, []);
+
   const onAnalyze = async () => {
+    if (!activity) return;
     setAnalyzing(true);
+    setElapsed(0);
     try {
       await api.analyzeActivity(activity.id);
-      const poll = setInterval(async () => {
+      // U-4: 120s 兜底 (原 60s 容易 timeout)
+      const startedAt = Date.now();
+      pollRef.current = setInterval(async () => {
         const a = await api.getActivity(activity.id);
         setActivity(a);
+        setElapsed(Math.floor((Date.now() - startedAt) / 1000));
         if (a.report_status === "done" || a.report_status === "failed") {
-          clearInterval(poll);
+          clearTimers();
           setAnalyzing(false);
         }
       }, 2000);
-      setTimeout(() => {
-        clearInterval(poll);
+      timeoutRef.current = setTimeout(() => {
+        clearTimers();
         setAnalyzing(false);
-      }, 60000);
+        // U-4: 超时给明确提示, 不静默
+        toast.warn("AI 报告生成超过 120 秒已停止。LLM 可能较慢, 可点击「重新分析」重试。", { ttl: 8000 });
+      }, 120000);
     } catch (e) {
+      clearTimers();
       setAnalyzing(false);
       toast.error("触发分析失败:" + (e as Error).message);
     }
+  };
+
+  // U-9: 取消按钮
+  const onCancelAnalyze = () => {
+    clearTimers();
+    setAnalyzing(false);
+    toast.info("已取消等待, 后端任务可能仍在跑(完成后会自动显示)");
   };
 
   // 报告状态判断
@@ -126,9 +165,18 @@ export function ActivityDetail() {
   return (
     <div className="overflow-y-auto h-full">
       {/* 顶部导航 */}
-      <div className="sticky top-0 z-10 bg-bg-base/80 backdrop-blur-glass border-b border-border px-6 py-3 flex items-center gap-3">
+      <div className="sticky top-0 z-10 bg-bg-base/80 backdrop-blur border-b border-border px-6 py-3 flex items-center gap-3">
         <button onClick={() => navigate("/training/activities")} className="btn-ghost p-1.5">
           <ArrowLeft size={16} />
+        </button>
+        {/* V0.8.2 B1-5: 跳 Builder, 用活动功率曲线自动生成模板 */}
+        <button
+          onClick={() => navigate(`/plan/builder?from_activity=${activity.id}`)}
+          className="btn-ghost px-2.5 py-1.5 text-sm"
+          title="把这次活动的功率特征作为模板, 跳到 Builder 编辑保存"
+        >
+          <ClipboardList size={14} />
+          📋 作为模板
         </button>
         <div>
           <div className="text-lg font-semibold text-text-primary">
@@ -146,6 +194,17 @@ export function ActivityDetail() {
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          {reportRunning && (
+            <span className="text-xs text-text-muted mr-1">
+              {elapsed > 0 ? `${elapsed}s` : "排队中..."}
+            </span>
+          )}
+          {reportRunning ? (
+            <button onClick={onCancelAnalyze} className="btn-ghost" title="停止等待(后端任务可能仍在跑)">
+              <X size={14} />
+              取消
+            </button>
+          ) : null}
           <button onClick={onAnalyze} disabled={reportRunning} className="btn-primary">
             <RefreshCw size={14} className={reportRunning ? "animate-spin" : ""} />
             {reportRunning
@@ -391,7 +450,7 @@ export function ActivityDetail() {
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-bg-elevated">
+                <thead className="bg-bg-subtle">
                   <tr className="text-xs text-text-secondary uppercase tracking-wider">
                     <th className="text-left px-4 py-2 font-medium">#</th>
                     <th className="text-left px-4 py-2 font-medium">标签</th>
@@ -476,7 +535,7 @@ export function ActivityDetail() {
                 </span>
               )}
               {activity.report_status === "pending" && !hasReport && (
-                <span className="badge bg-bg-elevated text-text-muted">未生成</span>
+                <span className="badge bg-bg-subtle text-text-muted">未生成</span>
               )}
             </div>
           </div>
@@ -573,7 +632,7 @@ function renderInline(s: string): React.ReactNode {
     if (m.index > last) parts.push(s.slice(last, m.index));
     const tok = m[0];
     if (tok.startsWith("**")) parts.push(<strong key={key++}>{tok.slice(2, -2)}</strong>);
-    else if (tok.startsWith("`")) parts.push(<code key={key++} className="bg-bg-elevated px-1 rounded text-accent-cyan text-xs">{tok.slice(1, -1)}</code>);
+    else if (tok.startsWith("`")) parts.push(<code key={key++} className="bg-bg-subtle px-1 rounded text-accent-cyan text-xs">{tok.slice(1, -1)}</code>);
     else parts.push(<em key={key++}>{tok.slice(1, -1)}</em>);
     last = m.index + tok.length;
   }

@@ -88,7 +88,7 @@ export function PhaseSignalsCard() {
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+      <div className="rounded border border-border bg-white p-4 text-sm text-text-secondary">
         信号加载中…
       </div>
     );
@@ -96,20 +96,20 @@ export function PhaseSignalsCard() {
 
   if (!data) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+      <div className="rounded border border-border bg-white p-4 text-sm text-text-secondary">
         无信号数据
       </div>
     );
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+    <div className="rounded border border-border bg-white p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <Gauge className="w-4 h-4 text-indigo-600" />
-          <span className="text-sm font-semibold text-slate-700">周期化信号 (28d / 7d)</span>
+          <Gauge className="w-4 h-4 text-accent-primary" />
+          <span className="text-sm font-semibold text-text-secondary">周期化信号 (28d / 7d)</span>
         </div>
-        <span className="text-[10px] text-slate-500">Seiler 2010 · Friel CTB</span>
+        <span className="text-[10px] text-text-secondary">Seiler 2010 · Friel CTB</span>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -120,35 +120,35 @@ export function PhaseSignalsCard() {
           return (
             <div
               key={m.key}
-              className={`rounded p-2 ${ok ? "bg-emerald-50 border border-emerald-200" : "bg-amber-50 border border-amber-200"}`}
+              className={`rounded p-2 ${ok ? "bg-status-success border border-border" : "bg-status-warning border border-border"}`}
               title={`理想: ${m.ideal}`}
             >
-              <div className="flex items-center justify-between text-[10px] text-slate-500">
+              <div className="flex items-center justify-between text-[10px] text-text-secondary">
                 <span className="flex items-center gap-1">
                   <Icon className="w-3 h-3" />
                   {m.label}
                 </span>
                 <span>{ok ? "✓" : "⚠"}</span>
               </div>
-              <div className={`text-lg font-mono font-bold ${ok ? "text-emerald-700" : "text-amber-700"}`}>
+              <div className={`text-lg font-mono font-bold ${ok ? "text-accent-success" : "text-accent-warning"}`}>
                 {m.format(v)}
               </div>
-              <div className="text-[9px] text-slate-500 mt-0.5">{m.ideal}</div>
+              <div className="text-[9px] text-text-secondary mt-0.5">{m.ideal}</div>
             </div>
           );
         })}
       </div>
 
       {(data.warnings.length > 0 || data.hints.length > 0) && (
-        <div className="mt-3 pt-3 border-t border-slate-200 space-y-1.5">
+        <div className="mt-3 pt-3 border-t border-border space-y-1.5">
           {data.warnings.map((w, i) => (
-            <div key={i} className="flex items-start gap-2 text-[11px] text-rose-700">
+            <div key={i} className="flex items-start gap-2 text-[11px] text-accent-danger">
               <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
               <span>{w}</span>
             </div>
           ))}
           {data.hints.map((h, i) => (
-            <div key={i} className="flex items-start gap-2 text-[11px] text-amber-700">
+            <div key={i} className="flex items-start gap-2 text-[11px] text-accent-warning">
               <Lightbulb className="w-3 h-3 mt-0.5 flex-shrink-0" />
               <span>{h}</span>
             </div>

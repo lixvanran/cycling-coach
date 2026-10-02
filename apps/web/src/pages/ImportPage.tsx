@@ -1,16 +1,19 @@
-// 导入页(FIT 上传 + Mock 数据生成)
+// 导入页(FIT 上传 + Mock 数据生成) — V0.8.2
+// 改动:
+//   U-15 重复检测: 上传后查最近 50 条活动, 匹配同日期 + 接近时长
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Upload, Zap, FileUp, Check } from "lucide-react";
+import { Upload, Zap, FileUp, Check, AlertTriangle } from "lucide-react";
 import { api } from "../lib/api";
 import { useToast } from "../components/Toast";
 import type { MockProfile } from "../lib/types";
 
 export function ImportPage() {
   const navigate = useNavigate();
+  const toast = useToast();
   const [progress, setProgress] = useState(0);
   const [uploading, setUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState<{ id: number; name?: string } | null>(null);
+  const [uploadResult, setUploadResult] = useState<{ id: number; name?: string; duplicateOf?: number } | null>(null);
   const [mockProfiles, setMockProfiles] = useState<MockProfile[]>([]);
   const [generating, setGenerating] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -18,6 +21,30 @@ export function ImportPage() {
   useEffect(() => {
     api.listMockProfiles().then((d) => setMockProfiles(d.profiles));
   }, []);
+
+  // U-15: 上传后查重 (按日期 + 时长, 客户端简单实现)
+  const checkDuplicate = async (newId: number): Promise<number | undefined> => {
+    try {
+      const a = await api.getActivity(newId);
+      if (!a) return undefined;
+      const newDate = (a.start_time || "").slice(0, 10);
+      const newDur = a.duration_s || 0;
+      if (!newDate) return undefined;
+      // 查最近 50 条
+      const r = await api.listActivities({ limit: 50, sort: "start_time", order: "desc" });
+      for (const act of r.activities || []) {
+        if (act.id === newId) continue;
+        const actDate = (act.start_time || "").slice(0, 10);
+        const actDur = act.duration_s || 0;
+        if (actDate === newDate && Math.abs(actDur - newDur) < 60) {
+          return act.id;
+        }
+      }
+    } catch {
+      // 静默失败, 不阻塞主流程
+    }
+    return undefined;
+  };
 
   const onUpload = async (file: File) => {
     const allowed = [".fit", ".tcx", ".csv"];
@@ -31,7 +58,11 @@ export function ImportPage() {
     setUploadResult(null);
     try {
       const r = await api.uploadActivity(file, setProgress);
-      setUploadResult({ id: r.id });
+      const dup = await checkDuplicate(r.id);
+      if (dup != null) {
+        toast.warn(`检测到相似活动 (id=${dup}), 可能是重复上传`, { ttl: 5000 });
+      }
+      setUploadResult({ id: r.id, duplicateOf: dup });
     } catch (e) {
       toast.error("上传失败:" + (e as Error).message);
     } finally {
@@ -89,7 +120,7 @@ export function ImportPage() {
           {uploading ? (
             <>
               <div className="text-sm text-text-primary mb-2">上传中... {progress}%</div>
-              <div className="w-64 mx-auto h-1.5 bg-bg-input rounded-full overflow-hidden">
+              <div className="w-64 mx-auto h-1.5 bg-bg-subtle rounded-full overflow-hidden">
                 <div
                   className="h-full bg-accent-primary transition-all"
                   style={{ width: `${progress}%` }}
@@ -119,7 +150,19 @@ export function ImportPage() {
                 查看分析 →
               </button>
             </div>
-            <div className="text-xs text-amber-400 flex items-center gap-1.5 pt-1 border-t border-border">
+            {uploadResult.duplicateOf != null && (
+              <div className="text-xs text-accent-warning flex items-center gap-1.5 bg-status-warning -mx-3 px-3 py-1.5 border-y border-border">
+                <AlertTriangle size={12} className="flex-shrink-0" />
+                <span>检测到相似活动 (id={uploadResult.duplicateOf}), 可能是重复上传</span>
+                <button
+                  onClick={() => navigate(`/training/activities/${uploadResult.duplicateOf}`)}
+                  className="ml-auto underline hover:no-underline"
+                >
+                  查看已有 →
+                </button>
+              </div>
+            )}
+            <div className="text-xs text-accent-warning flex items-center gap-1.5 pt-1 border-t border-border">
               <span>⏰</span>
               <span>训练后 30 分钟内最准 — 看完分析后顺手记一下 <span className="font-semibold">RPE 主观疲劳</span></span>
             </div>

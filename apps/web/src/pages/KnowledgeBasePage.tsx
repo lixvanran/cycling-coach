@@ -19,12 +19,12 @@ import type { KbCategory, KbDocument, KbDocumentSummary, KbStats, KbSearchResult
 
 // 热门标签 (4 个常用概念)
 const HOT_TAGS = [
-  { key: "FTP", label: "FTP 测试", color: "from-red-500 to-orange-500", emoji: "⚡" },
-  { key: "甜区", label: "甜区训练", color: "from-amber-500 to-yellow-500", emoji: "🍯" },
-  { key: "VO2max", label: "VO2max", color: "from-purple-500 to-fuchsia-500", emoji: "🔥" },
-  { key: "恢复", label: "训练恢复", color: "from-sky-500 to-cyan-500", emoji: "💧" },
-  { key: "节奏", label: "节奏训练", color: "from-amber-500 to-orange-500", emoji: "⛰️" },
-  { key: "功率", label: "功率训练", color: "from-emerald-500 to-green-500", emoji: "📊" },
+  { key: "FTP", label: "FTP 测试", color: "bg-accent-danger", emoji: "⚡" },
+  { key: "甜区", label: "甜区训练", color: "bg-accent-warning", emoji: "🍯" },
+  { key: "VO2max", label: "VO2max", color: "bg-accent-primary", emoji: "🔥" },
+  { key: "恢复", label: "训练恢复", color: "bg-accent-cyan", emoji: "💧" },
+  { key: "节奏", label: "节奏训练", color: "bg-accent-warning", emoji: "⛰️" },
+  { key: "功率", label: "功率训练", color: "bg-accent-success", emoji: "📊" },
 ];
 
 // ===== 简易 markdown 渲染 =====
@@ -53,13 +53,40 @@ function escapeHtml(s: string) {
 }
 
 // 高亮匹配词 - 返回 HTML 字符串 (供 dangerouslySetInnerHTML)
+// 高亮所有匹配 (V0.8.2 U-20: 之前只高亮第一个, 用户看不到全文命中密度)
 function highlight(text: string, kw: string): string {
   if (!kw) return escapeHtml(text);
-  const idx = text.toLowerCase().indexOf(kw.toLowerCase());
-  if (idx < 0) return escapeHtml(text);
-  return escapeHtml(text.slice(0, idx))
-    + `<mark class="bg-yellow-200 text-text-primary font-semibold rounded px-0.5">${escapeHtml(text.slice(idx, idx + kw.length))}</mark>`
-    + escapeHtml(text.slice(idx + kw.length));
+  const lower = text.toLowerCase();
+  const kwl = kw.toLowerCase();
+  let result = "";
+  let i = 0;
+  while (i < text.length) {
+    const idx = lower.indexOf(kwl, i);
+    if (idx < 0) {
+      result += escapeHtml(text.slice(i));
+      break;
+    }
+    result += escapeHtml(text.slice(i, idx));
+    result += `<mark class="bg-yellow-200 text-text-primary font-semibold rounded px-0.5">${escapeHtml(text.slice(idx, idx + kw.length))}</mark>`;
+    i = idx + kw.length;
+  }
+  return result;
+}
+
+// 计算关键词命中数
+function countMatches(text: string, kw: string): number {
+  if (!kw) return 0;
+  const lower = text.toLowerCase();
+  const kwl = kw.toLowerCase();
+  let count = 0;
+  let i = 0;
+  while (i < text.length) {
+    const idx = lower.indexOf(kwl, i);
+    if (idx < 0) break;
+    count++;
+    i = idx + kw.length;
+  }
+  return count;
 }
 
 export function KnowledgeBasePage() {
@@ -140,16 +167,15 @@ export function KnowledgeBasePage() {
   return (
     <div className="h-full flex flex-col bg-bg-base">
       {/* 顶部固定栏 */}
-      <div className="flex-shrink-0 px-6 pt-5 pb-3 bg-white/80 backdrop-blur border-b border-border sticky top-0 z-20">
+      <div className="flex-shrink-0 px-6 pt-5 pb-3 bg-white border-b border-border sticky top-0 z-20">
         <div className="flex items-center justify-between mb-3">
           <div>
             <h1 className="text-2xl font-bold text-text-primary flex items-center gap-2">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center"
-                style={{ background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)" }}>
-                <Library className="w-5 h-5 text-white" />
+              <div className="w-9 h-9 rounded flex items-center justify-center bg-accent-primary text-white">
+                <Library className="w-5 h-5" />
               </div>
               训练百科
-              <span className="text-[10px] text-text-muted font-normal ml-1 px-1.5 py-0.5 rounded bg-bg-elevated">潘震(公路车教练) 知识库</span>
+              <span className="text-[10px] text-text-muted font-normal ml-1 px-1.5 py-0.5 rounded bg-bg-subtle">潘震(公路车教练) 知识库</span>
             </h1>
             <p className="text-xs text-text-muted mt-1.5">功率训练 · 运动生理 · 营养恢复 · 装备调校 · 赛事策略</p>
           </div>
@@ -178,7 +204,7 @@ export function KnowledgeBasePage() {
               value={searchQ}
               onChange={(e) => setSearchQ(e.target.value)}
               placeholder="搜索训练百科…如 'FTP 怎么测' / '甜区' / 'VO2'"
-              className="w-full pl-9 pr-9 py-2 bg-white border-2 border-border rounded-lg text-sm focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+              className="w-full pl-9 pr-9 py-2 bg-white border-2 border-border rounded text-sm focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
             />
             {searchQ && (
               <button onClick={() => setSearchQ("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary">
@@ -188,7 +214,7 @@ export function KnowledgeBasePage() {
           </div>
           <button
             onClick={() => setShowSidebar((v) => !v)}
-            className="p-2 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-elevated"
+            className="p-2 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-subtle"
             title={showSidebar ? "隐藏分类" : "显示分类"}
           >
             {showSidebar ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
@@ -202,7 +228,7 @@ export function KnowledgeBasePage() {
             <button
               key={t.key}
               onClick={() => setSearchQ(t.key)}
-              className={clsx("px-2.5 py-1 rounded-full text-[11px] font-semibold text-white bg-gradient-to-r hover:scale-105 transition-all flex items-center gap-1", t.color)}
+              className={clsx("px-2.5 py-1 rounded-full text-[11px] font-semibold text-white bg-accent-primary transition-all flex items-center gap-1", t.color)}
             >
               <span>{t.emoji}</span>{t.label}
             </button>
@@ -304,7 +330,7 @@ function CategorySidebar(props: {
   }, [props.categories]);
 
   return (
-    <div className="w-72 flex-shrink-0 border-r border-border bg-bg-elevated/40 flex flex-col">
+    <div className="w-72 flex-shrink-0 border-r border-border bg-bg-subtle/40 flex flex-col">
       <div className="p-3 border-b border-border flex items-center justify-between flex-shrink-0">
         <div className="text-xs font-semibold flex items-center gap-1.5">
           <Layers className="w-3.5 h-3.5 text-accent" />
@@ -321,12 +347,12 @@ function CategorySidebar(props: {
         <button
           onClick={() => props.setSelectedPath(null)}
           className={clsx("w-full flex items-center gap-1.5 px-2 py-1.5 rounded text-xs font-semibold transition",
-            props.selectedPath === null ? "bg-accent text-white shadow-md" : "hover:bg-bg-elevated text-text-primary"
+            props.selectedPath === null ? "bg-accent text-white shadow-md" : "hover:bg-bg-subtle text-text-primary"
           )}
         >
           <Home className="w-3.5 h-3.5" />
           <span className="flex-1 text-left">全部</span>
-          <span className={clsx("text-[10px] px-1.5 py-0.5 rounded font-bold tabular-nums", props.selectedPath === null ? "bg-white/20 text-white" : "bg-bg-input text-text-muted")}>
+          <span className={clsx("text-[10px] px-1.5 py-0.5 rounded font-bold tabular-nums", props.selectedPath === null ? "bg-white/20 text-white" : "bg-bg-subtle text-text-muted")}>
             {props.totalDocs}
           </span>
         </button>
@@ -338,7 +364,7 @@ function CategorySidebar(props: {
           const isTopSelected = props.selectedPath === top;
           return (
             <div key={top} className="mt-1">
-              <div className={clsx("flex items-center gap-1 rounded transition group", isTopSelected ? "bg-accent/15 ring-1 ring-accent/30" : "hover:bg-bg-elevated")}>
+              <div className={clsx("flex items-center gap-1 rounded transition group", isTopSelected ? "bg-accent/15 ring-1 ring-accent/30" : "hover:bg-bg-subtle")}>
                 <button
                   onClick={() => props.setExpanded(topExpanded ? new Set([...props.expanded].filter((x) => x !== top)) : new Set([...props.expanded, top]))}
                   className="p-1 text-text-muted hover:text-text-primary"
@@ -353,10 +379,10 @@ function CategorySidebar(props: {
                 </button>
                 <span className={clsx("text-[10px] px-1.5 py-0.5 rounded font-bold mr-1 tabular-nums",
                   isTopSelected ? "bg-accent text-white" :
-                  topCount > 50 ? "bg-fuchsia-100 text-fuchsia-700" :
-                  topCount > 20 ? "bg-amber-100 text-amber-700" :
-                  topCount > 5 ? "bg-sky-100 text-sky-700" :
-                  "bg-bg-input text-text-muted"
+                  topCount > 50 ? "bg-status-info text-accent-primary" :
+                  topCount > 20 ? "bg-status-warning text-accent-warning" :
+                  topCount > 5 ? "bg-status-info text-accent-primary" :
+                  "bg-bg-subtle text-text-muted"
                 )}>{topCount}</span>
               </div>
               {topExpanded && (
@@ -368,7 +394,7 @@ function CategorySidebar(props: {
                         key={c.path}
                         onClick={() => props.setSelectedPath(c.path)}
                         className={clsx("w-full flex items-center gap-1.5 px-2 py-1 rounded text-[11px] transition text-left",
-                          isSelected ? "bg-accent/15 text-accent font-semibold" : "text-text-secondary hover:bg-bg-elevated hover:text-text-primary"
+                          isSelected ? "bg-accent/15 text-accent font-semibold" : "text-text-secondary hover:bg-bg-subtle hover:text-text-primary"
                         )}
                         title={c.path}
                       >
@@ -426,7 +452,7 @@ function DirectoryView(props: {
       {!props.selectedPath && props.recommended.length > 0 && (
         <div className="mb-6">
           <h2 className="text-sm font-bold flex items-center gap-1.5 mb-3 text-text-primary">
-            <Sparkles className="w-4 h-4 text-amber-500" />
+            <Sparkles className="w-4 h-4 text-accent-warning" />
             编辑推荐
             <span className="text-[10px] text-text-muted font-normal ml-1">每次随机</span>
           </h2>
@@ -450,7 +476,7 @@ function DirectoryView(props: {
               <button
                 key={c.path}
                 onClick={() => props.onPickCategory(c.path)}
-                className="group p-3 bg-white rounded-lg border-2 border-border/50 hover:border-accent/50 hover:shadow-md transition text-left"
+                className="group p-3 bg-white rounded border-2 border-border/50 hover:border-accent/50 hover:shadow-md transition text-left"
               >
                 <div className="text-sm font-bold text-text-primary group-hover:text-accent truncate">{c.name}</div>
                 <div className="text-[10px] text-text-muted mt-0.5 flex items-center gap-1">
@@ -474,7 +500,7 @@ function DirectoryView(props: {
           {props.loading ? (
             <div className="text-text-muted text-sm text-center py-8">加载中…</div>
           ) : props.docs.length === 0 ? (
-            <div className="text-text-muted text-sm text-center py-12 bg-white rounded-lg border border-dashed border-border">
+            <div className="text-text-muted text-sm text-center py-12 bg-white rounded border border-dashed border-border">
               <FileText className="w-10 h-10 mx-auto mb-2 opacity-30" />
               这个目录下还没有内容
             </div>
@@ -497,16 +523,16 @@ function DocCard({ doc, onOpen, featured }: { doc: KbDocumentSummary; onOpen: ()
     <button
       onClick={onOpen}
       className={clsx(
-        "group p-3 bg-white rounded-lg border-2 text-left transition-all",
+        "group p-3 bg-white rounded border-2 text-left transition-all",
         featured
-          ? "border-amber-200 hover:border-amber-400 hover:shadow-lg hover:scale-[1.02] bg-gradient-to-br from-amber-50/50 to-white"
+          ? "border-border hover:border-border hover:shadow-sm bg-status-warning"
           : "border-border/40 hover:border-accent/40 hover:shadow-md"
       )}
     >
       <div className="flex items-start gap-2">
-        {featured && <Star className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5" />}
+        {featured && <Star className="w-3.5 h-3.5 text-accent-warning flex-shrink-0 mt-0.5" />}
         <div className="flex-1 min-w-0">
-          <div className={clsx("font-semibold truncate", featured ? "text-base text-text-primary group-hover:text-amber-700" : "text-sm text-text-primary group-hover:text-accent")}>
+          <div className={clsx("font-semibold truncate", featured ? "text-base text-text-primary group-hover:text-accent-warning" : "text-sm text-text-primary group-hover:text-accent")}>
             {doc.title}
           </div>
           <div className="text-[11px] text-text-muted mt-1 line-clamp-2 leading-relaxed">
@@ -537,7 +563,7 @@ function SearchResultsView({ q, results, searching, onOpenDoc }: {
         }
       </h2>
       {results.length === 0 && !searching ? (
-        <div className="text-text-muted text-sm text-center py-12 bg-white rounded-lg border border-dashed border-border">
+        <div className="text-text-muted text-sm text-center py-12 bg-white rounded border border-dashed border-border">
           <Search className="w-10 h-10 mx-auto mb-2 opacity-30" />
           没有找到相关内容
           <div className="text-[11px] mt-2">试试热门标签: {HOT_TAGS.map((t) => t.label).join(", ")}</div>
@@ -554,10 +580,17 @@ function SearchResultsView({ q, results, searching, onOpenDoc }: {
                 excerpt: r.snippet,
                 depth: 0, parent_path: null, chunk_count: 0, attachment_count: 0,
               } as KbDocumentSummary)}
-              className="w-full text-left p-3 bg-white rounded-lg border border-border/50 hover:border-accent hover:shadow-md transition"
+              className="w-full text-left p-3 bg-white rounded border border-border/50 hover:border-accent hover:shadow-md transition"
             >
               <div className="text-sm font-semibold text-text-primary">{r.document_title || "(无标题)"}</div>
-              <div className="text-[11px] text-text-muted mt-0.5">{r.document_path}</div>
+              <div className="text-[11px] text-text-muted mt-0.5 flex items-center gap-1.5">
+                <span>{r.document_path}</span>
+                {q && countMatches(r.document_title || "", q) > 0 && (
+                  <span className="text-[9px] bg-yellow-100 text-yellow-800 px-1 rounded font-bold">
+                    标题命中
+                  </span>
+                )}
+              </div>
               {r.snippet && (
                 <div
                   className="text-[11px] text-text-secondary mt-1 line-clamp-3"
@@ -593,7 +626,7 @@ function DocDetailView({ doc, onBack, onLinkClick }: {
 
   return (
     <div className="h-full flex flex-col bg-white">
-      <div className="flex-shrink-0 px-6 py-3 border-b border-border bg-white/95 backdrop-blur sticky top-0 z-10">
+      <div className="flex-shrink-0 px-6 py-3 border-b border-border bg-white sticky top-0 z-10">
         <button onClick={onBack} className="text-xs text-accent hover:text-accent/80 flex items-center gap-1 mb-1.5 font-semibold">
           <ArrowLeft className="w-3 h-3" />返回目录
         </button>

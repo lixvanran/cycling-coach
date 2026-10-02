@@ -162,7 +162,7 @@ export function Dashboard() {
               CTL 慢性负荷(42d EWMA)· ATL 急性负荷(7d EWMA)· TSB 状态 = CTL − ATL
             </p>
           </div>
-          <div className="flex gap-1 bg-bg-input rounded-lg p-1">
+          <div className="flex gap-1 bg-bg-subtle rounded p-1">
             {RANGE_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
@@ -215,7 +215,7 @@ export function Dashboard() {
                 <div className="text-xs text-text-muted mb-2">
                   {new Date(d.date).toLocaleDateString("zh-CN", { weekday: "short" })}
                 </div>
-                <div className="h-24 bg-bg-input rounded flex items-end justify-center p-1">
+                <div className="h-24 bg-bg-subtle rounded flex items-end justify-center p-1">
                   <div
                     className="w-full bg-accent-primary rounded-sm"
                     style={{

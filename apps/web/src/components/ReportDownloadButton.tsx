@@ -38,10 +38,10 @@ export function ReportDownloadButton({ days = 7, label = "导出周报" }: { day
       onClick={handleClick}
       disabled={loading}
       className={clsx(
-        "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition",
+        "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition",
         loading
-          ? "bg-slate-100 text-slate-400 cursor-wait"
-          : "bg-indigo-600 text-white hover:bg-indigo-700"
+          ? "bg-slate-100 text-text-muted cursor-wait"
+          : "bg-accent-primary text-white hover:bg-accent-primary-hover"
       )}
     >
       {loading ? (
@@ -50,7 +50,7 @@ export function ReportDownloadButton({ days = 7, label = "导出周报" }: { day
         <FileDown className="w-3.5 h-3.5" />
       )}
       {loading ? "生成中…" : label}
-      {error && <span className="ml-1 text-rose-300">({error})</span>}
+      {error && <span className="ml-1 text-accent-danger">({error})</span>}
     </button>
   );
 }

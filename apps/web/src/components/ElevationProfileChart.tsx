@@ -131,20 +131,20 @@ export function ElevationProfileChart({ samples, height = 200, showClimbMarkers 
 
       {/* 统计条 */}
       <div className="flex flex-wrap gap-3 text-xs">
-        <span className="px-2 py-1 rounded bg-amber-50 text-amber-700">
+        <span className="px-2 py-1 rounded bg-status-warning text-accent-warning">
           累计爬升 +{Math.round(totalGain)} m
         </span>
-        <span className="px-2 py-1 rounded bg-sky-50 text-sky-700">
+        <span className="px-2 py-1 rounded bg-status-info text-accent-primary">
           累计下降 -{Math.round(totalLoss)} m
         </span>
-        <span className="px-2 py-1 rounded bg-slate-50 text-slate-700">
+        <span className="px-2 py-1 rounded bg-bg-subtle text-text-secondary">
           最高 {Math.round(elevMax)} m
         </span>
-        <span className="px-2 py-1 rounded bg-slate-50 text-slate-700">
+        <span className="px-2 py-1 rounded bg-bg-subtle text-text-secondary">
           最低 {Math.round(elevMin)} m
         </span>
         {climbSegments.length > 0 && (
-          <span className="px-2 py-1 rounded bg-rose-50 text-rose-700">
+          <span className="px-2 py-1 rounded bg-status-danger text-accent-danger">
             识别 {climbSegments.length} 个爬升 (≥10m, 红虚线标注)
           </span>
         )}

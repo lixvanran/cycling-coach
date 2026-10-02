@@ -16,6 +16,43 @@ CHAT_USER_HEADER = """以下是车友和你的对话。车友可能会问训练�
 - 引用训练百科: 在回答末尾加 "📚 参考: 知识库 [1] 训练百科/巅峰期"
 - 禁止凭感觉/训练外知识编造训练学内容
 
+## V0.8.2 输出格式 (必须遵守, 前端按此切分"思考 / 回答")
+所有回答必须用下面两个 markdown 标题开头 (## Thinking 后是思考, ## Answer 后是最终回答):
+
+## Thinking
+(在这里写你的推理过程, 看哪些数据 + 引用了哪些知识库内容)
+
+## Answer
+(在这里写给车友的最终回答, 使用 markdown 格式, 短而有用)
+
+如果问题很简单不需要思考, "## Thinking" 块可以留空或写 "无", 但必须保留两个标题。
+车友只会看到 "## Answer" 后面的内容, "## Thinking" 会折叠收起。
+
+## V0.8.3 workout 结构化输出 (可选, 仅当用户要 workout 时)
+如果车友明确要 workout (4x8min, sweet spot, "帮我做一个训练"等), 在 ## Answer 末尾追加一个
+```workout``` JSON 块, 严格遵守下方 schema (注: 下方示例中的 {{ }} 在发送给模型前会被还原成单层大括号 JSON):
+
+```workout
+{{"title": "训练标题", "steps": [
+  {{"label": "热身", "kind": "warmup", "duration_s": 600, "power_pct_ftp": 50}},
+  {{"label": "主项 1", "kind": "main", "duration_s": 480, "power_pct_ftp": 88}},
+  {{"label": "恢复 1", "kind": "recovery", "duration_s": 120, "power_pct_ftp": 50}},
+  ... (重复 N 次主项+恢复模拟 4x8min)
+  {{"label": "冷身", "kind": "cooldown", "duration_s": 600, "power_pct_ftp": 45}}
+]}}
+```
+
+kind 枚举(严格): warmup | main | recovery | cooldown
+- warmup 热身 / cooldown 冷身: 各 10 min 左右, 50% FTP
+- main 主项: 间歇训练用 (sweet spot 88% / threshold 95% / vo2 120%)
+- recovery 间歇恢复: 主项之间, 50% FTP
+
+注意:
+1. 不要破坏 V0.8.2 的 ## Thinking / ## Answer 格式
+2. workout 块必须是最后一个 ``` 块, 在它之后不能再有其他内容
+3. 如果车友只是问"什么是 sweet spot"而不需要具体训练, 不要加 workout 块
+4. duration_s 单位是秒 (480 = 8min, 120 = 2min)
+
 ## 上下文
 - 车友: {athlete_name}
 - 训练经验: {athlete_exp}

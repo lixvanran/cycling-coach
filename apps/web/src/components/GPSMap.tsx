@@ -90,7 +90,7 @@ export function GPSMap({ samples, height = 360 }: Props) {
 
   if (noGps) {
     return (
-      <div className="text-text-muted text-sm p-4 text-center bg-slate-50 rounded-md">
+      <div className="text-text-muted text-sm p-4 text-center bg-bg-subtle rounded-md">
         该 FIT 文件不含 GPS 数据 (室内训练 / 设备无 GPS)
       </div>
     );
@@ -105,13 +105,13 @@ export function GPSMap({ samples, height = 360 }: Props) {
       />
       {stats && (
         <div className="flex gap-2 text-xs text-text-muted">
-          <span className="px-2 py-1 rounded bg-slate-50">
+          <span className="px-2 py-1 rounded bg-bg-subtle">
             GPS 点 {stats.points}
           </span>
-          <span className="px-2 py-1 rounded bg-slate-50">
+          <span className="px-2 py-1 rounded bg-bg-subtle">
             距离 (Haversine) ≈ {stats.distance.toFixed(2)} km
           </span>
-          <span className="px-2 py-1 rounded bg-slate-50 text-[10px]">
+          <span className="px-2 py-1 rounded bg-bg-subtle text-[10px]">
             地图: OpenStreetMap 免费瓦片, 无需 API key
           </span>
         </div>

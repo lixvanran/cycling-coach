@@ -9,6 +9,7 @@ import {
 import clsx from "clsx";
 import { api } from "../lib/api";
 import { useToast } from "../components/Toast";
+import { useConfirm } from "../components/common";
 import type { Diary, DiaryTemplate } from "../lib/types";
 
 function todayISO() {
@@ -43,8 +44,8 @@ function Rating({ value, onChange, scale }: {
           className={clsx(
             "w-9 h-9 rounded-md flex items-center justify-center text-sm font-medium transition-all",
             value && value >= n
-              ? "bg-amber-400 text-white shadow-sm scale-105"
-              : "bg-bg-elevated text-text-muted hover:bg-bg-elevated/80 border border-border"
+              ? "bg-accent-warning text-white shadow-sm"
+              : "bg-bg-subtle text-text-muted hover:bg-bg-subtle/80 border border-border"
           )}
           title={scale || `${n} 分`}
         >
@@ -57,6 +58,8 @@ function Rating({ value, onChange, scale }: {
 }
 
 export function DiaryPage() {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [date, setDate] = useState(todayISO());
   const [item, setItem] = useState<Diary | null>(null);
   const [exists, setExists] = useState(false);
@@ -162,7 +165,13 @@ export function DiaryPage() {
 
   async function remove() {
     if (!exists) return;
-    if (!confirm(`删除 ${date} 的训练日记?`)) return;
+    const ok = await confirm({
+      title: "删除训练日记",
+      message: `将永久删除 ${date} 的训练日记, 无法恢复。`,
+      variant: "danger",
+      confirmText: "删除",
+    });
+    if (!ok) return;
     try {
       await api.diaryDelete(date);
       setItem(null);
@@ -188,9 +197,8 @@ export function DiaryPage() {
         {/* 顶部: 日期选择 + 标题 */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center"
-                 style={{ background: "linear-gradient(135deg, #f59e0b 0%, #f43f5e 100%)" }}>
-              <BookOpen size={20} className="text-white" />
+            <div className="w-10 h-10 rounded flex items-center justify-center bg-accent-warning text-white">
+              <BookOpen size={20} />
             </div>
             <div>
               <h1 className="text-lg font-semibold text-text-primary">训练日记</h1>
@@ -202,14 +210,14 @@ export function DiaryPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowTips(!showTips)}
-              className="px-3 py-1.5 text-xs rounded-md border border-border hover:bg-bg-elevated transition-colors"
+              className="px-3 py-1.5 text-xs rounded-md border border-border hover:bg-bg-subtle transition-colors"
             >
               {showTips ? "隐藏提示" : "显示提示"}
             </button>
             {exists && (
               <button
                 onClick={remove}
-                className="px-3 py-1.5 text-xs rounded-md border border-red-300 text-red-600 hover:bg-red-50 transition-colors flex items-center gap-1"
+                className="px-3 py-1.5 text-xs rounded-md border border-accent-danger text-accent-danger hover:bg-status-danger transition-colors flex items-center gap-1"
               >
                 <Trash2 size={12} /> 删除
               </button>
@@ -220,7 +228,7 @@ export function DiaryPage() {
               className={clsx(
                 "px-4 py-1.5 text-sm rounded-md font-medium flex items-center gap-1.5 transition-all",
                 saved
-                  ? "bg-green-500 text-white"
+                  ? "bg-status-success text-white"
                   : "bg-accent text-white hover:opacity-90",
                 saving && "opacity-50"
               )}
@@ -231,11 +239,11 @@ export function DiaryPage() {
         </div>
 
         {/* 日期导航 */}
-        <div className="bg-bg-card border border-border rounded-lg p-3 mb-4 flex items-center justify-between">
+        <div className="bg-bg-card border border-border rounded p-3 mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <button
               onClick={() => setDate(isoOffset(-1))}
-              className="w-8 h-8 rounded-md border border-border hover:bg-bg-elevated flex items-center justify-center"
+              className="w-8 h-8 rounded-md border border-border hover:bg-bg-subtle flex items-center justify-center"
               title="前一天"
             >
               <ChevronLeft size={14} />
@@ -248,7 +256,7 @@ export function DiaryPage() {
             </button>
             <button
               onClick={() => setDate(isoOffset(1))}
-              className="w-8 h-8 rounded-md border border-border hover:bg-bg-elevated flex items-center justify-center"
+              className="w-8 h-8 rounded-md border border-border hover:bg-bg-subtle flex items-center justify-center"
               title="后一天"
             >
               <ChevronRight size={14} />
@@ -264,7 +272,7 @@ export function DiaryPage() {
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            className="px-2 py-1 text-xs border border-border rounded-md bg-bg-elevated"
+            className="px-2 py-1 text-xs border border-border rounded-md bg-bg-subtle"
           />
         </div>
 
@@ -274,9 +282,9 @@ export function DiaryPage() {
           <div className="lg:col-span-2 space-y-4">
 
             {/* 训练感受 + 心情 */}
-            <div className="bg-bg-card border border-border rounded-lg p-4">
+            <div className="bg-bg-card border border-border rounded p-4">
               <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-1.5">
-                <Sparkles size={14} className="text-amber-500" />
+                <Sparkles size={14} className="text-accent-warning" />
                 主观感受
               </h3>
               <div className="space-y-3">
@@ -296,9 +304,9 @@ export function DiaryPage() {
             </div>
 
             {/* 睡眠 */}
-            <div className="bg-bg-card border border-border rounded-lg p-4">
+            <div className="bg-bg-card border border-border rounded p-4">
               <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-1.5">
-                <Moon size={14} className="text-indigo-500" />
+                <Moon size={14} className="text-accent-primary" />
                 睡眠
               </h3>
               <div className="grid grid-cols-2 gap-4">
@@ -310,7 +318,7 @@ export function DiaryPage() {
                     value={sleepH}
                     onChange={(e) => setSleepH(e.target.value)}
                     placeholder="如 7.5"
-                    className="w-full px-3 py-2 text-sm border border-border rounded-md bg-bg-elevated"
+                    className="w-full px-3 py-2 text-sm border border-border rounded-md bg-bg-subtle"
                   />
                 </div>
                 <div>
@@ -321,9 +329,9 @@ export function DiaryPage() {
             </div>
 
             {/* 主观笔记 */}
-            <div className="bg-bg-card border border-border rounded-lg p-4">
+            <div className="bg-bg-card border border-border rounded p-4">
               <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-1.5">
-                <BookOpen size={14} className="text-emerald-500" />
+                <BookOpen size={14} className="text-accent-success" />
                 主观笔记 <span className="text-xs text-text-muted font-normal">(支持 Markdown)</span>
               </h3>
               <textarea
@@ -331,14 +339,14 @@ export function DiaryPage() {
                 onChange={(e) => setContent(e.target.value)}
                 rows={10}
                 placeholder="记录今天训练的细节感受, 例如:&#10;- 热身 15min, 感觉大腿有点紧&#10;- 间歇 4x5min @ 90% FTP, 第 3 组开始心脏难受&#10;- 冲刺用了 53x11 齿比, 感觉很爽"
-                className="w-full px-3 py-2 text-sm border border-border rounded-md bg-bg-elevated font-mono leading-relaxed"
+                className="w-full px-3 py-2 text-sm border border-border rounded-md bg-bg-subtle font-mono leading-relaxed"
               />
             </div>
 
             {/* 天气/装备/疼痛 (折叠) */}
-            <details className="bg-bg-card border border-border rounded-lg p-4">
+            <details className="bg-bg-card border border-border rounded p-4">
               <summary className="text-sm font-semibold text-text-primary cursor-pointer flex items-center gap-1.5">
-                <Cloud size={14} className="text-sky-500" />
+                <Cloud size={14} className="text-accent-primary" />
                 天气 / 装备 / 疼痛 (选填)
               </summary>
               <div className="mt-3 space-y-3">
@@ -351,7 +359,7 @@ export function DiaryPage() {
                     value={weather}
                     onChange={(e) => setWeather(e.target.value)}
                     placeholder="如 晴 28°C 微风"
-                    className="w-full px-3 py-2 text-sm border border-border rounded-md bg-bg-elevated"
+                    className="w-full px-3 py-2 text-sm border border-border rounded-md bg-bg-subtle"
                   />
                 </div>
                 <div>
@@ -363,7 +371,7 @@ export function DiaryPage() {
                     value={equipmentNotes}
                     onChange={(e) => setEquipmentNotes(e.target.value)}
                     placeholder="如 换了新锁片, 喝了 1.5L 水, 吃了 2 个胶"
-                    className="w-full px-3 py-2 text-sm border border-border rounded-md bg-bg-elevated"
+                    className="w-full px-3 py-2 text-sm border border-border rounded-md bg-bg-subtle"
                   />
                 </div>
                 <div>
@@ -375,7 +383,7 @@ export function DiaryPage() {
                     value={painNotes}
                     onChange={(e) => setPainNotes(e.target.value)}
                     placeholder="如 右膝轻微不适 (不影响骑车), 牙疼"
-                    className="w-full px-3 py-2 text-sm border border-border rounded-md bg-bg-elevated"
+                    className="w-full px-3 py-2 text-sm border border-border rounded-md bg-bg-subtle"
                   />
                 </div>
                 <div>
@@ -385,7 +393,7 @@ export function DiaryPage() {
                   <select
                     value={activityId ?? ""}
                     onChange={(e) => setActivityId(e.target.value ? Number(e.target.value) : null)}
-                    className="w-full px-3 py-2 text-sm border border-border rounded-md bg-bg-elevated"
+                    className="w-full px-3 py-2 text-sm border border-border rounded-md bg-bg-subtle"
                   >
                     <option value="">不关联</option>
                     {activities.map((a) => (
@@ -402,19 +410,19 @@ export function DiaryPage() {
           {/* 侧栏: 模板提示 + 最近 */}
           <div className="space-y-4">
             {showTips && tpl && (
-              <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-amber-900 mb-2 flex items-center gap-1.5">
+              <div className="bg-status-warning border border-border rounded p-4">
+                <h3 className="text-sm font-semibold text-accent-warning mb-2 flex items-center gap-1.5">
                   <Sparkles size={14} /> KB 训练日记模板
                 </h3>
-                <p className="text-[10px] text-amber-700 mb-3">{tpl.source}</p>
+                <p className="text-[10px] text-accent-warning mb-3">{tpl.source}</p>
                 <div className="mb-3">
-                  <div className="text-xs font-semibold text-amber-800 mb-1.5">📝 可点击插入笔记</div>
+                  <div className="text-xs font-semibold text-accent-warning mb-1.5">📝 可点击插入笔记</div>
                   <div className="space-y-1">
                     {tpl.prompts.slice(0, 6).map((p, i) => (
                       <button
                         key={i}
                         onClick={() => insertPrompt(p)}
-                        className="w-full text-left text-xs px-2 py-1.5 bg-white/70 hover:bg-white rounded border border-amber-200 transition-colors"
+                        className="w-full text-left text-xs px-2 py-1.5 bg-white/70 hover:bg-white rounded border border-border transition-colors"
                       >
                         · {p}
                       </button>
@@ -422,10 +430,10 @@ export function DiaryPage() {
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs font-semibold text-amber-800 mb-1.5">🌅 影响训练的因素</div>
+                  <div className="text-xs font-semibold text-accent-warning mb-1.5">🌅 影响训练的因素</div>
                   <div className="flex flex-wrap gap-1">
                     {tpl.daily_factors.slice(0, 8).map((f, i) => (
-                      <span key={i} className="text-[10px] px-2 py-0.5 bg-white/70 rounded-full border border-amber-200">
+                      <span key={i} className="text-[10px] px-2 py-0.5 bg-white/70 rounded-full border border-border">
                         {f}
                       </span>
                     ))}
@@ -435,7 +443,7 @@ export function DiaryPage() {
             )}
 
             {/* 最近 7 天 */}
-            <div className="bg-bg-card border border-border rounded-lg p-4">
+            <div className="bg-bg-card border border-border rounded p-4">
               <h3 className="text-sm font-semibold text-text-primary mb-2 flex items-center gap-1.5">
                 <CalendarIcon size={14} /> 最近 30 天
               </h3>
@@ -451,7 +459,7 @@ export function DiaryPage() {
                       "w-full text-left px-2 py-1.5 rounded text-xs transition-colors",
                       d.date === date
                         ? "bg-accent/10 text-accent border border-accent/30"
-                        : "hover:bg-bg-elevated"
+                        : "hover:bg-bg-subtle"
                     )}
                   >
                     <div className="flex items-center justify-between">
@@ -465,13 +473,13 @@ export function DiaryPage() {
                     )}
                     <div className="flex gap-1 mt-1">
                       {d.training_feel != null && (
-                        <span className="text-[9px] px-1 bg-amber-100 text-amber-700 rounded">感受 {d.training_feel}/5</span>
+                        <span className="text-[9px] px-1 bg-status-warning text-accent-warning rounded">感受 {d.training_feel}/5</span>
                       )}
                       {d.mood != null && (
                         <span className="text-[9px] px-1 bg-pink-100 text-pink-700 rounded">心情 {d.mood}/5</span>
                       )}
                       {d.sleep_h != null && (
-                        <span className="text-[9px] px-1 bg-indigo-100 text-indigo-700 rounded">💤 {d.sleep_h}h</span>
+                        <span className="text-[9px] px-1 bg-accent-primary-soft text-accent-primary rounded">💤 {d.sleep_h}h</span>
                       )}
                     </div>
                   </button>

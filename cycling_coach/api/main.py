@@ -6,6 +6,20 @@
 - /api/diagnose
 - 所有日志走 setup_logging
 - 桌面模式 (PyInstaller): mount 静态前端 + SPA fallback
+
+────────────────────────────────────────────────────────────
+V0.8.2 架构预留: Desktop 模式 (Tauri/Electron)
+────────────────────────────────────────────────────────────
+当前 web 模式: uvicorn 起 FastAPI + Vite dev server, 浏览器访问 localhost:1420
+未来 desktop 模式 (V0.9.x 评估):
+  - 路径 A: Tauri/Electron 进程内启 uvicorn, 走 HTTP 访问 (改动最小)
+  - 路径 B: 用 ASGI 直接挂载到 Tauri/Electron webview (无 HTTP 开销, 改动大)
+
+无论哪条路径, 这个 main.py 都不需要大改 — 只需要:
+  1. CORS 允许 desktop origin (已允许 *, 但生产收紧)
+  2. /api/version 端点返回 platform 标记 (前端 platform.ts 据此切换)
+  3. 若走路径 B, 加一个 cycle_coach.desktop 入口 (V0.9.x)
+────────────────────────────────────────────────────────────
 """
 from __future__ import annotations
 import logging

@@ -12,17 +12,17 @@ interface Props {
 }
 
 const RPE_LABELS: Record<number, { label: string; color: string; desc: string }> = {
-  0: { label: "没练", color: "bg-slate-100 text-slate-500", desc: "完全没感觉 / 休息日" },
-  1: { label: "极轻", color: "bg-emerald-50 text-emerald-700", desc: "Active recovery" },
-  2: { label: "很轻", color: "bg-emerald-50 text-emerald-700", desc: "Z1 恢复骑" },
-  3: { label: "轻松", color: "bg-emerald-100 text-emerald-700", desc: "Z2 endurance" },
+  0: { label: "没练", color: "bg-slate-100 text-text-secondary", desc: "完全没感觉 / 休息日" },
+  1: { label: "极轻", color: "bg-status-success text-accent-success", desc: "Active recovery" },
+  2: { label: "很轻", color: "bg-status-success text-accent-success", desc: "Z1 恢复骑" },
+  3: { label: "轻松", color: "bg-status-success text-accent-success", desc: "Z2 endurance" },
   4: { label: "温和", color: "bg-lime-100 text-lime-700", desc: "Z2-Z3" },
   5: { label: "中等", color: "bg-yellow-100 text-yellow-700", desc: "Z3 tempo" },
-  6: { label: "稍难", color: "bg-amber-100 text-amber-700", desc: "Sweet spot" },
-  7: { label: "困难", color: "bg-orange-100 text-orange-700", desc: "Z4 threshold" },
-  8: { label: "很困难", color: "bg-rose-100 text-rose-700", desc: "Z4 重复" },
-  9: { label: "极累", color: "bg-rose-200 text-rose-800", desc: "VO2max 间歇" },
-  10: { label: "极限", color: "bg-rose-300 text-rose-900", desc: "全身炸裂" },
+  6: { label: "稍难", color: "bg-status-warning text-accent-warning", desc: "Sweet spot" },
+  7: { label: "困难", color: "bg-status-warning text-accent-warning", desc: "Z4 threshold" },
+  8: { label: "很困难", color: "bg-status-danger text-accent-danger", desc: "Z4 重复" },
+  9: { label: "极累", color: "bg-status-danger text-accent-danger", desc: "VO2max 间歇" },
+  10: { label: "极限", color: "bg-status-danger text-accent-danger", desc: "全身炸裂" },
 };
 
 export function RPEEditor({ activityId, initialRpe, initialNote, onSaved }: Props) {
@@ -70,7 +70,7 @@ export function RPEEditor({ activityId, initialRpe, initialNote, onSaved }: Prop
           <button
             onClick={clear}
             disabled={saving}
-            className="text-xs text-text-muted hover:text-rose-500 flex items-center gap-1"
+            className="text-xs text-text-muted hover:text-accent-danger flex items-center gap-1"
           >
             <X className="w-3 h-3" /> 清除
           </button>
@@ -88,8 +88,8 @@ export function RPEEditor({ activityId, initialRpe, initialNote, onSaved }: Prop
               onClick={() => setRpe(n)}
               className={`px-1 py-2 rounded text-xs font-bold transition-all ${
                 selected
-                  ? `${l.color} ring-2 ring-primary scale-105`
-                  : "bg-slate-50 text-slate-400 hover:bg-slate-100"
+                  ? ` border-2 border-primary`
+                  : "bg-bg-subtle text-text-muted hover:bg-slate-100"
               }`}
               title={l.desc}
             >
@@ -131,7 +131,7 @@ export function RPEEditor({ activityId, initialRpe, initialNote, onSaved }: Prop
           <Save className="w-3.5 h-3.5" />
           {saving ? "保存中..." : rpe != null ? "更新" : "保存 RPE"}
         </button>
-        {error && <span className="text-xs text-rose-500">{error}</span>}
+        {error && <span className="text-xs text-accent-danger">{error}</span>}
       </div>
     </div>
   );

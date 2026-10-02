@@ -18,10 +18,10 @@ interface HRVState {
 }
 
 const STATUS_STYLE: Record<string, { bg: string; text: string; border: string; icon: any }> = {
-  ok: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", icon: TrendingUp },
-  caution: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200", icon: TrendingDown },
-  warning: { bg: "bg-rose-50", text: "text-rose-700", border: "border-rose-200", icon: TrendingDown },
-  insufficient_data: { bg: "bg-slate-50", text: "text-slate-600", border: "border-slate-200", icon: Minus },
+  ok: { bg: "bg-status-success", text: "text-accent-success", border: "border-border", icon: TrendingUp },
+  caution: { bg: "bg-status-warning", text: "text-accent-warning", border: "border-border", icon: TrendingDown },
+  warning: { bg: "bg-status-danger", text: "text-accent-danger", border: "border-border", icon: TrendingDown },
+  insufficient_data: { bg: "bg-bg-subtle", text: "text-text-secondary", border: "border-border", icon: Minus },
 };
 
 export function HRVCard() {
@@ -38,7 +38,7 @@ export function HRVCard() {
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+      <div className="rounded border border-border bg-white p-4 text-sm text-text-secondary">
         HRV 加载中…
       </div>
     );
@@ -46,7 +46,7 @@ export function HRVCard() {
 
   if (!data) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+      <div className="rounded border border-border bg-white p-4 text-sm text-text-secondary">
         无 HRV 数据
       </div>
     );
@@ -56,12 +56,12 @@ export function HRVCard() {
   const Icon = style.icon;
 
   return (
-    <div className={`rounded-2xl border ${style.border} ${style.bg} p-4`}>
+    <div className={`rounded border ${style.border} ${style.bg} p-4`}>
       <div className="flex items-start justify-between mb-2">
         <div className="flex items-center gap-2">
           <Heart className={`w-4 h-4 ${style.text}`} />
-          <span className="text-sm font-semibold text-slate-700">HRV 趋势 (RMSSD)</span>
-          <span className="text-[10px] text-slate-500 ml-1">Plews 2013 · Bellenger 2016</span>
+          <span className="text-sm font-semibold text-text-secondary">HRV 趋势 (RMSSD)</span>
+          <span className="text-[10px] text-text-secondary ml-1">Plews 2013 · Bellenger 2016</span>
         </div>
         {data.today_hrv !== null && (
           <div className="text-right">
@@ -69,27 +69,27 @@ export function HRVCard() {
               {data.today_hrv.toFixed(0)}
               <span className="text-xs ml-0.5">ms</span>
             </div>
-            <div className="text-[10px] text-slate-500">今日</div>
+            <div className="text-[10px] text-text-secondary">今日</div>
           </div>
         )}
       </div>
 
       {data.status === "insufficient_data" ? (
-        <div className="text-xs text-slate-600 mt-2">{data.recommendation}</div>
+        <div className="text-xs text-text-secondary mt-2">{data.recommendation}</div>
       ) : (
         <>
           <div className="grid grid-cols-3 gap-2 text-xs my-3">
             <div className="bg-white/60 rounded p-2">
-              <div className="text-[10px] text-slate-500">7d 滑动</div>
+              <div className="text-[10px] text-text-secondary">7d 滑动</div>
               <div className="font-mono font-semibold">{data.rolling_7d_avg?.toFixed(1)} ms</div>
             </div>
             <div className="bg-white/60 rounded p-2">
-              <div className="text-[10px] text-slate-500">30d baseline</div>
+              <div className="text-[10px] text-text-secondary">30d baseline</div>
               <div className="font-mono font-semibold">{data.baseline_30d?.toFixed(1)} ms</div>
             </div>
             <div className="bg-white/60 rounded p-2">
-              <div className="text-[10px] text-slate-500">Delta</div>
-              <div className={`font-mono font-semibold ${(data.delta_from_baseline ?? 0) < -10 ? "text-rose-600" : (data.delta_from_baseline ?? 0) > 10 ? "text-emerald-600" : "text-slate-700"}`}>
+              <div className="text-[10px] text-text-secondary">Delta</div>
+              <div className={`font-mono font-semibold ${(data.delta_from_baseline ?? 0) < -10 ? "text-accent-danger" : (data.delta_from_baseline ?? 0) > 10 ? "text-accent-success" : "text-text-secondary"}`}>
                 {data.delta_from_baseline! > 0 ? "+" : ""}{data.delta_from_baseline?.toFixed(1)} ({data.delta_pct?.toFixed(0)}%)
               </div>
             </div>
@@ -100,14 +100,14 @@ export function HRVCard() {
             <HRVSparkline series={data.series} baseline={data.baseline_30d ?? 60} />
           )}
 
-          <div className="flex items-start gap-2 mt-3 pt-2 border-t border-slate-200/60">
+          <div className="flex items-start gap-2 mt-3 pt-2 border-t border-border/60">
             <Icon className={`w-3.5 h-3.5 mt-0.5 ${style.text}`} />
             <div>
               <div className={`text-xs font-medium ${style.text}`}>
                 {data.status_label}
                 {data.consecutive_low_days >= 2 && ` · 连续 ${data.consecutive_low_days} 天`}
               </div>
-              <div className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+              <div className="text-[11px] text-text-secondary mt-0.5 leading-relaxed">
                 {data.recommendation}
               </div>
             </div>
@@ -144,8 +144,8 @@ function HRVSparkline({ series, baseline }: { series: Array<{ date: string; hrv_
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-12">
         <defs>
           <linearGradient id="hrvGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#6366f1" stopOpacity={0.4} />
-            <stop offset="100%" stopColor="#6366f1" stopOpacity={0.05} />
+            <stop offset="0%" stopColor="#2563eb" stopOpacity={0.4} />
+            <stop offset="100%" stopColor="#2563eb" stopOpacity={0.05} />
           </linearGradient>
         </defs>
         {/* baseline 参考线 */}
@@ -159,14 +159,14 @@ function HRVSparkline({ series, baseline }: { series: Array<{ date: string; hrv_
           strokeDasharray="3 3"
         />
         <path d={areaD} fill="url(#hrvGrad)" />
-        <path d={pathD} fill="none" stroke="#6366f1" strokeWidth="1.5" />
+        <path d={pathD} fill="none" stroke="#2563eb" strokeWidth="1.5" />
         {points.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r={2} fill="#6366f1" />
+          <circle key={i} cx={p.x} cy={p.y} r={2} fill="#2563eb" />
         ))}
       </svg>
-      <div className="flex items-center justify-between text-[9px] text-slate-500 mt-0.5">
+      <div className="flex items-center justify-between text-[9px] text-text-secondary mt-0.5">
         <span>{series[0]?.date.slice(5)}</span>
-        <span className="text-slate-400">— 30d baseline —</span>
+        <span className="text-text-muted">— 30d baseline —</span>
         <span>{series[series.length - 1]?.date.slice(5)}</span>
       </div>
     </div>

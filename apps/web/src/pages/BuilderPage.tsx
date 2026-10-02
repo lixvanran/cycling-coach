@@ -7,6 +7,7 @@
 //   4. 循环块: scratch 风格 ×N 容器, 内含 work+rest 两条 (可视化缩略)
 //   5. 撤销/重做 (Cmd+Z / Cmd+Shift+Z)
 //   6. 总时长 + TSS 实时统计 + 预估 IF
+// V0.8.3 B1-2: 加 ?from_chat=1 query 处理 — 从 sessionStorage 读 cc:pending_builder_blocks
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   Plus, Trash2, Save, Sparkles, Layers, Copy, ClipboardPaste, BookmarkPlus, X, ChevronUp, ChevronDown,
@@ -15,14 +16,18 @@ import {
   Hash, Heart, Gauge, BookOpen, Wand2,
 } from "lucide-react";
 import clsx from "clsx";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
+import { useToast } from "../components/Toast";
+import { useConfirm, ScheduleModal } from "../components/common";
 import type { Workout, WorkoutGoal, WorkoutStep, StepKind } from "../lib/types";
+import type { Block } from "../lib/builderBlocks";
 
 // =============== 类型 ===============
-type Block =
-  | { id: string; kind: "single"; step: WorkoutStep }
-  | { id: string; kind: "loop"; reps: number; work: WorkoutStep; rest: WorkoutStep | null; label: string };
+// V0.8.3 B1-2: Block 类型已抽到 lib/builderBlocks.ts (ChatMessage 共用), 这里直接复用
+// type Block =
+//   | { id: string; kind: "single"; step: WorkoutStep }
+//   | { id: string; kind: "loop"; reps: number; work: WorkoutStep; rest: WorkoutStep | null; label: string };
 
 // 编辑面板当前选中的位置
 type EditTarget =
@@ -38,34 +43,34 @@ const KIND_COLOR: Record<StepKind, {
   bg: string; border: string; text: string; ring: string; lightBg: string; accent: string;
 }> = {
   warmup: {
-    bg: "bg-sky-500",
-    border: "border-sky-500/40",
-    text: "text-sky-700",
-    ring: "ring-sky-500/50",
-    lightBg: "bg-sky-50",
+    bg: "bg-status-info",
+    border: "border-accent-primary/40",
+    text: "text-accent-primary",
+    ring: "",
+    lightBg: "bg-status-info",
     accent: "#0ea5e9",
   },
   main: {
-    bg: "bg-amber-500",
-    border: "border-amber-500/40",
-    text: "text-amber-700",
-    ring: "ring-amber-500/50",
-    lightBg: "bg-amber-50",
+    bg: "bg-status-warning0",
+    border: "border-accent-warning",
+    text: "text-accent-warning",
+    ring: "",
+    lightBg: "bg-status-warning",
     accent: "#f59e0b",
   },
   recovery: {
-    bg: "bg-emerald-500",
-    border: "border-emerald-500/40",
-    text: "text-emerald-700",
-    ring: "ring-emerald-500/50",
-    lightBg: "bg-emerald-50",
+    bg: "bg-status-success",
+    border: "border-accent-success",
+    text: "text-accent-success",
+    ring: "",
+    lightBg: "bg-status-success",
     accent: "#10b981",
   },
   cooldown: {
     bg: "bg-slate-400",
     border: "border-slate-400/40",
-    text: "text-slate-700",
-    ring: "ring-slate-400/50",
+    text: "text-text-secondary",
+    ring: "ring-accent-primary/50",
     lightBg: "bg-slate-100",
     accent: "#94a3b8",
   },
@@ -79,12 +84,12 @@ const KIND_LABEL: Record<StepKind, string> = {
 };
 
 const GOAL_OPTIONS: { key: WorkoutGoal; label: string; color: string; ring: string; chip: string }[] = [
-  { key: "recovery", label: "恢复", color: "sky", ring: "ring-sky-400", chip: "bg-sky-100 text-sky-700 border-sky-300" },
-  { key: "endurance", label: "耐力", color: "emerald", ring: "ring-emerald-400", chip: "bg-emerald-100 text-emerald-700 border-emerald-300" },
-  { key: "tempo", label: "节奏", color: "amber", ring: "ring-amber-400", chip: "bg-amber-100 text-amber-700 border-amber-300" },
-  { key: "threshold", label: "阈值", color: "orange", ring: "ring-orange-400", chip: "bg-orange-100 text-orange-700 border-orange-300" },
-  { key: "vo2max", label: "VO2", color: "red", ring: "ring-red-400", chip: "bg-red-100 text-red-700 border-red-300" },
-  { key: "race", label: "比赛", color: "fuchsia", ring: "ring-fuchsia-400", chip: "bg-fuchsia-100 text-fuchsia-700 border-fuchsia-300" },
+  { key: "recovery", label: "恢复", color: "sky", ring: "ring-accent-primary", chip: "bg-status-info text-accent-primary border-accent-primary" },
+  { key: "endurance", label: "耐力", color: "emerald", ring: "ring-emerald-400", chip: "bg-status-success text-accent-success border-border" },
+  { key: "tempo", label: "节奏", color: "amber", ring: "ring-amber-400", chip: "bg-status-warning text-accent-warning border-border" },
+  { key: "threshold", label: "阈值", color: "orange", ring: "ring-accent-warning", chip: "bg-status-warning text-accent-warning border-border" },
+  { key: "vo2max", label: "VO2", color: "red", ring: "ring-accent-danger", chip: "bg-status-danger text-accent-danger border-accent-danger" },
+  { key: "race", label: "比赛", color: "fuchsia", ring: "ring-accent-primary", chip: "bg-status-info text-accent-primary border-accent-primary" },
 ];
 
 const SUGGESTED_TAGS = ["z1", "z2", "z3", "sweet-spot", "vo2", "intervals", "climbing", "long", "race", "recovery", "test", "endurance", "threshold"];
@@ -93,7 +98,7 @@ const QUICK_TEMPLATES: {
   key: string; label: string; icon: any; color: string; goal: WorkoutGoal; blocks: () => Block[];
 }[] = [
   {
-    key: "vo2", label: "VO2max 5×3min", icon: Flame, color: "from-red-500 to-orange-500", goal: "vo2max",
+    key: "vo2", label: "VO2max 5×3min", icon: Flame, color: "bg-accent-danger", goal: "vo2max",
     blocks: () => [
       { id: rid(), kind: "single", step: { kind: "warmup", duration_s: 900, power_pct_ftp: 50, label: "热身" } },
       { id: rid(), kind: "loop", reps: 5, label: "VO2 5×3min",
@@ -103,7 +108,7 @@ const QUICK_TEMPLATES: {
     ],
   },
   {
-    key: "threshold", label: "阈值 2×12min", icon: Mountain, color: "from-orange-500 to-amber-500", goal: "threshold",
+    key: "threshold", label: "阈值 2×12min", icon: Mountain, color: "bg-accent-warning", goal: "threshold",
     blocks: () => [
       { id: rid(), kind: "single", step: { kind: "warmup", duration_s: 900, power_pct_ftp: 50, label: "热身" } },
       { id: rid(), kind: "loop", reps: 2, label: "阈值 2×12min",
@@ -113,7 +118,7 @@ const QUICK_TEMPLATES: {
     ],
   },
   {
-    key: "tempo", label: "节奏 2×20min", icon: Activity, color: "from-amber-500 to-yellow-500", goal: "tempo",
+    key: "tempo", label: "节奏 2×20min", icon: Activity, color: "bg-accent-warning", goal: "tempo",
     blocks: () => [
       { id: rid(), kind: "single", step: { kind: "warmup", duration_s: 900, power_pct_ftp: 50, label: "热身" } },
       { id: rid(), kind: "loop", reps: 2, label: "节奏 2×20min",
@@ -123,7 +128,7 @@ const QUICK_TEMPLATES: {
     ],
   },
   {
-    key: "recovery", label: "恢复 30min", icon: Zap, color: "from-sky-400 to-cyan-500", goal: "recovery",
+    key: "recovery", label: "恢复 30min", icon: Zap, color: "bg-accent-cyan", goal: "recovery",
     blocks: () => [
       { id: rid(), kind: "single", step: { kind: "main", duration_s: 1800, power_pct_ftp: 50, cadence_rpm: 85, label: "轻松踩" } },
     ],
@@ -165,6 +170,8 @@ function fmtBigTime(s: number): string {
 // =============== 主体 ===============
 export function BuilderPage() {
   const navigate = useNavigate();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -175,7 +182,9 @@ export function BuilderPage() {
   const [myWorkouts, setMyWorkouts] = useState<Workout[]>([]);
   const [editing, setEditing] = useState<Workout | null>(null);
   const [loading, setLoading] = useState(false);
-  const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
+  const [localToast, setLocalToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
+  // V0.8.3 B1-4: "保存并加入日历" — 保存成功后挂起待排课的 workout
+  const [pendingSchedule, setPendingSchedule] = useState<Workout | null>(null);
 
   // 编辑面板目标 (scratch 风格 — 永远在右侧显示)
   const [editTarget, setEditTarget] = useState<EditTarget>(null);
@@ -264,6 +273,147 @@ export function BuilderPage() {
       setMyWorkouts(r.workouts.filter((w) => w.source === "user" || !w.source));
     } catch (e) { /* ignore */ }
   }
+
+  // V0.8.2 B1-5: ?from_activity=N → 自动拉活动功率曲线, 生成 3 块模板
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [templateFromActivity, setTemplateFromActivity] = useState<{
+    title: string;
+    date: string;
+  } | null>(null);
+
+  useEffect(() => {
+    const fromActivityId = searchParams.get("from_activity");
+    if (!fromActivityId) return;
+    const id = Number(fromActivityId);
+    if (!Number.isFinite(id) || id <= 0) return;
+
+    // 避免重复触发 (history push / state 更新引起重渲染时)
+    if (templateFromActivity && templateFromActivity.title.includes(`#${id}`)) return;
+
+    (async () => {
+      try {
+        const [act, pc] = await Promise.all([
+          api.getActivity(id),
+          api.getPowerCurve(id).catch(() => null),
+        ]);
+        const dt = new Date(act.start_time);
+        const dateStr = dt.toLocaleDateString("zh-CN", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        });
+        // peak 5min 段: 300s (固定), power_pct_ftp 90
+        // 即使 power curve 拿不到也允许生成 (用默认 90% FTP)
+        const peak5 = pc?.key_durations?.["5min"];
+        const templateBlocks: Block[] = [
+          { id: rid(), kind: "single", step: { kind: "warmup", duration_s: 600, power_pct_ftp: 50, label: "热身" } },
+          {
+            id: rid(),
+            kind: "single",
+            step: {
+              kind: "main",
+              duration_s: 300,
+              power_pct_ftp: 90,
+              label: peak5 ? `主项 (活动 #${id} 峰值 5min ${peak5}W)` : `主项 (来自活动 #${id})`,
+            },
+          },
+          { id: rid(), kind: "single", step: { kind: "cooldown", duration_s: 600, power_pct_ftp: 45, label: "冷身" } },
+        ];
+        setTitle(`[模板] ${dateStr} 训练 (#${id})`);
+        setDescription(`自动从活动 #${id} 生成的功率特征模板。可继续编辑后再保存到课程库。`);
+        setBlocks(templateBlocks);
+        setHistory([]);
+        setFuture([]);
+        setEditTarget(null);
+        setEditing(null);  // 这是新模板, 不要触发 update
+        setGoal("endurance");
+        setIntensity("endurance");
+        setTemplateFromActivity({ title: `[模板] ${dateStr} 训练 (#${id})`, date: dateStr });
+        showToast("ok", `已从活动 #${id} 生成模板 (peak 5min ${peak5 ? peak5 + "W" : "未知"})`);
+      } catch (e: any) {
+        showToast("err", `生成模板失败: ${e?.message ?? "?"}`);
+      }
+    })();
+
+    // 清理 query (避免刷新再触发)
+    const next = new URLSearchParams(searchParams);
+    next.delete("from_activity");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // V0.8.3 B1-2: ?from_chat=1 → 从 sessionStorage 读 cc:pending_builder_blocks
+  //   - 已编辑 → confirm("替换当前编辑?"), 用户选是才覆盖
+  //   - 空 → 直接覆盖 (无需确认)
+  //   - sessionStorage 解析失败 / 无 blocks → toast 提示, 不动 state
+  const fromChat = searchParams.get("from_chat");
+  const fromChatHandled = useRef(false);
+  useEffect(() => {
+    if (fromChat !== "1") return;
+    if (fromChatHandled.current) return;  // 防止 React 18 严格模式双触发
+    fromChatHandled.current = true;
+
+    let payload: { title?: string; blocks?: Block[] } | null = null;
+    try {
+      const raw = sessionStorage.getItem("cc:pending_builder_blocks");
+      if (raw) payload = JSON.parse(raw);
+    } catch (e) {
+      // 容错: sessionStorage 损坏 → 当作无数据
+      payload = null;
+    }
+
+    // 清理 query + storage (无论成功与否, 避免刷新再触发)
+    const next = new URLSearchParams(searchParams);
+    next.delete("from_chat");
+    setSearchParams(next, { replace: true });
+    try { sessionStorage.removeItem("cc:pending_builder_blocks"); } catch { /* ignore */ }
+
+    if (!payload || !Array.isArray(payload.blocks) || payload.blocks.length === 0) {
+      showToast("err", "Chat 没有传 workout 块过来 (空数据 / 解析失败)");
+      return;
+    }
+
+    const incomingBlocks = payload.blocks as Block[];
+
+    const applyIncoming = (mode: "replace" | "append") => {
+      const newBlocks = mode === "replace" ? incomingBlocks : [...blocks, ...incomingBlocks];
+      setBlocks(newBlocks);
+      if (mode === "replace") {
+        setHistory([]);
+        setFuture([]);
+        setEditing(null);
+      } else {
+        // append 模式: 把 history 留作可撤销
+        setHistory((h) => [...h, blocks]);
+        setFuture([]);
+      }
+      setEditTarget(null);
+      // title 优先用 Chat 传的, fallback 用本地
+      if (mode === "replace" && payload?.title) {
+        setTitle(payload.title);
+      }
+      showToast("ok", `已${mode === "replace" ? "替换" : "追加"} ${incomingBlocks.length} 个块${payload?.title ? ` · "${payload.title}"` : ""}`);
+    };
+
+    // 已编辑(blocks 非空 或 已有 title) → 弹 confirm 让用户选
+    const hasContent = blocks.length > 0 || title.trim() !== "";
+    if (hasContent) {
+      confirm({
+        title: "从 Chat 加载 workout",
+        message: `检测到 Chat 传来的 ${incomingBlocks.length} 个块。\n当前编辑器已有内容, 如何处理?`,
+        variant: "default",
+        confirmText: "替换",
+        cancelText: "追加",
+      }).then((ok) => {
+        // ok=true → 替换, ok=false → 追加 (把 cancel 当作追加, 更符合直觉)
+        applyIncoming(ok ? "replace" : "append");
+      });
+    } else {
+      // 空 → 直接替换 (无副作用)
+      applyIncoming("replace");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromChat]);
 
   function loadFromWorkout(w: Workout) {
     setEditing(w);
@@ -465,10 +615,17 @@ export function BuilderPage() {
 
   function clearTemplates() {
     if (segmentTemplates.length === 0) return;
-    if (!confirm(`清空 ${segmentTemplates.length} 个段模板?`)) return;
-    setSegmentTemplates([]);
-    localStorage.removeItem("cc:segment_templates");
-    showToast("ok", "段模板已清空");
+    confirm({
+      title: "清空段模板",
+      message: `将清空 ${segmentTemplates.length} 个段模板, 此操作无法撤销。`,
+      variant: "danger",
+      confirmText: "清空",
+    }).then((ok) => {
+      if (!ok) return;
+      setSegmentTemplates([]);
+      localStorage.removeItem("cc:segment_templates");
+      toast.success("段模板已清空");
+    });
   }
 
   function updateSingleStep(blockId: string, patch: Partial<WorkoutStep>) {
@@ -533,13 +690,13 @@ export function BuilderPage() {
 
   // =============== 保存 ===============
   function showToast(kind: "ok" | "err", msg: string) {
-    setToast({ kind, msg });
-    setTimeout(() => setToast(null), 2200);
+    setLocalToast({ kind, msg });
+    setTimeout(() => setLocalToast(null), 2200);
   }
 
-  async function save() {
-    if (!title.trim()) { showToast("err", "请输入课程标题"); return; }
-    if (blocks.length === 0) { showToast("err", "至少 1 个积木块"); return; }
+  async function save(): Promise<Workout | null> {
+    if (!title.trim()) { showToast("err", "请输入课程标题"); return null; }
+    if (blocks.length === 0) { showToast("err", "至少 1 个积木块"); return null; }
     setLoading(true);
     try {
       const payload = {
@@ -558,10 +715,32 @@ export function BuilderPage() {
       }
       await loadMyWorkouts();
       loadFromWorkout(saved);
+      return saved;
     } catch (e: any) {
       showToast("err", `保存失败: ${e?.message ?? "?"}`);
+      return null;
     } finally {
       setLoading(false);
+    }
+  }
+
+  // V0.8.3 B1-4: 保存并加入日历 — 先保存, 成功后才弹日期 modal
+  async function saveAndSchedule() {
+    const saved = await save();
+    if (saved) {
+      setPendingSchedule(saved);
+    }
+  }
+
+  async function onScheduleConfirm(date: string) {
+    if (!pendingSchedule) return;
+    const target = pendingSchedule;
+    setPendingSchedule(null);
+    try {
+      await api.scheduleWorkout(target.id, date);
+      showToast("ok", `已排到 ${date},自动关联当天活动`);
+    } catch (e: any) {
+      showToast("err", `排课失败: ${e?.message ?? "?"}`);
     }
   }
 
@@ -572,11 +751,10 @@ export function BuilderPage() {
   return (
     <div className="h-full flex flex-col bg-bg-base select-none" onDragEnd={onDragEnd}>
       {/* ============== 顶部固定工具栏 ============== */}
-      <div className="flex-shrink-0 bg-white/80 backdrop-blur border-b border-border px-5 py-2.5 flex items-center justify-between gap-3 sticky top-0 z-20 shadow-sm">
+      <div className="flex-shrink-0 bg-white border-b border-border px-5 py-2.5 flex items-center justify-between gap-3 sticky top-0 z-20 shadow-sm">
         <div className="flex items-center gap-3 min-w-0 flex-1">
-          <div className="w-9 h-9 rounded-lg flex items-center justify-center"
-            style={{ background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)" }}>
-            <Layers size={18} className="text-white" />
+          <div className="w-9 h-9 rounded flex items-center justify-center bg-accent-primary text-white">
+            <Layers size={18} />
           </div>
           <input
             value={title}
@@ -588,21 +766,21 @@ export function BuilderPage() {
           {editing && <span className="text-xs text-text-muted">编辑中 #{editing.id}</span>}
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          <button onClick={undo} disabled={history.length === 0} className="p-2 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-elevated disabled:opacity-30" title="撤销 (Ctrl+Z)">
+          <button onClick={undo} disabled={history.length === 0} className="p-2 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-subtle disabled:opacity-30" title="撤销 (Ctrl+Z)">
             <Undo2 size={16} />
           </button>
-          <button onClick={redo} disabled={future.length === 0} className="p-2 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-elevated disabled:opacity-30" title="重做 (Ctrl+Shift+Z)">
+          <button onClick={redo} disabled={future.length === 0} className="p-2 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-subtle disabled:opacity-30" title="重做 (Ctrl+Shift+Z)">
             <Redo2 size={16} />
           </button>
           <div className="w-px h-6 bg-border mx-1" />
           {/* V0.7.1: 复制 / 粘贴 / 段模板按钮 */}
-          <button onClick={copySelected} disabled={selectedIds.size === 0 && editTarget?.type !== "block"} className="p-2 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-elevated disabled:opacity-30" title="复制选中 (Ctrl+C / Ctrl+D)">
+          <button onClick={copySelected} disabled={selectedIds.size === 0 && editTarget?.type !== "block"} className="p-2 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-subtle disabled:opacity-30" title="复制选中 (Ctrl+C / Ctrl+D)">
             <Copy size={16} />
           </button>
-          <button onClick={() => pasteBlocks()} disabled={clipboardBlocks.length === 0} className="p-2 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-elevated disabled:opacity-30" title={`粘贴 (Ctrl+V, 剪贴板 ${clipboardBlocks.length} 块)`}>
+          <button onClick={() => pasteBlocks()} disabled={clipboardBlocks.length === 0} className="p-2 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-subtle disabled:opacity-30" title={`粘贴 (Ctrl+V, 剪贴板 ${clipboardBlocks.length} 块)`}>
             <ClipboardPaste size={16} />
           </button>
-          <button onClick={saveAsTemplate} disabled={selectedIds.size === 0 && editTarget?.type !== "block"} className="p-2 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-elevated disabled:opacity-30" title="存为段模板">
+          <button onClick={saveAsTemplate} disabled={selectedIds.size === 0 && editTarget?.type !== "block"} className="p-2 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-subtle disabled:opacity-30" title="存为段模板">
             <BookmarkPlus size={16} />
           </button>
           {selectedIds.size > 0 && (
@@ -614,7 +792,7 @@ export function BuilderPage() {
           <button onClick={() => navigate("/plan/workouts")} className="px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary">
             ← 课程库
           </button>
-          <button onClick={resetForm} className="px-3 py-1.5 bg-bg-elevated border border-border rounded-md text-sm hover:border-accent/50">
+          <button onClick={resetForm} className="px-3 py-1.5 bg-bg-subtle border border-border rounded-md text-sm hover:border-accent/50">
             新建
           </button>
           <button onClick={save} disabled={loading} className="btn-primary text-sm">
@@ -629,12 +807,12 @@ export function BuilderPage() {
 
         {/* === V0.7.1 段模板区 (跨课程复用) === */}
         {segmentTemplates.length > 0 && (
-          <div className="w-44 border-r border-border bg-gradient-to-b from-indigo-50/40 to-white p-2 flex-shrink-0 overflow-y-auto">
+          <div className="w-44 border-r border-border bg-bg-panel p-2 flex-shrink-0 overflow-y-auto">
             <div className="flex items-center justify-between mb-1.5">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">段模板</div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-accent-primary">段模板</div>
               <button
                 onClick={clearTemplates}
-                className="text-[10px] text-text-muted hover:text-rose-500"
+                className="text-[10px] text-text-muted hover:text-accent-danger"
                 title="清空"
               >
                 <X size={11} />
@@ -649,10 +827,10 @@ export function BuilderPage() {
                   <button
                     key={`tpl-${i}`}
                     onClick={() => insertTemplate(t)}
-                    className="w-full text-left p-1.5 rounded text-[10px] bg-white border border-indigo-200 hover:border-indigo-500 hover:bg-indigo-50 transition"
+                    className="w-full text-left p-1.5 rounded text-[10px] bg-white border border-accent-primary hover:border-accent-primary hover:bg-accent-primary-soft transition"
                     title="点击插入到末尾"
                   >
-                    <div className="font-medium text-slate-700 truncate">{label}</div>
+                    <div className="font-medium text-text-secondary truncate">{label}</div>
                   </button>
                 );
               })}
@@ -737,24 +915,38 @@ export function BuilderPage() {
       </div>
 
       {/* ============== 底部统计 ============== */}
-      <div className="flex-shrink-0 bg-white/80 backdrop-blur border-t border-border px-5 py-2 flex items-center justify-between sticky bottom-0">
+      <div className="flex-shrink-0 bg-white border-t border-border px-5 py-2 flex items-center justify-between sticky bottom-0">
         <div className="flex items-center gap-5 text-sm">
           <Stat icon={Clock} label="总时长" value={fmtBigTime(totalDur)} accent />
           <Stat icon={Gauge} label="TSS 约" value={Math.round(totalTSS)} />
           <Stat icon={Activity} label="IF 约" value={(totalTSS / Math.max(totalDur / 60, 1) / 100 * 0.85).toFixed(2)} />
           <div className="text-xs text-text-muted">{blocks.length} 块积木 · 撤销栈 {history.length}</div>
         </div>
-        <button onClick={save} disabled={loading || blocks.length === 0 || !title.trim()} className="btn-primary text-sm">
-          <Save className="w-4 h-4" />
-          {editing ? "更新课程" : "保存课程"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={save} disabled={loading || blocks.length === 0 || !title.trim()} className="btn-primary text-sm">
+            <Save className="w-4 h-4" />
+            {editing ? "更新课程" : "保存课程"}
+          </button>
+          <button onClick={saveAndSchedule} disabled={loading || blocks.length === 0 || !title.trim()} className="btn-ghost text-sm flex items-center gap-1.5" title="保存课程并立即排到日历">
+            📅 保存并加入日历
+          </button>
+        </div>
       </div>
 
-      {/* Toast */}
-      {toast && (
-        <div className={clsx("fixed bottom-24 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-lg text-sm shadow-2xl z-50 font-medium",
-          toast.kind === "ok" ? "bg-emerald-500 text-white" : "bg-red-500 text-white")}>
-          {toast.msg}
+      {/* V0.8.3 B1-4: 保存成功后挂起的排课 modal */}
+      {pendingSchedule && (
+        <ScheduleModal
+          workoutTitle={pendingSchedule.title}
+          onCancel={() => setPendingSchedule(null)}
+          onConfirm={onScheduleConfirm}
+        />
+      )}
+
+      {/* Toast (局部, 只在 BuilderPage 用) */}
+      {localToast && (
+        <div className={clsx("fixed bottom-24 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded text-sm shadow-sm z-50 font-medium",
+          localToast.kind === "ok" ? "bg-status-success text-white" : "bg-accent-danger text-white")}>
+          {localToast.msg}
         </div>
       )}
     </div>
@@ -776,7 +968,7 @@ function BlockLibrary(props: {
   onClickMeta: () => void;
 }) {
   return (
-    <div className="w-64 flex-shrink-0 border-r border-border overflow-auto bg-bg-elevated/40">
+    <div className="w-64 flex-shrink-0 border-r border-border overflow-auto bg-bg-subtle/40">
       {/* 基础信息 */}
       <div className="p-3 border-b border-border space-y-2">
         <div className="grid grid-cols-2 gap-2">
@@ -803,7 +995,7 @@ function BlockLibrary(props: {
             {props.tags.map((t) => (
               <span key={t} className="px-1.5 py-0.5 rounded text-[10px] bg-accent/15 text-accent font-medium flex items-center gap-1">
                 {t}
-                <button onClick={() => props.removeTag(t)} className="hover:text-red-500">×</button>
+                <button onClick={() => props.removeTag(t)} className="hover:text-accent-danger">×</button>
               </span>
             ))}
             <input
@@ -840,7 +1032,7 @@ function BlockLibrary(props: {
                 draggable
                 onDragStart={(e) => props.onDragStartNew(e, b.kind)}
                 onDragEnd={props.onDragEnd}
-                className={clsx("px-2 py-2.5 rounded-lg text-xs font-semibold cursor-grab active:cursor-grabbing transition-all hover:scale-105 hover:shadow-md flex items-center gap-1.5 border-2", b.c.lightBg, b.c.text, b.c.border)}
+                className={clsx("px-2 py-2.5 rounded text-xs font-semibold cursor-grab active:cursor-grabbing transition-all hover:shadow-md flex items-center gap-1.5 border-2", b.c.lightBg, b.c.text, b.c.border)}
                 title={`拖拽: ${b.label}`}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -862,7 +1054,7 @@ function BlockLibrary(props: {
           onDragStart={(e) => { e.dataTransfer.setData("text/plain", "loop"); props.onDragStartNew(e); }}
           onDragEnd={props.onDragEnd}
           onClick={() => props.applyTemplate(QUICK_TEMPLATES[0])}
-          className="w-full px-3 py-2.5 rounded-lg text-xs font-semibold cursor-grab active:cursor-grabbing transition-all hover:scale-105 hover:shadow-md bg-gradient-to-r from-amber-400 to-red-500 text-white border-2 border-amber-500 flex items-center justify-center gap-1.5"
+          className="w-full px-3 py-2.5 rounded text-xs font-semibold cursor-grab active:cursor-grabbing transition-all hover:shadow-md bg-accent-danger text-white border-2 border-accent-warning flex items-center justify-center gap-1.5"
           title="点击应用 VO2 5×3min 模板 / 或拖入"
         >
           <Repeat className="w-3.5 h-3.5" />
@@ -884,7 +1076,7 @@ function BlockLibrary(props: {
               <button
                 key={t.key}
                 onClick={() => props.applyTemplate(t)}
-                className={clsx("w-full px-3 py-2 rounded-md text-xs flex items-center gap-2 bg-gradient-to-r text-white font-medium hover:opacity-90 hover:scale-[1.02] transition-all", t.color)}
+                className={clsx("w-full px-3 py-2 rounded-md text-xs flex items-center gap-2 bg-accent-primary text-white font-medium hover:opacity-90 transition-all", t.color)}
               >
                 <I className="w-3.5 h-3.5" />
                 <span className="flex-1 text-left">{t.label}</span>
@@ -902,7 +1094,7 @@ function BlockLibrary(props: {
             <BookOpen className="w-3 h-3" />
             我的课程
           </h3>
-          <span className="text-[10px] text-text-muted bg-bg-elevated px-1.5 rounded">{props.myWorkouts.length}</span>
+          <span className="text-[10px] text-text-muted bg-bg-subtle px-1.5 rounded">{props.myWorkouts.length}</span>
         </div>
         <div className="space-y-1 max-h-48 overflow-auto">
           {props.myWorkouts.map((w) => (
@@ -911,8 +1103,8 @@ function BlockLibrary(props: {
               onClick={() => props.loadFromWorkout(w)}
               className={clsx("w-full text-left p-2 rounded-md text-xs transition-all",
                 props.editingId === w.id
-                  ? "bg-accent/15 text-accent ring-2 ring-accent/30"
-                  : "hover:bg-bg-elevated text-text-primary"
+                  ? "bg-accent/15 text-accent border-2 border-accent"
+                  : "hover:bg-bg-subtle text-text-primary"
               )}
             >
               <div className="font-medium truncate">{w.title}</div>
@@ -996,7 +1188,7 @@ function TimelineArea(props: {
             <div
               onDragOver={(e) => { e.preventDefault(); }}
               onDrop={(e) => props.onDrop(e, props.blocks.length)}
-              className="h-12 border-2 border-dashed border-border rounded-lg flex items-center justify-center text-xs text-text-muted hover:border-accent/50 hover:bg-accent/5 transition-all"
+              className="h-12 border-2 border-dashed border-border rounded flex items-center justify-center text-xs text-text-muted hover:border-accent/50 hover:bg-accent/5 transition-all"
             >
               <Plus className="w-3 h-3 mr-1" />
               拖到这里添加到最后
@@ -1047,12 +1239,12 @@ function EmptyDropZone({
     <div
       onDragOver={(e) => { e.preventDefault(); }}
       onDrop={(e) => onDrop(e, 0)}
-      className="mt-4 max-w-2xl mx-auto p-8 border-2 border-dashed border-border rounded-xl text-center hover:border-accent/50 hover:bg-accent/5 transition-all"
+      className="mt-4 max-w-2xl mx-auto p-8 border-2 border-dashed border-border rounded text-center hover:border-accent/50 hover:bg-accent/5 transition-all"
     >
       <div className="text-text-muted text-sm mb-3">从这里开始构建你的课程</div>
       <div className="text-text-muted text-[10px] mb-3">↑ 从左侧拖入积木, 或点击下方按钮</div>
       <div className="flex justify-center gap-2">
-        <button onClick={() => onAddLoop(0)} className="px-4 py-2 bg-gradient-to-r from-amber-400 to-red-500 text-white rounded-md text-sm font-medium hover:opacity-90">
+        <button onClick={() => onAddLoop(0)} className="px-4 py-2 bg-accent-danger text-white rounded-md text-sm font-medium hover:opacity-90">
           <Repeat className="w-3.5 h-3.5 inline mr-1" /> 加循环块
         </button>
       </div>
@@ -1085,7 +1277,7 @@ function SingleBlockCard(props: any) {
     <div
       onClick={(e) => props.onSelect({ shift: e.shiftKey, meta: e.metaKey || e.ctrlKey })}
       className={clsx(
-        "group rounded-xl border-2 transition-all cursor-pointer overflow-hidden flex items-stretch h-16",
+        "group rounded border-2 transition-all cursor-pointer overflow-hidden flex items-stretch h-16",
         props.isSelected
           ? `${c.ring} shadow-md border-current`
           : props.isMultiSelected
@@ -1141,12 +1333,12 @@ function LoopBlockCard(props: any) {
     <div
       onClick={(e) => props.onSelect({ shift: e.shiftKey, meta: e.metaKey || e.ctrlKey })}
       className={clsx(
-        "rounded-xl border-2 transition-all cursor-pointer overflow-hidden",
+        "rounded border-2 transition-all cursor-pointer overflow-hidden",
         props.isSelected
-          ? "border-amber-500 ring-2 ring-amber-500/30 shadow-md bg-white"
+          ? "border-accent-warning border-2 border-accent-warning shadow-md bg-white"
           : props.isMultiSelected
             ? "border-accent bg-accent/5"
-            : "border-amber-300/60 hover:border-amber-500 hover:shadow-sm bg-white"
+            : "border-border/60 hover:border-accent-warning hover:shadow-sm bg-white"
       )}
     >
       {/* 拖拽手柄 + 头部 */}
@@ -1159,23 +1351,23 @@ function LoopBlockCard(props: any) {
         >
           <GripVertical className="w-3.5 h-3.5" />
         </div>
-        <div className="flex-1 px-3 flex items-center gap-2 bg-gradient-to-r from-amber-50 to-orange-50">
-          <Repeat className="w-3.5 h-3.5 text-amber-600" />
+        <div className="flex-1 px-3 flex items-center gap-2 bg-status-warning">
+          <Repeat className="w-3.5 h-3.5 text-accent-warning" />
           <input
             value={block.label}
             onChange={(e) => { e.stopPropagation(); }}
             readOnly
-            className="flex-1 bg-transparent text-sm font-semibold text-amber-900 outline-none px-1"
+            className="flex-1 bg-transparent text-sm font-semibold text-accent-warning outline-none px-1"
           />
-          <span className="text-amber-600 text-sm font-bold">×</span>
+          <span className="text-accent-warning text-sm font-bold">×</span>
           <input
             type="number"
             value={block.reps}
             readOnly
-            className="w-10 px-1 py-0.5 bg-white border border-amber-300 rounded text-center text-sm font-bold text-amber-900"
+            className="w-10 px-1 py-0.5 bg-white border border-border rounded text-center text-sm font-bold text-accent-warning"
           />
         </div>
-        <div className="px-3 flex items-center text-xs font-semibold text-amber-900">
+        <div className="px-3 flex items-center text-xs font-semibold text-accent-warning">
           {mins}<span className="text-[10px] opacity-70">:{String(secs).padStart(2,"0")}</span>
         </div>
       </div>
@@ -1184,9 +1376,9 @@ function LoopBlockCard(props: any) {
         <button
           onClick={(e) => { e.stopPropagation(); props.onSelectPart("work"); }}
           className={clsx("flex-1 flex items-center gap-2 px-3 py-2 border-r border-border transition",
-            props.isPartSelected === "work" ? "bg-amber-100" : "hover:bg-amber-50/50")}
+            props.isPartSelected === "work" ? "bg-status-warning" : "hover:bg-status-warning/50")}
         >
-          <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500 text-white font-bold">主项</span>
+          <span className="px-1.5 py-0.5 rounded text-[10px] bg-status-warning0 text-white font-bold">主项</span>
           <span className="flex-1 text-xs text-left truncate">{block.work.label || "(未命名)"}</span>
           <span className="text-[10px] text-text-muted">
             {fmtTime(block.work.duration_s)} · {block.work.power_pct_ftp ?? "?"}%FTP
@@ -1197,9 +1389,9 @@ function LoopBlockCard(props: any) {
           <button
             onClick={(e) => { e.stopPropagation(); props.onSelectPart("rest"); }}
             className={clsx("flex-1 flex items-center gap-2 px-3 py-2 transition",
-              props.isPartSelected === "rest" ? "bg-emerald-100" : "hover:bg-emerald-50/50")}
+              props.isPartSelected === "rest" ? "bg-status-success" : "hover:bg-status-success/50")}
           >
-            <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500 text-white font-bold">间歇</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] bg-status-success text-white font-bold">间歇</span>
             <span className="flex-1 text-xs text-left truncate">{block.rest.label || "(未命名)"}</span>
             <span className="text-[10px] text-text-muted">
               {fmtTime(block.rest.duration_s)} · {block.rest.power_pct_ftp ?? "?"}%FTP
@@ -1208,7 +1400,7 @@ function LoopBlockCard(props: any) {
         )}
       </div>
       {/* 底部操作 */}
-      <div className="flex items-center justify-end px-2 py-1 bg-bg-elevated/50 border-t border-border/40 gap-0.5" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center justify-end px-2 py-1 bg-bg-subtle/50 border-t border-border/40 gap-0.5" onClick={(e) => e.stopPropagation()}>
         <IconBtn onClick={props.onMoveUp} disabled={props.index === 0} title="上移"><ChevronUp className="w-3 h-3" /></IconBtn>
         <IconBtn onClick={props.onMoveDown} disabled={props.index === props.total - 1} title="下移"><ChevronDown className="w-3 h-3" /></IconBtn>
         <IconBtn onClick={props.onDuplicate} title="复制"><Copy className="w-3 h-3" /></IconBtn>
@@ -1226,7 +1418,7 @@ function IconBtn({ onClick, disabled, danger, title, children }: any) {
       title={title}
       className={clsx(
         "p-1 rounded transition",
-        danger ? "text-red-400 hover:bg-red-500/15" : "text-text-muted hover:text-text-primary hover:bg-bg-elevated",
+        danger ? "text-accent-danger hover:bg-accent-danger/15" : "text-text-muted hover:text-text-primary hover:bg-bg-subtle",
         disabled && "opacity-30 cursor-not-allowed"
       )}
     >
@@ -1268,8 +1460,8 @@ function EditPanel(props: {
     : null;
 
   return (
-    <div className="w-72 flex-shrink-0 border-l border-border bg-bg-elevated/40 overflow-auto">
-      <div className="p-3 sticky top-0 bg-bg-elevated/95 backdrop-blur z-10 border-b border-border flex items-center justify-between">
+    <div className="w-72 flex-shrink-0 border-l border-border bg-bg-subtle/40 overflow-auto">
+      <div className="p-3 sticky top-0 bg-bg-subtle/95 backdrop-blur z-10 border-b border-border flex items-center justify-between">
         <div className="text-xs font-semibold text-text-secondary flex items-center gap-1.5">
           {t?.type === "meta" ? <Settings className="w-3.5 h-3.5 text-accent" /> :
             block ? <Pencil className="w-3.5 h-3.5 text-accent" /> :
@@ -1279,7 +1471,7 @@ function EditPanel(props: {
             "未选择"}
         </div>
         {t && (
-          <button onClick={props.onClose} className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-elevated">
+          <button onClick={props.onClose} className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-bg-subtle">
             <X className="w-3.5 h-3.5" />
           </button>
         )}
@@ -1290,7 +1482,7 @@ function EditPanel(props: {
           <Pencil className="w-10 h-10 mx-auto mb-3 opacity-30" />
           <div>点中间的积木</div>
           <div className="text-xs mt-1">在右侧编辑属性</div>
-          <div className="mt-6 text-left text-[11px] leading-relaxed bg-bg-elevated rounded-lg p-3 space-y-1">
+          <div className="mt-6 text-left text-[11px] leading-relaxed bg-bg-subtle rounded p-3 space-y-1">
             <div className="font-semibold mb-1.5 flex items-center gap-1">💡 快捷键</div>
             <div><kbd className="px-1 bg-white border border-border rounded text-[10px]">Ctrl+Z</kbd> 撤销</div>
             <div><kbd className="px-1 bg-white border border-border rounded text-[10px]">Ctrl+Shift+Z</kbd> 重做</div>
@@ -1332,7 +1524,7 @@ function EditPanel(props: {
                 {props.tags.map((t) => (
                   <span key={t} className="px-1.5 py-0.5 rounded text-[10px] bg-accent/15 text-accent font-medium flex items-center gap-1">
                     {t}
-                    <button onClick={() => props.removeTag(t)} className="hover:text-red-500">×</button>
+                    <button onClick={() => props.removeTag(t)} className="hover:text-accent-danger">×</button>
                   </span>
                 ))}
               </div>
@@ -1348,7 +1540,7 @@ function EditPanel(props: {
                   <button
                     key={t}
                     onClick={() => { if (!props.tags.includes(t)) props.setTagInput(t); props.addTag?.(); }}
-                    className="px-1.5 py-0.5 rounded bg-bg-elevated hover:bg-accent/10 hover:text-accent"
+                    className="px-1.5 py-0.5 rounded bg-bg-subtle hover:bg-accent/10 hover:text-accent"
                   >+ {t}</button>
                 ))}
               </div>
@@ -1427,7 +1619,7 @@ function SingleBlockEditor({ step, onChange, onDuplicate, onRemove }: {
   const c = KIND_COLOR[step.kind as StepKind];
   return (
     <div className="p-3 space-y-3">
-      <div className={clsx("p-3 rounded-lg", c.lightBg)}>
+      <div className={clsx("p-3 rounded", c.lightBg)}>
         <Field label="类型">
           <select
             value={step.kind}
@@ -1511,7 +1703,7 @@ function SingleBlockEditor({ step, onChange, onDuplicate, onRemove }: {
 
       <div className="flex gap-2 pt-2">
         <button onClick={onDuplicate} className="flex-1 btn-ghost text-xs"><Copy className="w-3 h-3" />复制</button>
-        <button onClick={onRemove} className="flex-1 btn-ghost text-xs text-red-500 hover:text-red-600"><Trash2 className="w-3 h-3" />删除</button>
+        <button onClick={onRemove} className="flex-1 btn-ghost text-xs text-accent-danger hover:text-accent-danger"><Trash2 className="w-3 h-3" />删除</button>
       </div>
     </div>
   );
@@ -1522,12 +1714,12 @@ function LoopBlockEditor({ block, onChange }: { block: Extract<Block, { kind: "l
   const total = oneDur * block.reps;
   return (
     <div className="p-3 space-y-3">
-      <div className="p-3 rounded-lg bg-gradient-to-br from-amber-50 to-orange-50">
+      <div className="p-3 rounded bg-status-warning">
         <Field label="循环名">
           <input
             value={block.label}
             onChange={(e) => onChange({ label: e.target.value })}
-            className="w-full px-2 py-1.5 bg-white border border-amber-300 rounded-md text-sm font-medium focus:outline-none focus:border-amber-500"
+            className="w-full px-2 py-1.5 bg-white border border-border rounded-md text-sm font-medium focus:outline-none focus:border-accent-warning"
           />
         </Field>
         <div className="mt-2">
@@ -1537,7 +1729,7 @@ function LoopBlockEditor({ block, onChange }: { block: Extract<Block, { kind: "l
               value={block.reps}
               min={1} max={20} step={1}
               onChange={(e) => onChange({ reps: parseInt(e.target.value) })}
-              className="w-full accent-amber-500"
+              className="w-full accent-accent-warning"
             />
             <div className="flex justify-between text-[10px] text-text-muted mt-1">
               <span>1</span><span>20</span>
@@ -1561,9 +1753,9 @@ function LoopPartEditor({ part, step, onChange }: {
 }) {
   return (
     <div className="p-3 space-y-3">
-      <div className={clsx("p-3 rounded-lg", part === "work" ? "bg-amber-50" : "bg-emerald-50")}>
+      <div className={clsx("p-3 rounded", part === "work" ? "bg-status-warning" : "bg-status-success")}>
         <div className="text-xs font-bold mb-2 flex items-center gap-1.5">
-          {part === "work" ? <Zap className="w-3.5 h-3.5 text-amber-600" /> : <Activity className="w-3.5 h-3.5 text-emerald-600" />}
+          {part === "work" ? <Zap className="w-3.5 h-3.5 text-accent-warning" /> : <Activity className="w-3.5 h-3.5 text-accent-success" />}
           {part === "work" ? "主项 (Work)" : "间歇 (Rest)"}
         </div>
         <Field label="标签">

@@ -22,16 +22,16 @@ export function LoadingSkeleton({
   if (variant === "detail") {
     return (
       <div className={clsx("p-6 space-y-4 animate-pulse", className)}>
-        <div className="h-7 bg-bg-elevated rounded w-1/3" />
+        <div className="h-7 bg-bg-subtle rounded w-1/3" />
         <div className="grid grid-cols-4 gap-3">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-20 bg-bg-elevated rounded" />
+            <div key={i} className="h-20 bg-bg-subtle rounded" />
           ))}
         </div>
-        <div className="h-64 bg-bg-elevated rounded" />
+        <div className="h-64 bg-bg-subtle rounded" />
         <div className="grid grid-cols-2 gap-3">
-          <div className="h-40 bg-bg-elevated rounded" />
-          <div className="h-40 bg-bg-elevated rounded" />
+          <div className="h-40 bg-bg-subtle rounded" />
+          <div className="h-40 bg-bg-subtle rounded" />
         </div>
       </div>
     );
@@ -39,7 +39,7 @@ export function LoadingSkeleton({
   if (variant === "card") {
     return (
       <div className={clsx("p-6 animate-pulse", className)}>
-        <div className="h-32 bg-bg-elevated rounded-xl" />
+        <div className="h-32 bg-bg-subtle rounded" />
       </div>
     );
   }
@@ -47,7 +47,7 @@ export function LoadingSkeleton({
     return (
       <div className={clsx("p-6 space-y-3 animate-pulse", className)}>
         {Array.from({ length: rows }).map((_, i) => (
-          <div key={i} className="h-12 bg-bg-elevated rounded" />
+          <div key={i} className="h-12 bg-bg-subtle rounded" />
         ))}
       </div>
     );
@@ -58,7 +58,7 @@ export function LoadingSkeleton({
       {Array.from({ length: rows }).map((_, i) => (
         <div
           key={i}
-          className="h-4 bg-bg-elevated rounded"
+          className="h-4 bg-bg-subtle rounded"
           style={{ width: `${100 - i * 8}%` }}
         />
       ))}

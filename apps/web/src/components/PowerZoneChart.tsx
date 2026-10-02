@@ -141,7 +141,7 @@ function SummaryView({ summary, totalKj, ftp }: { summary: ZoneSummary; totalKj:
   const polLabel =
     pol >= 0.80 ? "极化" : pol >= 0.65 ? "偏极化" : pol >= 0.50 ? "中等" : "金字塔型";
   const polColor =
-    pol >= 0.65 ? "text-emerald-600" : pol >= 0.50 ? "text-amber-600" : "text-rose-600";
+    pol >= 0.65 ? "text-accent-success" : pol >= 0.50 ? "text-accent-warning" : "text-accent-danger";
 
   const ssMin = (summary.sweet_spot_seconds / 60).toFixed(1);
   const aboveMin = (summary.above_ftp_seconds / 60).toFixed(1);
@@ -150,23 +150,23 @@ function SummaryView({ summary, totalKj, ftp }: { summary: ZoneSummary; totalKj:
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-      <div className="px-3 py-2 rounded-md bg-slate-50">
+      <div className="px-3 py-2 rounded-md bg-bg-subtle">
         <div className="text-text-muted">极化指数</div>
         <div className={`text-lg font-semibold ${polColor}`}>
           {(pol * 100).toFixed(1)}% <span className="text-xs text-text-muted font-normal">{polLabel}</span>
         </div>
       </div>
-      <div className="px-3 py-2 rounded-md bg-slate-50">
+      <div className="px-3 py-2 rounded-md bg-bg-subtle">
         <div className="text-text-muted">甜蜜点 (88-94% FTP)</div>
-        <div className="text-lg font-semibold text-slate-700">{ssMin} min</div>
+        <div className="text-lg font-semibold text-text-secondary">{ssMin} min</div>
       </div>
-      <div className="px-3 py-2 rounded-md bg-slate-50">
+      <div className="px-3 py-2 rounded-md bg-bg-subtle">
         <div className="text-text-muted">Above FTP</div>
-        <div className="text-lg font-semibold text-rose-600">{aboveMin} min</div>
+        <div className="text-lg font-semibold text-accent-danger">{aboveMin} min</div>
       </div>
-      <div className="px-3 py-2 rounded-md bg-slate-50">
+      <div className="px-3 py-2 rounded-md bg-bg-subtle">
         <div className="text-text-muted">总做功 / FTP</div>
-        <div className="text-lg font-semibold text-slate-700">{totalKj.toFixed(0)} kJ / {ftp}W</div>
+        <div className="text-lg font-semibold text-text-secondary">{totalKj.toFixed(0)} kJ / {ftp}W</div>
       </div>
     </div>
   );
