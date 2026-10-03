@@ -65,6 +65,24 @@ BACKEND_PORT = int(os.environ.get("BACKEND_PORT", "8765"))
 FRONTEND_PORT = int(os.environ.get("FRONTEND_PORT", "1420"))
 
 
+def resolve_data_dir(desktop: bool) -> Path:
+    """用户数据 (SQLite / FIT / 日志) 到底在哪 —— 唯一真相来源。
+
+    V0.9.0 之前这里有两套说法, 且都对外讲的是错的:
+      - start.py / start.bat / uninstall.bat 都说 "workspace\\"
+      - 但 --desktop 实际写到 Path.home()/.cycling-coach/workspace
+
+    结果是用户照着界面提示去备份, 备份到的是空目录; 卸载说"保留用户数据",
+    保留的也是空目录, 真数据成了没人认领的孤儿。
+
+    桌面模式用用户目录, 是因为软件可能被装在 Program Files 下 (不可写)。
+    开发模式用项目内 workspace, 方便开发。两个都必须由这个函数说了算。
+    """
+    if desktop:
+        return Path.home() / ".cycling-coach" / "workspace"
+    return WORKSPACE_DIR
+
+
 # ---------- 工具 ----------
 
 # Windows ANSI 颜色检测:cmd.exe 默认不识别,Windows Terminal / PowerShell 5.1+ 支持
@@ -229,6 +247,15 @@ def ready_banner(backend_url: str, frontend_url: str) -> None:
         print(f"  后端 API  {backend_url}")
         print()
         print("  按 Ctrl+C 停止")
+
+
+def _open_browser(url: str) -> None:
+    """启动后自动打开浏览器。打不开不算错误 —— 用户可以手动复制地址。"""
+    try:
+        import webbrowser
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    except Exception as e:
+        log(f"无法自动打开浏览器(不影响使用, 手动打开即可): {e}", "warn")
 
 
 def _wrap_windows_cmd(cmd: list[str]) -> list[str]:
@@ -720,8 +747,8 @@ def install_frontend(pnpm: str) -> None:
 
 # ---------- 端口清理 ----------
 
-def kill_port(port: int) -> None:
-    """兜底杀掉占用端口的进程"""
+def _listening_pid(port: int) -> str | None:
+    """返回正在 LISTENING 该端口的 PID, 没有则 None。精确按字段比对, 不用子串。"""
     system = platform.system()
     try:
         if system == "Windows":
@@ -729,11 +756,79 @@ def kill_port(port: int) -> None:
                 ["netstat", "-ano"], capture_output=True, text=True
             ).stdout
             for line in out.splitlines():
-                if f":{port}" in line and "LISTENING" in line:
-                    parts = line.split()
-                    pid = parts[-1]
-                    log(f"释放端口 {port}: kill PID {pid}", "warn")
-                    subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True)
+                parts = line.split()
+                if len(parts) < 5 or parts[0].upper() != "TCP":
+                    continue
+                local, state = parts[1], parts[-2].upper()
+                # 不按 "LISTENING" 过滤 —— 该字符串在中文 Windows 上是本地化的
+                if local.rsplit(":", 1)[-1] == str(port):
+                    return parts[-1]
+            return None
+        r = subprocess.run(
+            ["lsof", "-ti", f":{port}", "-sTCP:LISTEN"],
+            capture_output=True, text=True,
+        )
+        got = r.stdout.strip().splitlines()
+        return got[0].strip() if got else None
+    except Exception:
+        return None
+
+
+def _port_in_use(port: int) -> str | None:
+    return _listening_pid(port)
+
+
+def kill_port(port: int) -> None:
+    """释放端口。
+
+    V0.9.0 之前用 `f":{port}" in line` 做子串匹配, 有两个真实问题:
+      1. 8765 会匹配到 18765 / 87650 / 任意含 "8765" 的端口 → 误杀无关进程
+      2. 匹配到就 taskkill /F, 不管那进程是谁的 → 用户的别的程序被静默杀掉
+         (比如他自己开的一个 8765 的开发服务), 而且 taskkill 失败也看不到
+
+    现在: 精确按字段取 Local_Address 的端口 + 校验 State 列;
+    杀之前先看 PID 是不是我们自己起的 (python + 我们的模块), 不是就
+    明确报错并让用户自己决定, 不再替用户做这个决定。
+    """
+    system = platform.system()
+    try:
+        if system == "Windows":
+            out = subprocess.run(
+                ["netstat", "-ano"], capture_output=True, text=True
+            ).stdout
+            pids: set[str] = set()
+            for line in out.splitlines():
+                parts = line.split()
+                # TCP  <local>  <foreign>  <state>  <pid>
+                if len(parts) < 5 or parts[0].upper() != "TCP":
+                    continue
+                local, state, pid = parts[1], parts[-2].upper(), parts[-1]
+                # 精确比对端口, 不用子串 —— 否则 8765 命中 18765
+                if local.rsplit(":", 1)[-1] != str(port):
+                    continue
+                # 不按状态字符串过滤: "LISTENING" 在非英文 Windows 上是本地化的
+                # (中文系统输出 侦听/监听), 按英文串过滤会让 kill_port 静默失效。
+                # 这里改用"本地端口精确匹配 + 只认 TCP 行", 下面再校验 PID 是不是
+                # 我们的 python 进程, 双重保险。
+                pids.add(pid)
+
+            for pid in pids:
+                if not _is_our_process(pid):
+                    log(
+                        f"端口 {port} 被 PID {pid} 占用, 但不是 Cycling Coach 进程。"
+                        f"已跳过, 请手动关闭后重试 (taskkill /F /PID {pid})",
+                        "error",
+                    )
+                    continue
+                log(f"释放端口 {port}: kill PID {pid}", "warn")
+                r = subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", pid], capture_output=True, text=True
+                )
+                if r.returncode != 0:
+                    log(
+                        f"kill PID {pid} 失败: {(r.stderr or r.stdout).strip()}",
+                        "error",
+                    )
         else:
             # macOS / Linux
             out = subprocess.run(
@@ -745,6 +840,26 @@ def kill_port(port: int) -> None:
                     subprocess.run(["kill", "-9", pid], capture_output=True)
     except Exception as e:
         log(f"端口清理失败(可忽略): {e}", "warn")
+
+
+def _is_our_process(pid: str) -> bool:
+    """判断 PID 是不是我们自己起的 python 进程。判断不了就当是 —— 宁可放过。"""
+    try:
+        system = platform.system()
+        if system == "Windows":
+            r = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                capture_output=True, text=True,
+            )
+            line = r.stdout.strip().splitlines()[0] if r.stdout.strip() else ""
+            # "python.exe","1234",...  认 python 就放行
+            return "python" in line.lower()
+        r = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "comm="], capture_output=True, text=True
+        )
+        return "python" in r.stdout.lower()
+    except Exception:
+        return True
 
 
 # ---------- 启动 ----------
@@ -857,12 +972,27 @@ def stream_output(proc: subprocess.Popen, prefix: str) -> None:
 # ---------- main ----------
 
 def main() -> int:
+    global BACKEND_PORT
     parser = argparse.ArgumentParser(description="Cycling Coach 一键启动")
     parser.add_argument("--check", action="store_true", help="只检查环境")
     parser.add_argument("--install", action="store_true", help="只装依赖")
     parser.add_argument("--no-frontend", action="store_true", help="不启动前端 (Vite)")
     parser.add_argument("--desktop", action="store_true", help="桌面模式: 后端 serve 静态前端,不开 Vite,直接访问 8765")
+    # V0.9.0: 这两个之前没注册, 但 start.bat / 文档 / 用户直觉都会用。
+    # 之前的表现是 argparse 直接报 "unrecognized arguments" 然后退出 ——
+    # 用户看到的是"启动器坏了", 而不是"参数名不对"。
+    parser.add_argument("--port", type=int, default=None,
+                        help=f"后端端口 (默认 {BACKEND_PORT})。被占用时可用 --no-kill 只提示不杀进程")
+    parser.add_argument("--no-browser", action="store_true",
+                        help="启动后不自动打开浏览器 (排查用)")
+    parser.add_argument("--no-kill", action="store_true",
+                        help="端口被占用时不杀进程, 直接报错退出")
     args = parser.parse_args()
+
+    # --port 同步到模块级 BACKEND_PORT: 后端启动 / 提示 / 清理都读它
+    if args.port:
+        BACKEND_PORT = args.port
+        os.environ["BACKEND_PORT"] = str(args.port)
 
     banner()
 
@@ -930,9 +1060,20 @@ def main() -> int:
 
     # ===== PHASE 3/4: 端口清理 =====
     phase(3, 4, "端口清理")
-    kill_port(BACKEND_PORT)
-    if pnpm:
-        kill_port(FRONTEND_PORT)
+    if args.no_kill:
+        occupied = _port_in_use(BACKEND_PORT)
+        if occupied:
+            error(
+                f"端口 {BACKEND_PORT} 已被占用, 而你传了 --no-kill, 不会自动清理。\n"
+                f"  请换一个: python tools/start.py --desktop --port 8766\n"
+                f"  或关掉占用它的程序 (PID {occupied}) 后重试。"
+            )
+            return 1
+        success(f"端口 {BACKEND_PORT} 空闲 (--no-kill)")
+    else:
+        kill_port(BACKEND_PORT)
+        if pnpm:
+            kill_port(FRONTEND_PORT)
     success(f"端口 {BACKEND_PORT} + {FRONTEND_PORT} 准备就绪")
 
     # ===== PHASE 4/4: 启动 =====
@@ -951,12 +1092,15 @@ def main() -> int:
                 return 1
             os.environ["STATIC_DIR"] = str(frontend_dist)
             os.environ["IS_DESKTOP"] = "true"
-            # 走用户文档目录 (跟 Electron 桌面版一致)
-            desktop_workspace = Path.home() / ".cycling-coach" / "workspace"
-            desktop_workspace.mkdir(parents=True, exist_ok=True)
-            os.environ["WORKSPACE_DIR"] = str(desktop_workspace)
+            # 走用户目录 (软件可能被装在 Program Files 下, 那里不可写)
+            data_dir = resolve_data_dir(desktop=True)
+            data_dir.mkdir(parents=True, exist_ok=True)
+            os.environ["WORKSPACE_DIR"] = str(data_dir)
             os.environ.setdefault("KB_DOWNLOAD_URL", "")  # 桌面模式走内嵌 KB
-            success(f"桌面模式: 后端将 serve 前端  (workspace={desktop_workspace})")
+            success(f"桌面模式: 后端将 serve 前端")
+            # 明确告诉用户数据到底在哪 —— 以前这里说 workspace\, 实际却是用户目录,
+            # 用户照着提示备份会备份到空目录。
+            success(f"你的训练数据在: {data_dir}")
 
         with Spinner("启动后端 uvicorn ..."):
             backend_proc = start_backend(py_bin)
@@ -993,6 +1137,14 @@ def main() -> int:
             backend_url=f"http://127.0.0.1:{BACKEND_PORT}",
             frontend_url=(f"http://127.0.0.1:{BACKEND_PORT}" if args.desktop else f"http://localhost:{FRONTEND_PORT}"),
         )
+
+        # V0.9.0: 以前只打印 URL 不打开浏览器, Windows 用户双击 start.bat 之后
+        # 得自己猜要去开 http://127.0.0.1:8765 —— 这是"双击了没反应"的头号来源。
+        if not args.no_browser:
+            _open_browser(
+                f"http://127.0.0.1:{BACKEND_PORT}" if args.desktop
+                else f"http://localhost:{FRONTEND_PORT}"
+            )
 
         # 阻塞,直到任一进程退出
         try:

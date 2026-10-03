@@ -62,12 +62,20 @@ echo.
 echo 清理中...
 
 REM 1. 杀进程
+REM    只杀本项目自己的进程。之前这里有 taskkill /F /IM node.exe /T 和
+REM    /IM electron.exe /T —— 那会杀掉用户机器上**所有** node 和 electron 进程,
+REM    包括他自己正在跑的开发服务器、VS Code 系工具链、Discord 等,
+REM    而且 2>nul 把 taskkill 的输出和错误全吞了, 用户完全不知情。
+REM    正确做法: 按端口精确找到本项目后端 PID 再杀。
 echo   - 杀 cycling_coach 相关进程...
 taskkill /F /IM CyclingCoach.exe /T 2>nul
 taskkill /F /IM CyclingCoach-backend.exe /T 2>nul
-taskkill /F /IM electron.exe /T 2>nul
-taskkill /F /IM node.exe /T 2>nul
-taskkill /F /FI "WINDOWTITLE eq Cycling Coach*" /T 2>nul
+
+REM 按端口 8765 (后端) 精确终止, 不碰用户的其他程序
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":8765" ^| findstr "LISTENING"') do (
+  echo     - 终止占用 8765 的进程 PID %%p
+  taskkill /F /T /PID %%p 2>nul
+)
 
 REM 2. 删 venv
 if "%KEEP_VENV%"=="0" (

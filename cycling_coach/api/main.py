@@ -63,7 +63,23 @@ async def lifespan(app: FastAPI):
     logger.info(f"Workspace: {WORKSPACE}")
     if settings.is_desktop:
         logger.info(f"Static dir: {settings.static_dir}")
-    init_db()
+    try:
+        init_db()
+    except Exception as _db_exc:
+        # V0.9.0: 之前 init_db() 在 try 块外, 任何 DB 层异常(库被上一个没退干净的
+        # 实例锁住 / 磁盘满 / 文件损坏)都会直接杀掉整个应用生命周期, 用户只看到
+        # "启动失败"却不知道为什么。这里至少要说人话, 并指向自检工具。
+        logger.error(f"数据库初始化失败: {type(_db_exc).__name__}: {_db_exc}")
+        import sys as _sys
+        print("=" * 60, file=_sys.stderr)
+        print("数据库初始化失败, 应用无法启动。", file=_sys.stderr)
+        print(f"  原因: {type(_db_exc).__name__}: {_db_exc}", file=_sys.stderr)
+        print("", file=_sys.stderr)
+        print("  最常见的原因: 上一次没有正常退出, 进程还占着数据库。", file=_sys.stderr)
+        print("  先双击 tools\\stop.bat 关掉残留进程, 再重试。", file=_sys.stderr)
+        print("  还不行就双击 tools\\diagnose.bat 做一次自检。", file=_sys.stderr)
+        print("=" * 60, file=_sys.stderr)
+        raise
     # V0.5: 知识库自动导入(若未导入) + 每次启动检查 FTS5 表是否存在
     # V0.5.1: 桌面模式先从 URL 下载到 ~/.cycling-coach/kb/
     try:

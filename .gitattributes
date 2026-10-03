@@ -15,7 +15,12 @@
 *.html      text eol=lf
 *.svg       text eol=lf
 *.sh        text eol=lf
-*.bat       text eol=lf diff=bat
+# Windows 批处理必须 CRLF。
+# cmd.exe 用字节偏移顺序读取批处理, LF-only 时多行括号块 (if errorlevel 1 ( ... ))
+# 和 goto/标签会出现间歇性解析错误, 且失败点与改动点无关, 极难定位。
+# 2026-10-03 审计发现此处被误设为 lf, 导致所有 Windows 用户的启动脚本都是 LF。
+*.bat       text eol=crlf diff=bat
+*.cmd       text eol=crlf diff=bat
 *.cjs       text eol=lf
 *.mjs       text eol=lf
 *.spec      text eol=lf

@@ -89,6 +89,32 @@ def collect_tracked_files() -> list[Path]:
                 if f not in tracked and f not in others:
                     others.append(f)
 
+    # 强制包含前端 build 产物 cycling_coach/static/  —— 这一条是 P0, 不是可选优化。
+    #
+    # .gitignore 里有 `cycling_coach/static/`, 所以 `git ls-files` 拿到 0 个文件,
+    # `git ls-files --others --exclude-standard` 也因为尊重 .gitignore 拿不到。
+    # 而 start.bat 默认 --desktop, 桌面模式硬依赖这个目录 (start.py 的
+    # find_frontend_dist() 只认它和 apps/web/dist)。
+    #
+    # 后果: 官方 source zip 里没有 static -> Windows 用户双击 start.bat ->
+    # "桌面模式需要前端 build 产物, 但没找到" -> 唯一解法是让他装 Node + pnpm,
+    # 而 start.bat 的文件头恰恰承诺普通 Windows 用户不需要装 Node。
+    # 这条路径在开发机上永远看不见, 因为本地有 build 产物。
+    static_dir = ROOT / "cycling_coach" / "static"
+    if static_dir.exists() and (static_dir / "index.html").exists():
+        for f in static_dir.rglob("*"):
+            if f.is_file() and "__pycache__" not in str(f):
+                if f not in tracked and f not in others:
+                    others.append(f)
+    else:
+        # 不能安静地打一个必然打不开的包 —— 直接让发布流程失败。
+        raise SystemExit(
+            "[build_release] 前端 build 产物缺失, 拒绝打包。\n"
+            "  原因: 不带 cycling_coach/static/ 的包, Windows 用户双击 start.bat 会直接失败。\n"
+            "  先跑: cd apps/web && npx vite build\n"
+            "  (或: python tools/start.py --desktop --install, 会自动 build)"
+        )
+
     files = []
     for f in tracked + others:
         if f.is_file() and not should_exclude(f):

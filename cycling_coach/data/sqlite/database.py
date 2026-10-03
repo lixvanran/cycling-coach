@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 import logging
+import shutil
+from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import create_engine, event, text
@@ -16,6 +18,11 @@ logger = logging.getLogger(__name__)
 
 class Base(DeclarativeBase):
     pass
+
+
+# 迁移前备份保留份数。备份目录不写死 —— 从实际 DB 文件路径推导,
+# 否则 engine 一旦被重绑(测试 / 多 workspace)备份就会存到错误的地方。
+_BACKUP_KEEP = 5
 
 
 def _db_path() -> str:
@@ -266,6 +273,9 @@ def _ensure_indexes() -> None:
         "CREATE INDEX IF NOT EXISTS ix_activities_tss ON activities(tss)",
         "CREATE INDEX IF NOT EXISTS ix_activities_normalized_power ON activities(normalized_power)",
         "CREATE INDEX IF NOT EXISTS ix_act_athlete_start ON activities(athlete_id, start_time)",
+        # V0.9.0: 上传去重按 file_sha256 查。ORM 声明了 index=True 但那只对
+        # create_all 建的新表生效, 老库升级后这个索引不存在 -> 每次上传全表扫描。
+        "CREATE INDEX IF NOT EXISTS ix_activities_file_sha256 ON activities(file_sha256)",
         "CREATE INDEX IF NOT EXISTS ix_daily_metrics_athlete_date ON daily_metrics(athlete_id, date)",
         # V0.8.3.1 P0: planned_workouts 复合索引 (athlete + date 用于日历视图)
         "CREATE INDEX IF NOT EXISTS ix_planned_athlete_date ON planned_workouts(athlete_id, scheduled_date)",
@@ -279,14 +289,137 @@ def _ensure_indexes() -> None:
                 logger.warning(f"[索引迁移] 失败 {sql}: {e}")
 
 
+def _backup_before_migrate() -> str | None:
+    """迁移前给数据库文件打一份带时间戳的备份。
+
+    用户的训练数据是这个软件里唯一不可再生的东西。ALTER TABLE 本身不会写坏
+    SQLite 文件, 但迁移可能因为磁盘满 / 杀软锁文件 / 权限不足而中断, 或
+    迁移逻辑本身有 bug。一旦炸了而没有备份, 用户几年数据就没了。
+
+    策略: 只在"确实存在缺失列"时才备份 (干净库不产生垃圾文件),
+          保留最近 N 份, 失败只记日志不阻断启动。
+    """
+    try:
+        db_path = Path(engine.url.database or "")
+    except Exception:
+        return None
+    if not db_path or not db_path.is_file():
+        return None  # 新装, 还没有文件
+
+    # 备份放在 DB 旁边, 跟着实际文件走
+    backup_dir = db_path.parent / "db_backups"
+    # 先判断是否真的需要迁移, 避免每次启动都复制一份几百 MB 的库
+    needs = False
+    try:
+        with engine.connect() as conn:
+            for table, cols in _TABLE_COLUMNS.items():
+                if table not in _ALLOWED_TABLES:
+                    continue
+                try:
+                    existing = {
+                        row[1]
+                        for row in conn.execute(
+                            text(f"PRAGMA table_info({table})")
+                        ).fetchall()
+                    }
+                except Exception:
+                    continue
+                if any(c not in existing for c, _ in cols):
+                    needs = True
+                    break
+    except Exception as e:
+        logger.warning(f"[备份] 迁移前检查失败, 跳过备份: {e}")
+        return None
+    if not needs:
+        return None
+
+    try:
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        dest = backup_dir / f"pre-migrate-{stamp}{db_path.suffix}"
+        _wal_safe_backup(db_path, dest)
+        # 备份完必须验一下真的有数据 —— 空备份比没有备份更坏,
+        # 因为它会让用户以为"我有备份", 真出事时才发现是空的。
+        if _backup_is_sane(dest):
+            logger.info(f"  [备份] 迁移前已备份数据库 -> {dest.name}")
+        else:
+            logger.warning(
+                f"[备份] {dest.name} 校验不通过(可能是空库), 仍保留但请留意"
+            )
+        # 只留最近 5 份, 免得磁盘被备份吃满
+        olds = sorted(backup_dir.glob("pre-migrate-*.sqlite*"), reverse=True)
+        for old in olds[_BACKUP_KEEP:]:
+            try:
+                old.unlink()
+            except OSError:
+                pass
+        return str(dest)
+    except Exception as e:
+        # 备份失败不阻断启动, 但必须留下痕迹, 否则用户出事时无从追溯
+        logger.warning(f"[备份] 备份失败(将直接迁移): {e}")
+        return None
+
+
+def _wal_safe_backup(src: Path, dest: Path) -> None:
+    """拷 SQLite 库, 且必须处理 WAL。
+
+    V0.9.0 第一版这里用的是 `shutil.copy2(db_path, dest)` —— 那是错的。
+    本项目给每个连接都开了 `PRAGMA journal_mode=WAL`, 未 checkpoint 的数据
+    存在 `xxx.sqlite-wal` 里, 不在主库文件里。直接 copy2 主库:
+      - 拷出来可能只有 4096 字节(刚建库)或缺最近的数据
+      - 而 `stop.py` 每次都用 taskkill /F 强杀, WAL 未 checkpoint 是常态
+    结果就是: 备份文件存在、大小看着正常, 打开发现没有表。
+    空备份比没备份更危险 —— 它骗用户以为有退路。
+
+    正解: 用 SQLite 官方的 backup API, 它走 SQLite 自己的读事务,
+    会把 WAL 内容一并纳入, 产出事务一致的快照。
+    """
+    import sqlite3
+
+    s = sqlite3.connect(f"file:{src}?mode=ro", uri=True, timeout=10.0)
+    try:
+        d = sqlite3.connect(str(dest))
+        try:
+            s.backup(d)
+        finally:
+            d.close()
+    finally:
+        s.close()
+
+
+def _backup_is_sane(dest: Path) -> bool:
+    """验证备份不是空的。备份完不验 = 没备份。"""
+    import sqlite3
+
+    try:
+        c = sqlite3.connect(str(dest))
+        try:
+            names = [
+                r[0] for r in c.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            ]
+            if "activities" not in names:
+                return False
+            n = c.execute("SELECT COUNT(*) FROM activities").fetchone()[0]
+            return True if n is not None else False
+        finally:
+            c.close()
+    except Exception as e:
+        logger.warning(f"[备份] 校验备份失败: {e}")
+        return False
+
+
 def init_db() -> None:
     """建表 + 自动迁移 + 补索引
 
     V0.3.3 起:create_all 不会改老表 schema,所以先 create_all 再 auto_migrate
     V0.7.6 起: 再补 ORM 声明了但 create_all 没建的索引
+    V0.9.0 起: 迁移前自动备份, 见 _backup_before_migrate
     """
     from . import models  # noqa: F401  注册表
     Base.metadata.create_all(engine)
+    _backup_before_migrate()
     _auto_migrate()
     _ensure_indexes()
     logger.info("数据库初始化完成")

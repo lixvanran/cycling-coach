@@ -51,12 +51,18 @@ def _pid_alive(pid: int) -> bool:
             out = subprocess.run(
                 ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
                 capture_output=True, text=True, timeout=5,
+                # 不给 encoding 时 text=True 用 locale 编码 (中文 Windows 是 cp936),
+                # 机器上存在非 ASCII 进程名 (比如 微信.exe) 时 tasklist 输出解不开 ->
+                # UnicodeDecodeError。它继承自 ValueError, **不是** OSError,
+                # 原来的 except 接不住, 会一路冒泡让 stop.py 崩掉。
+                encoding="utf-8", errors="replace",
             )
             return str(pid) in out.stdout
         else:
             os.kill(pid, 0)  # signal 0 = 只检查存在
             return True
-    except (ProcessLookupError, OSError, subprocess.TimeoutExpired):
+    except (ProcessLookupError, OSError, subprocess.TimeoutExpired, ValueError):
+        # ValueError 覆盖 UnicodeDecodeError —— 见上面注释
         return False
 
 
