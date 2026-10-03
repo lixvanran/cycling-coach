@@ -54,15 +54,37 @@ def build_pmc_context(db: Session, athlete_id: int) -> Optional[dict]:
     return _safe("pmc", lambda: _build_pmc_context(db, athlete_id))
 
 
+def _pick(obj: Any, key: str, default: Any = None) -> Any:
+    """从 dict 或对象上取值, 两种都支持
+
+    V0.9.0 修 P0: 之前 `_build_pmc_context` 对 `get_pmc_today()` 的返回值
+    (dict!) 用 `getattr(pmc, "ctl", None)` —— dict 上 getattr 永远返回 None,
+    于是 AI 教练拿到的 PMC 永远是 0/0/0。
+
+    实测: 真实 API 返回 ctl 34.9 / atl 80.2 / tsb -45.3, AI 看到的是 None。
+    AI 因此还会反问用户"你的面板是不是显示 CTL=0? 跟我说的对不上",
+    把我们自己的 bug 甩给用户去检查同步 —— 典型的"自信地给错建议"。
+
+    同文件的 phase 上下文 (line ~120) 本来就写对了
+    (`getattr(...) or (info.get(...) if isinstance(info, dict) else None)`),
+    只是 PMC/ACWR 这两块没照做。
+    """
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
 def _build_pmc_context(db: Session, athlete_id: int) -> Optional[dict]:
     from cycling_coach.core.pmc import get_pmc_today
     pmc = get_pmc_today(db, athlete_id)
     if not pmc:
         return None
     return {
-        "ctl": getattr(pmc, "ctl", None),
-        "atl": getattr(pmc, "atl", None),
-        "tsb": getattr(pmc, "tsb", None),
+        "ctl": _pick(pmc, "ctl"),
+        "atl": _pick(pmc, "atl"),
+        "tsb": _pick(pmc, "tsb"),
+        "tss_today": _pick(pmc, "tss_today"),
+        "status": _pick(pmc, "status"),
     }
 
 
@@ -75,12 +97,19 @@ def _build_acwr_context(db: Session, athlete_id: int, days: int) -> Optional[dic
     overview = get_acwr_overview(db, days=days)
     if not overview:
         return None
-    # get_acwr_overview 返回 dict (acwr / acute / chronic / risk_zone)
+    # V0.9.0 修 P0: get_acwr_overview 的返回结构是
+    #   {"today": {"date":..., "acute":..., "chronic":..., "acwr":..., "zone":...},
+    #    "weekly_change":..., "risk":..., "risk_label":..., "series":[...]}
+    # 旧代码在**顶层**找 acwr / acute / chronic / risk_zone → 全 None。
+    # (顶层根本没有这些 key, 真正数值在 today 里; 顶层叫 "risk" 不是 "risk_zone")
+    today = (overview.get("today") or {}) if isinstance(overview, dict) else {}
     return {
-        "acwr": overview.get("acwr") if isinstance(overview, dict) else None,
-        "acute": overview.get("acute") if isinstance(overview, dict) else None,
-        "chronic": overview.get("chronic") if isinstance(overview, dict) else None,
-        "risk_zone": overview.get("risk_zone") if isinstance(overview, dict) else None,
+        "acwr": _pick(today, "acwr"),
+        "acute": _pick(today, "acute"),
+        "chronic": _pick(today, "chronic"),
+        "zone": _pick(today, "zone"),
+        "risk": _pick(overview, "risk"),
+        "risk_label": _pick(overview, "risk_label"),
     }
 
 
@@ -117,8 +146,8 @@ def _build_phase_context(db: Session, athlete_id: int) -> Optional[dict]:
     if not info:
         return None
     return {
-        "phase_type": getattr(info, "phase_type", None) or (info.get("phase_type") if isinstance(info, dict) else None),
-        "label": getattr(info, "label", None) or (info.get("label") if isinstance(info, dict) else None),
+        "phase_type": _pick(info, "phase_type"),
+        "label": _pick(info, "label"),
     }
 
 

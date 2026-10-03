@@ -59,7 +59,12 @@ cc-desktop-debug.log
 cc-desktop.log
 scripts/screenshot.mjs
 scripts/e2e/
-tests/
+# tests/ 里的用例必须入库, 它们是数据正确性的回归防护。
+# 只忽略本地运行产物和临时 FIT。
+tests/**/*.log
+tests/tmp/
+tests/*.sqlite
+tests/.ipynb_checkpoints/
 
 # Workspace runtime data (FIT files, SQLite, logs)
 workspace/cycling_coach.sqlite

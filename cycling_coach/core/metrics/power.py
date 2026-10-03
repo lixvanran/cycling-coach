@@ -15,6 +15,72 @@ import numpy as np
 from cycling_coach.data.parsers.schema import Activity, Sample
 
 
+def sample_durations(activity: Activity, attr: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """取某个通道的 (t_offset 秒, 值, 每样本代表秒数)
+
+    V0.9.0 新增 —— 修掉"1 个样本 = 1 秒"的隐含假设。
+
+    背景: 老代码到处用 `mask.sum()` 当"该区间多少秒", 这只在
+    **完整 1Hz 采样**下成立。10s 采样时 zones 时间会少算 10 倍
+    (这正是 TrainingPeaks 用户投诉的 "zones waaayyy off")。
+    FIT 丢样本 / 非 1Hz 设备都会踩到。
+
+    返回:
+        t:     每个样本的 t_offset (秒), 升序
+        v:     对应的通道值
+        dt:    每个样本代表的时长 (秒)
+
+    dt 用"区间模型"而不是梯形积分: 功率采样点是**瞬时值**, 每个样本
+    负责它到下一点之间的那一段, 最后一点沿用前一段的间隔。
+    1Hz × 3600 点 → dt 之和 = 3600 (梯形法会算成 3599, 少一秒)
+    10s × 360 点 → dt 之和 = 3600
+    """
+    pts: list[tuple[int, float]] = []
+    for s in activity.samples:
+        val = getattr(s, attr, None)
+        if val is None or s.t_offset is None:
+            continue
+        pts.append((int(s.t_offset), float(val)))
+    if not pts:
+        return np.array([]), np.array([]), np.array([])
+    pts.sort(key=lambda x: x[0])
+    t = np.array([x[0] for x in pts], dtype=float)
+    v = np.array([x[1] for x in pts], dtype=float)
+
+    n = len(t)
+    if n == 1:
+        return t, v, np.array([1.0])
+    gaps = np.diff(t)
+    # 每个样本负责"到下一点"的那一段; 最后一点沿用前一段的间隔
+    dt = np.empty(n, dtype=float)
+    dt[:-1] = gaps
+    dt[-1] = gaps[-1]
+    # 时间戳重复 (gap=0) 兜底, 避免整段被吞掉
+    dt = np.where(dt <= 0, 1.0, dt)
+    return t, v, dt
+
+
+def seconds_in_bins(
+    values: np.ndarray, dt: np.ndarray, bins: list[float]
+) -> np.ndarray:
+    """按边界分箱, 返回每箱的**秒数**(时间加权, 不是样本数)
+
+    Args:
+        values: 已换算成比例的数组 (如 power/ftp)
+        dt:     每个样本代表的秒数 (来自 sample_durations)
+        bins:   N+1 个升序边界
+    """
+    n_bins = len(bins) - 1
+    out = np.zeros(n_bins, dtype=float)
+    if len(values) == 0:
+        return out
+    for i in range(n_bins):
+        lo, hi = bins[i], bins[i + 1]
+        mask = (values >= lo) & (values < hi)
+        out[i] = float(dt[mask].sum())
+    return out
+
+
 def _rolling_30s(t: np.ndarray, p: np.ndarray, window_s: int) -> np.ndarray:
     """按真实时间戳做滑动平均, 缺失秒不补 0
 
@@ -165,20 +231,15 @@ def power_zones(activity: Activity, ftp: int) -> dict[str, int]:
     """
     if not ftp or ftp <= 0:
         return {}
-    pwrs = [s.power for s in activity.samples if s.power is not None]
-    if not pwrs:
+    _t, v, dt = sample_durations(activity, "power")
+    if len(v) == 0:
         return {}
-    arr = np.array(pwrs, dtype=float)
-    pct = arr / ftp
+    pct = v / ftp
     # Coggan 7 区边界
     bins = [-np.inf, 0.55, 0.75, 0.90, 1.05, 1.20, 1.50, np.inf]
     labels = ["Z1", "Z2", "Z3", "Z4", "Z5", "Z6", "Z7"]
-    result: dict[str, int] = {label: 0 for label in labels}
-    for i, label in enumerate(labels):
-        lo, hi = bins[i], bins[i + 1]
-        mask = (pct >= lo) & (pct < hi)
-        result[label] = int(mask.sum())
-    return result
+    secs = seconds_in_bins(pct, dt, bins)
+    return {label: int(round(secs[i])) for i, label in enumerate(labels)}
 
 
 # ============================================================
@@ -234,12 +295,13 @@ def power_zones_detailed(activity: Activity, ftp: int) -> dict:
     if not ftp or ftp <= 0:
         return {"error": "no_ftp", "ftp": 0, "total_seconds": 0, "zones": []}
 
-    pwrs = [s.power for s in activity.samples if s.power is not None]
-    if not pwrs:
+    _t, arr, dt = sample_durations(activity, "power")
+    if len(arr) == 0:
         return {"error": "no_power_data", "ftp": ftp, "total_seconds": 0, "zones": []}
 
-    arr = np.array(pwrs, dtype=float)
-    total_seconds = len(arr)
+    # V0.9.0: total_seconds 用时间加权, 不再是 len(样本数)
+    # (10s 采样时 len() 会少算 10 倍)
+    total_seconds = int(round(float(dt.sum())))
     total_distance_m = activity.distance_m or 0.0
 
     # 距离数组 (按时间加权, 用于区间距离占比)
@@ -253,7 +315,7 @@ def power_zones_detailed(activity: Activity, ftp: int) -> dict:
     for z in COGGAN_7_ZONES:
         lo_pct, hi_pct = z["lo"], z["hi"]
         mask = (arr >= ftp * lo_pct) & (arr < ftp * hi_pct)
-        seconds = int(mask.sum())
+        seconds = int(round(float(dt[mask].sum())))
         if seconds == 0:
             zones_out.append({
                 "code": z["code"],
@@ -299,19 +361,23 @@ def power_zones_detailed(activity: Activity, ftp: int) -> dict:
 
     # Sweet spot: 88-94% FTP (介于 Z3 顶部和 Z4 底部之间)
     ss_mask = (arr >= ftp * 0.88) & (arr < ftp * 0.94)
-    sweet_spot_seconds = int(ss_mask.sum())
+    sweet_spot_seconds = int(round(float(dt[ss_mask].sum())))
 
     # Above FTP
     above_mask = arr >= ftp
-    above_ftp_seconds = int(above_mask.sum())
+    above_ftp_seconds = int(round(float(dt[above_mask].sum())))
 
     polarization_index = round(polarized_secs / total_seconds, 3) if total_seconds else 0.0
+
+    # V0.9.0: 功 = 功率 × 时间, 稀疏采样下不能只 sum(功率)
+    # (10s 采样 + 250W × 1 小时: 真值 900 kJ, 老代码只算到 90 kJ)
+    total_kj = round(float((arr * dt).sum() / 1000.0), 1)
 
     return {
         "ftp": ftp,
         "total_seconds": total_seconds,
         "total_distance_km": round(total_distance_m / 1000.0, 2) if total_distance_m else 0.0,
-        "total_kj": round(float(arr.sum() / 1000.0), 1),
+        "total_kj": total_kj,
         "zones": zones_out,
         "summary": {
             "polarization_index": polarization_index,

@@ -48,14 +48,64 @@ class Recommendation:
 class DailyRecommendation:
     """今日综合建议"""
     date: str
-    readiness_score: int  # 0-100
-    readiness_label: str  # "极佳" / "良好" / "中等" / "低迷" / "危险"
-    recommended_workout_type: str  # "rest" | "recovery" | "endurance" | "tempo" | "threshold" | "vo2"
+    # V0.9.0: 无数据时 readiness_score 为 None (不是 0, 也不是高分)
+    # 语义 = "算不出来"。前端据此显示"需要数据"而不是"危险"。
+    readiness_score: Optional[int]  # 0-100, None = 数据不足算不出
+    readiness_label: str  # "极佳" / "良好" / "中等" / "低迷" / "危险" / "数据不足"
+    recommended_workout_type: str  # "rest" | "recovery" | "endurance" | "tempo" | "threshold" | "vo2" | "none"
     recommended_intensity: str  # 描述: "轻松骑 60-90min Z1-Z2" 等
     target_tss: int  # 今日目标 TSS
     recommendations: list[Recommendation] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     signals_summary: dict = field(default_factory=dict)
+
+
+# V0.9.0: 判定"数据够不够算 readiness"的门槛
+# 依据: ACWR 需要 28 天 chronic, PMC 需要至少几天训练才有意义。
+# 少于这个量给分 = 猜, 而猜出来的"高分"会让新用户以为自己状态很好。
+MIN_ACTIVITIES_FOR_READINESS = 7
+MIN_DAYS_SPAN_FOR_READINESS = 7
+
+
+def _data_sufficiency(db: Session, athlete_id: int) -> dict:
+    """查数据够不够算 readiness — 并如实报告缺什么
+
+    V0.9.0 新增。原来没有这个判断, 导致零数据用户拿到 82 分"极佳"。
+    """
+    acts = (
+        db.query(Activity)
+        .filter(Activity.athlete_id == athlete_id)
+        .order_by(Activity.start_time.asc())
+        .limit(MIN_ACTIVITIES_FOR_READINESS + 1)
+        .all()
+    )
+    n = len(acts)
+    span_days = 0
+    if n >= 2:
+        from datetime import date as _d
+        try:
+            first = acts[0].start_time
+            last = acts[-1].start_time
+            if isinstance(first, str):
+                first = datetime.fromisoformat(first)
+            if isinstance(last, str):
+                last = datetime.fromisoformat(last)
+            span_days = (last.date() - first.date()).days
+        except Exception:
+            span_days = 0
+
+    enough = n >= MIN_ACTIVITIES_FOR_READINESS and span_days >= MIN_DAYS_SPAN_FOR_READINESS
+    reasons = []
+    if n < MIN_ACTIVITIES_FOR_READINESS:
+        reasons.append(f"只有 {n} 次训练记录 (需要至少 {MIN_ACTIVITIES_FOR_READINESS} 次)")
+    if span_days < MIN_DAYS_SPAN_FOR_READINESS:
+        reasons.append(f"训练跨度仅 {span_days} 天 (需要至少 {MIN_DAYS_SPAN_FOR_READINESS} 天)")
+    return {
+        "sufficient": enough,
+        "n_activities": n,
+        "span_days": span_days,
+        "reasons": reasons,
+    }
 
 
 def compute_readiness(
@@ -164,11 +214,67 @@ def compute_readiness(
     return total, breakdown
 
 
+def _insufficient_data_recommendation(suff: dict) -> DailyRecommendation:
+    """数据不足时的返回 — 如实说"算不出来", 不猜
+
+    V0.9.0 新增。这里刻意**不**返回 readiness_score(而不是返回 0 或高分):
+    0 会被前端渲染成"危险", 高分会渲染成"极佳", 两者都是骗人。
+    None 的语义是"还没法算"。
+    """
+    why = "; ".join(suff["reasons"]) or "训练数据不足"
+    recs = [
+        Recommendation(
+            category="info", priority=1,
+            title="还不能算今日状态",
+            detail=why,
+            action=(
+                f"先导入至少 {MIN_ACTIVITIES_FOR_READINESS} 次训练记录"
+                f"（跨 {MIN_DAYS_SPAN_FOR_READINESS} 天以上），"
+                "之后这里会给出 readiness 分数和训练建议"
+            ),
+            icon="📊",
+        )
+    ]
+    if suff["n_activities"] == 0:
+        recs.insert(0, Recommendation(
+            category="info", priority=1,
+            title="还没有任何训练数据",
+            detail="App 不会凭空猜你的状态",
+            action="在「数据 → 导入」上传 FIT 文件，或把码表导出的 .fit 丢进 inbox 文件夹",
+            icon="📥",
+        ))
+
+    return DailyRecommendation(
+        date=_date.today().isoformat(),
+        readiness_score=None,
+        readiness_label="数据不足",
+        recommended_workout_type="none",
+        recommended_intensity="数据不足，暂不给出训练强度建议",
+        target_tss=0,
+        recommendations=recs,
+        warnings=[],
+        signals_summary={
+            "data_sufficiency": suff,
+            "readiness_breakdown": {},
+        },
+    )
+
+
 def generate_recommendations(
     db: Session, athlete_id: int
 ) -> DailyRecommendation:
-    """V0.7.3: 生成今日综合建议"""
-    
+    """V0.7.3: 生成今日综合建议
+
+    V0.9.0: 数据不足时**不给 readiness 分数, 也不给训练强度建议**。
+    原来零数据用户拿到 82 分"极佳" + VO2max 高强度间歇 ——
+    因为每个维度在无数据时都默认给中高分 (ACWR 缺数据默认 1.0 拿满分 25/25,
+    TSB=0 拿满分 20/20)。数据越少分越高, 方向完全反了。
+    宁可说"算不出来", 也不要自信地给错建议。
+    """
+    suff = _data_sufficiency(db, athlete_id)
+    if not suff["sufficient"]:
+        return _insufficient_data_recommendation(suff)
+
     readiness, breakdown = compute_readiness(db, athlete_id)
     
     # 5 维数据

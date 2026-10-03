@@ -94,6 +94,8 @@ _TABLE_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("tss", "FLOAT"),  # V0.7.5.3 DEV-6: 关键指标单独列 + 索引
         ("normalized_power", "INTEGER"),
         ("intensity_factor", "FLOAT"),
+        # V0.9.0: 上传去重 (老行为 NULL, 新行必填)
+        ("file_sha256", "VARCHAR(64)"),
     ],
     "training_phases": [
         ("race_type", "VARCHAR(32)"),  # V0.7 比赛类型 TT/road_race/stage_race/gran_fondo/crit/hill_climb/other

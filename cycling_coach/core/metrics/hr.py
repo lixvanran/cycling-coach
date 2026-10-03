@@ -5,6 +5,7 @@ from typing import Optional
 import numpy as np
 
 from cycling_coach.data.parsers.schema import Activity, Sample
+from cycling_coach.core.metrics.power import sample_durations, seconds_in_bins
 
 
 def hr_zones(
@@ -37,7 +38,9 @@ def hr_zones(
     hrs = [s.hr for s in activity.samples if s.hr is not None]
     if not hrs:
         return {}
-    arr = np.array(hrs)
+    # V0.9.0: 时间加权分箱 — 老的 mask.sum() 只在完整 1Hz 下等于"秒",
+    # 10s 采样时心率区间会少算 10 倍 (同 power_zones 的问题)
+    _t, arr, dt = sample_durations(activity, "hr")
 
     if lthr and lthr > 0:
         # Karvonen 7 区
@@ -52,12 +55,8 @@ def hr_zones(
         bins = [-np.inf, 0.60, 0.70, 0.80, 0.90, np.inf]
         labels = ["Z1", "Z2", "Z3", "Z4", "Z5"]
 
-    result: dict[str, int] = {label: 0 for label in labels}
-    for i, label in enumerate(labels):
-        lo, hi = bins[i], bins[i + 1]
-        mask = (pct >= lo) & (pct < hi)
-        result[label] = int(mask.sum())
-    return result
+    secs = seconds_in_bins(pct, dt, bins)
+    return {label: int(round(secs[i])) for i, label in enumerate(labels)}
 
 
 def hr_drift(activity: Activity) -> Optional[float]:
@@ -116,20 +115,41 @@ def pa_hr_decoupling(activity: Activity) -> dict:
 
     # 必须有功率 + 心率
     valid = [s for s in samples if s.power is not None and s.hr is not None]
-    if len(valid) < 1800:  # 至少 30 分钟有效样本 (1Hz 采样)
+    if not valid:
+        return {
+            "error": "insufficient_data",
+            "applicable": False,
+            "min_samples_required": 1800,
+            "actual_samples": 0,
+            "duration_s": 0,
+        }
+
+    # V0.9.0: 有效时长用**时间加权**, 不再是 len(样本数)。
+    # 老代码 `len(valid) < 1800` 隐含"1 样本 = 1 秒", 于是 10s 采样时
+    # 1 小时的骑行只有 360 个样本 → 被当成 6 分钟直接拒绝,
+    # 明明该算的 decoupling 算不出来。
+    _t, _v, dt = sample_durations(activity, "power")
+    duration_s = int(round(float(dt.sum()))) if len(dt) else 0
+
+    if duration_s < 3600:
         return {
             "error": "insufficient_data",
             "applicable": False,
             "min_samples_required": 1800,
             "actual_samples": len(valid),
-            "duration_s": len(valid),
+            "duration_s": duration_s,
         }
 
-    duration_s = len(valid)
-    half = duration_s // 2
+    # 按**时间中点**切两半 (按样本个数切在稀疏采样下会切偏)
+    if len(_t) >= 2:
+        t_mid = (_t[0] + _t[-1]) / 2.0
+        first_idx = int(np.searchsorted(_t, t_mid, side="left"))
+    else:
+        first_idx = len(valid) // 2
+    first_idx = max(1, min(first_idx, len(valid) - 1))
 
-    first = valid[:half]
-    second = valid[half:]
+    first = valid[:first_idx]
+    second = valid[first_idx:]
 
     first_power = sum(s.power for s in first) / len(first)
     first_hr = sum(s.hr for s in first) / len(first)
@@ -163,18 +183,24 @@ def pa_hr_decoupling(activity: Activity) -> dict:
         interp_label = "警告 (过度训练信号)"
         color = "rose"
 
+    # V0.9.0: 前半段时长按时间中点算, 不再用样本个数
+    t_start = float(_t[0]) if len(_t) else 0.0
+    t_split = float(_t[first_idx - 1]) if len(_t) else duration_s / 2.0
+    first_dur = int(round(t_split - t_start))
+    first_dur = max(0, min(first_dur, duration_s))
+
     return {
         "applicable": True,
         "duration_s": duration_s,
         "decoupling_pct": round(decoupling, 1),
         "first_half": {
-            "duration_s": half,
+            "duration_s": first_dur,
             "avg_power": round(first_power, 0),
             "avg_hr": round(first_hr, 0),
             "efficiency_factor": round(first_ef, 2),
         },
         "second_half": {
-            "duration_s": duration_s - half,
+            "duration_s": duration_s - first_dur,
             "avg_power": round(second_power, 0),
             "avg_hr": round(second_hr, 0),
             "efficiency_factor": round(second_ef, 2),

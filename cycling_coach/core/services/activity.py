@@ -19,6 +19,7 @@ V0.8.0: 抽到 ActivityService, router 只剩 ~30 行的端点定义
 """
 from __future__ import annotations
 import asyncio
+import hashlib
 import json
 import logging
 import shutil
@@ -44,6 +45,11 @@ from cycling_coach.data.parsers.schema import Activity as PydanticActivity, Samp
 from cycling_coach.data.sqlite.models import Activity as DBActivity
 
 logger = logging.getLogger(__name__)
+
+
+def _file_sha256(data: bytes) -> str:
+    """文件内容 sha256 — 上传去重用"""
+    return hashlib.sha256(data).hexdigest()
 
 
 # ============== DTO ==============
@@ -169,6 +175,37 @@ class ActivityService:
             file_path.relative_to(input_dir.resolve())
         except ValueError:
             raise ValidationError(f"文件路径不安全: {safe_basename!r}")
+
+        # V0.9.0: 上传去重 —— 同一个文件重复上传不应该产生第二条活动
+        #
+        # 之前只有 inbox watcher 有 sha256 去重, 直接上传(文件选择器)这条
+        # 主路径**完全没有**。用户重复选一次文件, 活动列表里就多一条
+        # 一模一样的记录, 而且 PMC / 时长 / TSS 全部被重复计算。
+        # (TP 的原话: "often duplicates workouts in calendar view" —— 同一个病)
+        digest = _file_sha256(file_bytes)
+        existing = (
+            self.db.query(DBActivity)
+            .filter(DBActivity.file_sha256 == digest)
+            .first()
+        )
+        if existing is not None:
+            logger.info(
+                f"重复上传已拦截: sha256={digest[:12]} → activity id={existing.id}"
+            )
+            return {
+                "ok": True,
+                "id": existing.id,
+                "duplicate": True,
+                "message": f"该训练已导入过 (活动 #{existing.id}, "
+                           f"{existing.start_time:%Y-%m-%d %H:%M})，未重复添加",
+                "metrics": existing.metrics or {},
+                "report_status": existing.report_status,
+                "reconstructed": bool(
+                    (existing.metrics or {}).get("reconstructed")
+                ),
+                "warning": None,
+            }
+
         with open(file_path, "wb") as f:
             f.write(file_bytes)
         logger.info(f"文件已保存: {file_path} ({file_path.stat().st_size} bytes)")
@@ -207,6 +244,7 @@ class ActivityService:
             source="fit",
             file_name=filename,
             file_path=str(file_path),
+            file_sha256=digest,
             start_time=activity.start_time.replace(tzinfo=None)
                 if activity.start_time.tzinfo else activity.start_time,
             duration_s=activity.duration_s,
@@ -500,13 +538,19 @@ class ActivityService:
             }
         sample_objs = [Sample(**s) if isinstance(s, dict) else s for s in samples_json]
         if cp is None:
-            prof = profile_store.get_profile()
-            if prof and prof.ftp_w:
-                cp = prof.ftp_w
+            # V0.9.0 修 500: 原来调 `profile_store.get_profile()`, 但
+            # store.py 里根本没有这个函数 (只有 get_or_create_athlete /
+            # update_athlete / get_training_history) → AttributeError →
+            # 活动详情页的 W' 平衡图 100% 报 500。
+            #
+            # CP 优先用活动自己的 CP 估算, 没有就用车手 FTP 兜底
+            # (W' 模型本来就是基于"最大有氧功率"算的, FTP 是合理近似)。
+            cp3 = detect_cp_3param(sample_objs)
+            if cp3.get("cp_estimated"):
+                cp = int(round(cp3["cp_estimated"]))
             else:
-                cp3 = detect_cp_3param(sample_objs)
-                if "cp_estimated" in cp3:
-                    cp = cp3["cp_estimated"]
+                athlete = profile_store.get_or_create_athlete(self.db)
+                cp = int(athlete.ftp or 0) or None
         if not cp or cp <= 0:
             raise ValidationError("CP 无法确定, 请传 ?cp=N 或先在个人资料配置 FTP")
         result = wbal_analysis(sample_objs, cp=cp, w_prime=w_prime)

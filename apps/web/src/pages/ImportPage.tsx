@@ -58,9 +58,21 @@ export function ImportPage() {
     setUploadResult(null);
     try {
       const r = await api.uploadActivity(file, setProgress);
+
+      // V0.9.0: 服务端已按文件内容 sha256 精确去重。
+      // 重复上传不会再产生第二条活动, 而是回原有活动 + duplicate:true。
+      if (r.duplicate) {
+        toast.info(r.message || "该训练已导入过, 未重复添加", { ttl: 5000 });
+        setUploadResult({ id: r.id, duplicateOf: r.id });
+        return;
+      }
+
       const dup = await checkDuplicate(r.id);
       if (dup != null) {
         toast.warn(`检测到相似活动 (id=${dup}), 可能是重复上传`, { ttl: 5000 });
+      }
+      if (r.warning) {
+        toast.warn(r.warning, { ttl: 8000 });
       }
       setUploadResult({ id: r.id, duplicateOf: dup });
     } catch (e) {

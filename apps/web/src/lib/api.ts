@@ -340,7 +340,16 @@ export const api = {
   },
   uploadActivity: async (file: File, onProgress?: (pct: number) => void) => {
     // 用 XHR 拿真实进度
-    return new Promise<{ ok: boolean; id: number; metrics: any }>((resolve, reject) => {
+    return new Promise<{
+      ok: boolean;
+      id: number;
+      metrics: any;
+      // V0.9.0: 服务端按 sha256 精确去重 — 重复上传不会产生第二条活动,
+      // 而是返回原有活动的 id + duplicate:true + 说明文案
+      duplicate?: boolean;
+      message?: string;
+      warning?: string | null;
+    }>((resolve, reject) => {
       const form = new FormData();
       form.append("file", file);
       const xhr = new XMLHttpRequest();

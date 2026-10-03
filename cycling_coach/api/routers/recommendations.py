@@ -57,12 +57,34 @@ def get_today_recommendations(db: Session = Depends(get_db)):
 
 @router.get("/readiness")
 def get_readiness_only(db: Session = Depends(get_db)):
-    """V0.7.3: 只看 readiness 分数 + 5 维拆分"""
+    """V0.7.3: 只看 readiness 分数 + 5 维拆分
+
+    V0.9.0: 数据不足时返回 readiness_score=None + 缺什么的原因,
+    不再返回一个靠"无数据默认给中高分"堆出来的假分数。
+    """
+    from cycling_coach.core.coaching.recommendations import _data_sufficiency
+
     athlete = profile_store.get_or_create_athlete(db)
+    suff = _data_sufficiency(db, athlete.id)
+    if not suff["sufficient"]:
+        return {
+            "readiness_score": None,
+            "readiness_label": "数据不足",
+            "breakdown": {},
+            "data_sufficiency": suff,
+            "weights": {
+                "hrv": 30, "acwr": 25, "tsb": 20, "phase": 15, "rpe": 10,
+            },
+        }
     score, breakdown = compute_readiness(db, athlete.id)
     return {
         "readiness_score": score,
+        "readiness_label": (
+            "极佳" if score >= 80 else "良好" if score >= 60
+            else "中等" if score >= 40 else "低迷" if score >= 20 else "危险"
+        ),
         "breakdown": breakdown,
+        "data_sufficiency": suff,
         "weights": {
             "hrv": 30,
             "acwr": 25,

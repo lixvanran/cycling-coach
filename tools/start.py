@@ -34,6 +34,28 @@ if sys.platform == "win32":
 ROOT = Path(__file__).parent.parent.resolve()
 BACKEND_PKG = "cycling_coach.api"
 FRONTEND_DIR = ROOT / "apps" / "web"
+# V0.9.0: 前端 build 产物的**真实**输出位置。
+#
+# vite.config.ts 里 outDir = ../../cycling_coach/static, 所以 `vite build`
+# 根本不产生 apps/web/dist。旧代码在 --desktop 模式只找 apps/web/dist,
+# 于是"免 Node 干净模式"开箱必然报"需要 apps/web/dist 但不存在"——
+# 这条路是给 Windows 正式用户用的, 等于从来没通过过。
+#
+# 两个位置都认, 兼容历史上把 outDir 改到 apps/web/dist 的分支。
+_STATIC_CANDIDATES = [
+    ROOT / "cycling_coach" / "static",   # vite 实际输出 (权威)
+    FRONTEND_DIR / "dist",               # 历史约定
+]
+
+
+def find_frontend_dist() -> Path | None:
+    """找到前端 build 产物目录, 找不到返回 None"""
+    for c in _STATIC_CANDIDATES:
+        if (c / "index.html").exists():
+            return c
+    return None
+
+
 WORKSPACE_DIR = ROOT / "workspace"
 LOG_DIR = WORKSPACE_DIR / ".logs"
 PORT_FILE = WORKSPACE_DIR / ".sidecar-port"
@@ -886,16 +908,21 @@ def main() -> int:
                     error(f"读日志失败: {ee}")
             return 1
     elif args.desktop:
-        # 桌面模式不需要前端 dev 依赖, 只要 build 产物在 apps/web/dist
+        # 桌面模式不需要前端 dev 依赖, 只要 build 产物在
         # 注意: 我们不调用 pnpm/vite (需要联网), 直接要求 build 产物已存在
         success("桌面模式: 跳过前端 dev 依赖安装 (只需 build 产物)")
-        frontend_dist = FRONTEND_DIR / "dist"
-        if not (frontend_dist / "index.html").exists():
-            error("桌面模式需要 apps/web/dist (前端 build 产物), 但不存在")
-            info("解决办法 (二选一):")
+        frontend_dist = find_frontend_dist()
+        if frontend_dist is None:
+            error("桌面模式需要前端 build 产物, 但没找到")
+            info("查找的位置:")
+            for c in _STATIC_CANDIDATES:
+                info(f"  - {c}")
+            info("解决办法:")
             info("  1) 在开发机器上跑: cd apps/web && pnpm install && pnpm exec vite build")
+            info("     (产物会落在 cycling_coach/static/)")
             info("  2) 用 dev 模式: python tools/start.py (不用 --desktop)")
             return 1
+        success(f"前端 build 产物: {frontend_dist}")
 
     if args.install:
         success("依赖安装完成")
@@ -914,9 +941,11 @@ def main() -> int:
         # 桌面模式: 后端 serve 前端 (lifespan mount 静态),用户开浏览器访问 8765
         if args.desktop:
             # 校验前端已 build
-            frontend_dist = FRONTEND_DIR / "dist"
-            if not (frontend_dist / "index.html").exists():
-                warn("桌面模式需要前端 build 产物, 但 apps/web/dist 不存在")
+            frontend_dist = find_frontend_dist()
+            if frontend_dist is None:
+                warn("桌面模式需要前端 build 产物, 但没找到")
+                for c in _STATIC_CANDIDATES:
+                    warn(f"  查找过: {c}")
                 info("先跑前端 build: cd apps/web && pnpm exec vite build")
                 info("  或: python tools/start.py --install (会自动 build)")
                 return 1

@@ -56,6 +56,10 @@ class Activity(Base):
     source: Mapped[str] = mapped_column(String(16))  # fit/tcx/csv
     file_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     file_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    # V0.9.0: 文件内容 sha256 —— 上传去重 (同一个文件重复导入不产生第二条活动)
+    file_sha256: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, index=True,
+    )
     start_time: Mapped[datetime] = mapped_column(DateTime, index=True)
     duration_s: Mapped[int] = mapped_column(Integer)
 
