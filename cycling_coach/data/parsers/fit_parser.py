@@ -62,6 +62,32 @@ def _normalize_dt(dt: datetime | None) -> datetime | None:
     return dt
 
 
+# V0.9.0: FIT 单位换算 — 审计笔记
+#
+# 实测结论 (tests/test_fit_pipeline_v090.py::TestFitUnitConversion 验证):
+#   fitparse **已经**应用了 FIT profile 里的 scale/offset, 直接返回人类单位:
+#     total_distance      写 30600  → 读 30600.0   (m)
+#     total_elapsed_time  写 3600   → 读 3600.0    (s, 不是 ms)
+#     speed / altitude / total_ascent              同样已是人类单位
+#   所以这些字段**不需要**再除 1000。之前审计时误判过一次, 原因是
+#   测试 fixture 自己写了 duration*1000 造成双倍缩放, 误以为是 parser 的锅。
+#
+# 真正需要手动换算的只有 semicircles 类字段:
+#   position_lat / position_long → 1 semicircle = 180° / 2^31
+#   实测: 写 31.2304° → 读 372593185 (semicircles 原值), 必须自己转。
+
+
+def _semicircles_to_deg(value) -> float | None:
+    """FIT semicircles → 度 (position_lat / position_long)
+
+    1 semicircle = 180° / 2^31
+    """
+    v = _to_int(value)
+    if v is None:
+        return None
+    return v * (180.0 / (2 ** 31))
+
+
 class FitParser:
     """FIT → Activity 解析器"""
 
@@ -120,8 +146,8 @@ class FitParser:
                 cadence=_to_int(msg.get_value("cadence")),
                 speed=_to_float(msg.get_value("speed")),
                 elevation=_to_float(msg.get_value("altitude")),
-                lat=_to_float(msg.get_value("position_lat")),
-                lon=_to_float(msg.get_value("position_long")),
+                lat=_semicircles_to_deg(msg.get_value("position_lat")),
+                lon=_semicircles_to_deg(msg.get_value("position_long")),
                 temperature=_to_int(msg.get_value("temperature")),
             ))
 
@@ -133,7 +159,7 @@ class FitParser:
                 continue
             laps.append(Lap(
                 start_offset=int((start - start_time).total_seconds()),
-                duration_s=int(_to_int(msg.get_value("total_elapsed_time")) or 0),
+                duration_s=_to_int(msg.get_value("total_elapsed_time")) or 0,
                 avg_power=_to_int(msg.get_value("avg_power")),
                 avg_hr=_to_int(msg.get_value("avg_heart_rate")),
                 avg_cadence=_to_int(msg.get_value("avg_cadence")),
@@ -164,6 +190,70 @@ class FitParser:
             total_elevation_gain = _to_float(msg.get_value("total_ascent"))
             calories = _to_int(msg.get_value("total_calories")) or 0
             break  # 通常只有一个 session
+
+        # 3b) V0.9.0 稳定性: session 缺失时的 record 流兜底
+        #
+        # 历史问题: 某些导出 (部分国产码表 / 第三方工具 / 被截断的导出)
+        # 只有 record 消息没有 session 汇总。原来这里全部留 0/None,
+        # 结果: 时长 0、距离 None、功率 None → TSS None → PMC 全 0,
+        # 而上层 watcher 还报"导入成功"。用户看到成功提示 + 空的运动列表。
+        #
+        # 现在: 从 record 流自己算总量兜底, 并且记录 fallback_used 供上层提示。
+        fallback_used = False
+        if duration_s == 0 and len(samples) >= 1:
+            fallback_used = True
+            # 时长 = 末样本 offset - 首样本 offset + 采样间隔中位数
+            # (只取末样本 offset 会少一个间隔: 1Hz × 2400 点应得 2400s 而不是 2399s)
+            if len(samples) >= 2:
+                gaps = [
+                    samples[i].t_offset - samples[i - 1].t_offset
+                    for i in range(1, len(samples))
+                    if samples[i].t_offset is not None
+                    and samples[i - 1].t_offset is not None
+                ]
+                gaps = [g for g in gaps if g > 0]
+                median_gap = sorted(gaps)[len(gaps) // 2] if gaps else 1
+                duration_s = int(
+                    (samples[-1].t_offset or 0) - (samples[0].t_offset or 0) + median_gap
+                )
+            else:
+                duration_s = int(samples[0].t_offset or 0)
+            powers = [s.power for s in samples if s.power is not None]
+            if powers and avg_power is None:
+                avg_power = int(round(sum(powers) / len(powers)))
+            if max_power is None and powers:
+                max_power = max(powers)
+            hrs = [s.hr for s in samples if s.hr is not None]
+            if avg_hr is None and hrs:
+                avg_hr = int(round(sum(hrs) / len(hrs)))
+            if max_hr is None and hrs:
+                max_hr = max(hrs)
+            cads = [s.cadence for s in samples if s.cadence is not None]
+            if avg_cadence is None and cads:
+                avg_cadence = int(round(sum(cads) / len(cads)))
+            if distance_m is None:
+                # Sample 没有累计距离字段(record.distance 没被采集),
+                # 用 speed 对时间做梯形积分 —— 对速度噪声更稳
+                spd = [(s.t_offset, s.speed) for s in samples if s.speed is not None]
+                if len(spd) >= 2:
+                    total = 0.0
+                    for i in range(1, len(spd)):
+                        dt = spd[i][0] - spd[i - 1][0]
+                        if dt > 0:
+                            total += (spd[i][1] + spd[i - 1][1]) / 2.0 * dt
+                    distance_m = round(total, 1)
+            if total_elevation_gain is None:
+                elevs = [s.elevation for s in samples if s.elevation is not None]
+                if len(elevs) >= 2:
+                    deltas = [
+                        max(0.0, elevs[i] - elevs[i - 1])
+                        for i in range(1, len(elevs))
+                    ]
+                    total_elevation_gain = round(sum(deltas), 1)
+            logger.warning(
+                f"FIT 缺 session 汇总, 已从 {len(samples)} 条 record 回算: "
+                f"duration={duration_s}s avg_power={avg_power} dist={distance_m}"
+            )
 
         # 4) Device info (V0.7.4.2 改: 兼容 iGPSport/行者 等国产码表)
         for msg in fitfile.get_messages("device_info"):
@@ -211,7 +301,16 @@ class FitParser:
             device=device,
             samples=samples,
             laps=laps,
-            raw_meta={"file": source, "n_samples": len(samples), "n_laps": len(laps)},
+            raw_meta={
+                "file": source,
+                "n_samples": len(samples),
+                "n_laps": len(laps),
+                # V0.9.0: 标记"汇总是从 record 流回算的"。
+                # 上层 (service.upload) 读这个字段, 在返回里带上 warning,
+                # 让用户知道这条数据是重建的而不是设备原始汇总 ——
+                # 静默重建等于骗人, TP 那种"数据可信"的产品不能这么干。
+                "reconstructed": fallback_used,
+            },
         )
         logger.info(
             f"FIT 解析完成: {len(samples)} samples, {len(laps)} laps, "

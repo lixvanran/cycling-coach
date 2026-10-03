@@ -234,6 +234,17 @@ class ActivityService:
         self.db.refresh(db_activity)
         logger.info(f"活动入库: id={db_activity.id}, NP={metrics.get('normalized_power')}")
 
+        # V0.9.0 稳定性: FIT 缺 session 汇总时数据是回算的, 必须让用户知道。
+        # 之前这种情况是静默的 —— watcher 报"导入成功", 但时长/距离全是 0,
+        # PMC 也跟着算不出来, 用户完全无从察觉数据是空的。
+        reconstructed = bool((activity.raw_meta or {}).get("reconstructed"))
+        if reconstructed:
+            metrics = {**metrics, "reconstructed": True}
+            logger.warning(
+                f"活动 {db_activity.id} 的汇总数据由 record 流回算 "
+                f"(原 FIT 缺 session 消息), 时长/距离可能与设备显示有差异"
+            )
+
         # 增量更新 PMC
         try:
             anchor = db_activity.start_time.date() if hasattr(db_activity.start_time, "date") else db_activity.start_time
@@ -252,6 +263,14 @@ class ActivityService:
             "id": db_activity.id,
             "metrics": metrics,
             "report_status": "pending",
+            # V0.9.0: 前端据此弹提示 —— 告诉用户这条是重建的数据,
+            # 别让它看起来跟设备原始导出一样权威。
+            "reconstructed": reconstructed,
+            "warning": (
+                "该 FIT 缺少设备汇总消息, 时长/距离/功率由采样流回算, "
+                "可能与码表显示略有差异"
+                if reconstructed else None
+            ),
         }
 
     # ---------- 列表 / 详情 ----------

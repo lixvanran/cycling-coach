@@ -160,11 +160,21 @@ class M3Client:
             return
 
         # 1) 先用主模型试 — 边 yield 边判断是否有 content
+        #
+        # V0.9.0 UX 修复: 原来 `[THINK]xxx[/THINK]` 原文直接 yield 出去,
+        # 而前端只认 markdown 的 `## Thinking` 标题, 所以"随便聊聊" tab
+        # 里用户会看到一串裸的思维链 token。
+        # 现在统一包成 `[THINK] <内容>` SSE 帧 (不带 [/THINK] 闭合标记),
+        # 由前端 api.ts 解析成 think 事件 → ChatPage 渲染进思维树区。
         got_real_content = False
         for chunk in self._stream(self.model, system, messages, temperature, max_tokens):
-            # 区分 thinking 和真 content
             if chunk.startswith("[THINK]"):
-                yield chunk
+                # 剥掉 [THINK] / [/THINK] 包装, 只送内层文本
+                inner = chunk[len("[THINK]"):]
+                if inner.endswith("[/THINK]"):
+                    inner = inner[: -len("[/THINK]")]
+                if inner:
+                    yield f"[THINK] {inner}\n\n"
             else:
                 got_real_content = True
                 yield chunk
@@ -172,10 +182,12 @@ class M3Client:
             return
 
         # 2) 主模型空 — fallback
+        #
+        # V0.9.0 UX 修复: 原来把这条内部诊断信息 yield 给用户看。
+        # 现在只记日志 —— 降级是实现细节, 不该出现在骑行者的聊天框里。
         logger.warning(
-            f"主模型 {self.model} 完全空响应,降级到 {self.fallback_model}"
+            f"主模型 {self.model} 完全空响应, 降级到 {self.fallback_model}"
         )
-        yield f"\n\n[系统提示:主模型 {self.model} 不可用,降级到 {self.fallback_model}]\n\n"
         yield from self._stream(self.fallback_model, system, messages, temperature, max_tokens)
 
     def _stream(self, model, system, messages, temperature, max_tokens):

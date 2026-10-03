@@ -15,18 +15,38 @@ import numpy as np
 from cycling_coach.data.parsers.schema import Activity, Sample
 
 
+def _rolling_30s(t: np.ndarray, p: np.ndarray, window_s: int) -> np.ndarray:
+    """按真实时间戳做滑动平均, 缺失秒不补 0
+
+    V0.9.0 修 P0: 原来先把点塞进 1Hz 数组 (`np.zeros(duration)`) 再按
+    `idx = t - t_min` 填, 遇到**非 1Hz 采样** (10s/5s/2s 记录, 或 FIT 丢样本)
+    就会产生大量 0。30s 窗里只有 3 个真值 + 27 个 0 →
+        rolling = 3 × 180 / 30 = 18W   (真值 180W)
+    NP 直接掉一个数量级, TSS 跟着错。
+
+    正确做法 (跟 Coggan / TrainingPeaks 一致): 滑动窗口内**只对实际存在的
+    样本取均值**, 缺失的时间段视为"延续上一个采样值", 而不是 0 W。
+    1Hz 数据下两者等价, 稀疏数据下只有这个是对的。
+    """
+    n = len(t)
+    if n == 0:
+        return np.array([], dtype=float)
+    # left[i] = 第一个满足 t >= t[i] - window_s + 1 的下标
+    left = np.searchsorted(t, t - (window_s - 1), side="left")
+    counts = (np.arange(n) - left + 1).astype(float)
+    # 前缀和 → 窗口内 power 之和
+    csum = np.concatenate(([0.0], np.cumsum(p, dtype=float)))
+    sums = csum[1:] - csum[left]
+    return sums / counts
+
+
 def normalized_power(activity: Activity, window_s: int = 30) -> Optional[int]:
     """归一化功率 NP
 
-    V0.7.1 修订: 按真实时间戳 (s.t_offset) 与 Δt 计算
-    - 之前 filter 后丢点导致 30s 窗与真实时间不一致
-    - 现在每样本 t_offset 知道, 缺失时插零, 时间窗用真实秒
-
-    步骤:
+    步骤 (Coggan / TrainingPeaks 标准算法):
     1. 提取 (t_offset, power) 对, 按 t 排序
-    2. 重采样到 1Hz (缺失点插 0, V0.7.1 简化: 实际 1Hz 适配)
-    3. 30s 滚动平均
-    4. 升 4 次方 → 平均 → 开 4 次方
+    2. 按真实时间戳做 30s 滚动平均 (缺失秒不当 0, 见 _rolling_30s)
+    3. 升 4 次方 → 平均 → 开 4 次方
     """
     pts: list[tuple[int, float]] = []
     for s in activity.samples:
@@ -37,28 +57,25 @@ def normalized_power(activity: Activity, window_s: int = 30) -> Optional[int]:
         return None
     pts.sort(key=lambda x: x[0])
 
-    # 重采样到 1Hz (若缺失点 0 补, 跟 Coggan 训练学一致)
-    t_min = pts[0][0]
-    t_max = pts[-1][0]
-    duration = t_max - t_min + 1
-    if duration < window_s:
-        # 数据太短, 直接均值
-        return int(round(sum(p for _, p in pts) / len(pts)))
+    t = np.array([x[0] for x in pts], dtype=float)
+    p = np.array([x[1] for x in pts], dtype=float)
 
-    # 1Hz 数组
-    arr = np.zeros(duration, dtype=float)
-    for t, p in pts:
-        idx = t - t_min
-        if 0 <= idx < duration:
-            arr[idx] = p
+    # 去重时间戳 (同秒多个样本取均值, 避免 counts 与 p 长度不一致)
+    uniq_t, inv = np.unique(t, return_inverse=True)
+    if len(uniq_t) < len(t):
+        summed = np.zeros(len(uniq_t), dtype=float)
+        np.add.at(summed, inv, p)
+        counts = np.bincount(inv, minlength=len(uniq_t)).astype(float)
+        t = uniq_t
+        p = summed / counts
 
-    if len(arr) < window_s:
-        return int(round(arr.mean()))
+    if len(t) < 2:
+        return int(round(p[0]))
 
-    # 30s 滚动平均 (1Hz 步长)
-    kernel = np.ones(window_s) / window_s
-    smoothed = np.convolve(arr, kernel, mode="valid")
-    np_val = (np.mean(smoothed ** 4)) ** 0.25
+    smoothed = _rolling_30s(t, p, window_s)
+    if len(smoothed) == 0:
+        return int(round(p.mean()))
+    np_val = (float(np.mean(smoothed ** 4))) ** 0.25
     return int(round(np_val))
 
 
@@ -349,19 +366,38 @@ def wbal_analysis(
 
     tau = 546.0  # 恢复时间常数 (秒, 固定简化)
 
-    # 用 t_offset 当 x 轴, 增量 Δt 处理丢点 / 非 1Hz
-    # 重采样到 1Hz, 缺失补 0 (功率 0 = 滑行 / 休息)
+    # 用 t_offset 当 x 轴, 逐秒推进 W' 消耗/恢复
+    #
+    # V0.9.0 修 P0: 原来把点塞进 1Hz 数组、缺失位置留 0, 并注释
+    # "功率 0 = 滑行 / 休息"。这个假设只在 **完整 1Hz 采样**下成立。
+    # 遇到 10s/5s 采样时, 缺失的秒被当成 0W 滑行 → W' 被大量误耗,
+    # w_prime_balance 结果完全失真。
+    #
+    # 正确语义:
+    #   - 真实记录的 0 W  → 就是滑行, 保持 0
+    #   - 根本没采到的秒  → 延续上一个已知功率 (前向填充)
     t_min = pts[0][0]
     t_max = pts[-1][0]
     duration = t_max - t_min + 1
     if duration < 1:
         return {"error": "no_power_data", "cp": cp, "w_prime": w_prime}
 
-    arr = np.zeros(duration, dtype=float)
+    arr = np.empty(duration, dtype=float)
+    known = np.zeros(duration, dtype=bool)
     for t, p in pts:
         idx = t - t_min
         if 0 <= idx < duration:
             arr[idx] = p
+            known[idx] = True
+    # 前向填充缺失秒 (首点之前用首点值)
+    if not known.any():
+        return {"error": "no_power_data", "cp": cp, "w_prime": w_prime}
+    first_idx = int(np.argmax(known))
+    arr[:first_idx] = arr[first_idx]
+    idxs = np.where(known, np.arange(duration), 0)
+    np.maximum.accumulate(idxs, out=idxs)
+    arr = arr[idxs]
+
     n = len(arr)
     bal = np.zeros(n)
     bal[0] = float(w_prime)

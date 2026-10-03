@@ -252,6 +252,15 @@ export function ChatPage() {
           break;
         } else if (evt.type === "sources") {
           setSources(evt.data as Array<{title: string; path: string; snippet: string}>);
+        } else if (evt.type === "think") {
+          // V0.9.0: 思维链独立通道 — 追加到 thinking 字段,
+          // 由 ThinkingTreeView 渲染, 不混进正文气泡。
+          // 之前后端把 [THINK]xxx[/THINK] 当正文流发, 用户直接看到裸 token。
+          fullThink += String(evt.data);
+          updateLastMessage(chatMode, {
+            content: fullText,
+            thinking: fullThink,
+          } as any);
         } else if (evt.type === "done") {
           break;
         }

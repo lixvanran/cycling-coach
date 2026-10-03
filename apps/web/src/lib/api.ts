@@ -580,6 +580,15 @@ export const api = {
           yield { type: "text", data: line.slice(8).trim().replace(/\\n/g, "\n") };
           continue;
         }
+        // V0.9.0: 思维链走独立通道, 不混进正文
+        // 后端 (m3_client.py) 把 reasoning 包成 `[THINK] <内容>` 帧发过来。
+        // 之前是裸 `[THINK]xxx[/THINK]` 直接当正文流给用户, "随便聊聊"
+        // tab 里会看到一串裸 token。现在前端解析成 think 事件,
+        // ChatPage 渲染进思维树区。
+        if (line.startsWith("[THINK]")) {
+          yield { type: "think", data: line.slice(7).trim().replace(/\\n/g, "\n") };
+          continue;
+        }
         // 默认: 纯文本 delta
         yield { type: "text", data: line.replace(/\\n/g, "\n") };
       }
