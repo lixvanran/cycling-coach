@@ -34,18 +34,8 @@ os.environ["WORKSPACE_DIR"] = str(TMP)
 
 @pytest.fixture(scope="module", autouse=True)
 def _setup_module():
-    from cycling_coach.config import config as cfg
-    from cycling_coach.data.sqlite.database import init_db, engine, Base
-    from cycling_coach.data.sqlite import models  # noqa: F401
-    cfg.settings.workspace_dir = str(TMP)
-    from sqlalchemy import create_engine
-    new_engine = create_engine(
-        f"sqlite:///{TMP}/cycling_coach.sqlite",
-        connect_args={"check_same_thread": False},
-    )
-    cfg.engine = new_engine  # type: ignore[attr-defined]
-    Base.metadata.create_all(new_engine)
-    init_db()
+    from tests.conftest import use_temp_db
+    use_temp_db("idor_http_v090")
     yield
 
 
@@ -58,7 +48,16 @@ def client():
 
 @pytest.fixture()
 def db():
-    from cycling_coach.data.sqlite import SessionLocal
+    """function 级隔离 — 每个 test 一个全新 DB
+
+    IDOR 测试最怕数据串味: `profile_store.get_or_create_athlete()` 取
+    `Athlete.query.first()`, 上一个 test 建的 athlete 会污染下一个。
+    """
+    import uuid
+    from tests.conftest import use_temp_db
+    from cycling_coach.data.sqlite.database import SessionLocal
+
+    use_temp_db(f"idorhttp_fn_{uuid.uuid4().hex[:8]}")
     s = SessionLocal()
     yield s
     s.close()

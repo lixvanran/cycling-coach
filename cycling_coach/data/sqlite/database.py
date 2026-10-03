@@ -183,6 +183,76 @@ def get_db() -> Session:
         db.close()
 
 
+def rebind_engine(db_url: str, *, create: bool = True) -> None:
+    """V0.9.0: 把整个模块重绑到新的 SQLite 文件 (测试隔离用)
+
+    为什么需要这个:
+        `engine` / `SessionLocal` 是模块级单例, import 时就按
+        `settings.workspace_dir` 建好了。测试想指向临时 DB 时,
+        光改 `config.engine` 没用 — 没人读那个属性 (V0.7.6~V0.9.0
+        的 6 个测试文件都踩过这个坑, 实际全在共用真实 workspace DB)。
+
+    做了什么:
+        1. 旧 engine dispose()
+        2. 建新 engine + 重挂 `_set_sqlite_pragma` 事件监听 (WAL 等 PRAGMA)
+        3. 重绑 `SessionLocal`
+        4. 扫描 sys.modules, 把 by-value import 了旧 `SessionLocal` /
+           `engine` 的模块一起打补丁
+           (orchestrator / _activities_shared / analyze_activity 等)
+        5. `create=True` 时建表 + 迁移 + 补索引
+
+    生产代码不要调用 — 只有 tests/conftest.py 用。
+    """
+    import sys as _sys
+
+    global engine, SessionLocal
+
+    old_engine = engine
+    old_session_local = SessionLocal
+
+    # 1+2: 换 engine (复用模块级 listener 逻辑, 保证 PRAGMA 一致)
+    engine = create_engine(
+        db_url,
+        connect_args={"check_same_thread": False},
+        echo=False,
+    )
+    event.listen(engine, "connect", _set_sqlite_pragma)
+
+    # 3: 换 sessionmaker
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+    # 4: 给 by-value import 的模块打补丁
+    for _mod in list(_sys.modules.values()):
+        if _mod is None:
+            continue
+        # 跳过本模块自己 (已经是新的)
+        if getattr(_mod, "__name__", "") == __name__:
+            continue
+        try:
+            if getattr(_mod, "SessionLocal", None) is old_session_local:
+                _mod.SessionLocal = SessionLocal  # type: ignore[attr-defined]
+            if getattr(_mod, "engine", None) is old_engine:
+                _mod.engine = engine  # type: ignore[attr-defined]
+        except Exception:
+            # 某些模块 (只读 __getattr__ / 特殊对象) 不让 set, 跳过
+            continue
+
+    # 旧 engine 收尾 (在所有引用都换掉之后)
+    try:
+        old_engine.dispose()
+    except Exception:
+        pass
+
+    # 5: 建表
+    if create:
+        init_db()
+
+    logger.info(
+        f"engine 已重绑: {db_url} "
+        f"(patched {len(_sys.modules)} modules, SessionLocal 引用已同步)"
+    )
+
+
 def _ensure_indexes() -> None:
     """V0.7.6: 补全 ORM 声明了但 _auto_migrate 没建的索引
 

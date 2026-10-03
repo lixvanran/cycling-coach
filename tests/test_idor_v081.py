@@ -36,17 +36,33 @@ def _swap_athlete(svc, new_athlete: Athlete):
     svc.athlete = new_athlete
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _setup_module():
+    """V0.9.0: 这个文件之前完全没有隔离 — 直接 init_db() 打真实 workspace DB
+
+    跟其他测试文件一起跑时会因为 `readonly database` / 数据互相污染而全挂。
+    改成 conftest.use_temp_db() + function 级 DB 重建。
+    """
+    from tests.conftest import use_temp_db
+    use_temp_db("idor_v081")
+    yield
+
+
 @pytest.fixture
 def db():
-    from cycling_coach.data.sqlite import get_db, init_db
-    init_db()
-    db_gen = get_db()
-    s = next(db_gen)
+    """每个 test 一个全新 DB — IDOR 测试最怕数据串味
+
+    V0.9.0: 原来复用 module 级 DB, 6 个 test 之间 athlete 越建越多,
+    `profile_store` 的 `Athlete.query.first()` 会拿到别的 test 建的 athlete。
+    """
+    import uuid
+    from tests.conftest import use_temp_db
+    from cycling_coach.data.sqlite.database import SessionLocal
+
+    use_temp_db(f"idor_fn_{uuid.uuid4().hex[:8]}")
+    s = SessionLocal()
     yield s
-    try:
-        next(db_gen)
-    except StopIteration:
-        pass
+    s.close()
 
 
 def test_activity_idor_cross_user(db):

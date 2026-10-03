@@ -18,33 +18,18 @@ import pytest
 
 sys.path.insert(0, ".")
 
-# 测试前: 强制无 API key + 临时 workspace
-TMP = Path(tempfile.mkdtemp(prefix="cc_test_v076_"))
-os.environ["M3_API_KEY"] = ""
-os.environ["WORKSPACE_DIR"] = str(TMP)
+# V0.9.0: engine 隔离统一交给 conftest.use_temp_db()
+# 旧的 `cfg.engine = new_engine` 是死代码 (没人读 config.engine),
+# 导致本文件跟其他测试文件共用同一个真实 workspace DB。
+# M3_API_KEY / WORKSPACE_DIR 由 conftest 在 session 级设好。
 
 
 @pytest.fixture(scope="module", autouse=True)
 def _setup_module():
-    """模块级 setup: 切到临时 workspace + init_db 建表"""
-    from cycling_coach.config import config as cfg
-    from cycling_coach.data.sqlite.database import (
-        init_db, engine, Base,
-    )
-    from cycling_coach.data.sqlite import models  # noqa: F401 register tables
-    # 重新指向临时 workspace
-    cfg.settings.workspace_dir = str(TMP)
-    # 重建 engine (指向新 db file)
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-    new_engine = create_engine(
-        f"sqlite:///{TMP}/cycling_coach.sqlite",
-        connect_args={"check_same_thread": False},
-    )
-    cfg.engine = new_engine  # type: ignore[attr-defined]
-    Base.metadata.create_all(new_engine)
+    """模块级 setup: 真正重绑 engine 到临时 DB + 建表"""
+    from tests.conftest import use_temp_db
+    use_temp_db("chat_v076")
     yield
-    # teardown: 不删 tmp, pytest tmp_path 自动收
 
 
 @pytest.fixture()

@@ -561,7 +561,7 @@ def ensure_venv(py: str) -> Path:
 
 def install_backend(py_bin: Path) -> None:
     """V0.3.3 修复:用相对路径 "requirements.txt" 避免路径含空格问题"""
-    info("安装后端依赖 (FastAPI / uvicorn / pydantic / fitparse / numpy / pandas / scipy ...)...")
+    info("安装后端依赖 (FastAPI / uvicorn / pydantic / fitparse / numpy / pandas / joblib ...)...")
     env = os.environ.copy()
     env["PIP_INDEX_URL"] = "https://pypi.tuna.tsinghua.edu.cn/simple"
     env["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"

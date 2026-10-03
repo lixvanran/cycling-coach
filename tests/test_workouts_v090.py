@@ -25,18 +25,8 @@ os.environ["WORKSPACE_DIR"] = str(TMP)
 
 @pytest.fixture(scope="module", autouse=True)
 def _setup_module():
-    from cycling_coach.config import config as cfg
-    from cycling_coach.data.sqlite.database import init_db, Base
-    from cycling_coach.data.sqlite import models  # noqa: F401
-    cfg.settings.workspace_dir = str(TMP)
-    from sqlalchemy import create_engine
-    new_engine = create_engine(
-        f"sqlite:///{TMP}/cycling_coach.sqlite",
-        connect_args={"check_same_thread": False},
-    )
-    cfg.engine = new_engine  # type: ignore[attr-defined]
-    Base.metadata.create_all(new_engine)
-    init_db()
+    from tests.conftest import use_temp_db
+    use_temp_db("workouts_v090")
     yield
 
 

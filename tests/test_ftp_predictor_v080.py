@@ -38,32 +38,21 @@ EXISTING_VERSIONS = [
 
 @pytest.fixture(scope="module", autouse=True)
 def _setup_module():
-    """模块级 setup: 切到临时 workspace + 重建 engine + init_db + seed
+    """模块级 setup: 重绑 engine 到临时 DB + 建表 + seed
 
     V0.8.0: workspace_dir 用实际 workspace (因为 model 文件在
-    workspace/models/ftp_predictor/ 下, 不能在 temp 里)
+    workspace/models/ftp_predictor/ 下, 不能在 temp 里) —
+    所以 use_temp_db 之后要把 workspace_dir 改回实际路径。
+
+    V0.9.0: 改用 database.rebind_engine() (原来那套 `cfg.engine = new_engine`
+    是死代码, 没人读 config.engine)。
     """
+    from tests.conftest import use_temp_db
+    use_temp_db("ftp_v080")
+
+    # model 路径相对于实际 workspace, 所以 seed 前先指回去
     from cycling_coach.config import config as cfg
-    from cycling_coach.data.sqlite.database import Base
-    from cycling_coach.data.sqlite import models  # noqa: F401
-    from sqlalchemy import create_engine
-
-    # 用项目的实际 workspace (因为 model 路径相对于此)
-    actual_workspace = Path("workspace").resolve()
-    cfg.settings.workspace_dir = str(actual_workspace)
-    new_engine = create_engine(
-        f"sqlite:///{TMP}/cycling_coach.sqlite",
-        connect_args={"check_same_thread": False},
-    )
-    cfg.engine = new_engine
-    Base.metadata.create_all(new_engine)
-
-    from cycling_coach.data.sqlite.database import SessionLocal as _SL
-    _SL.configure(bind=new_engine)
-
-    from cycling_coach.data.sqlite.database import _auto_migrate, _ensure_indexes
-    _auto_migrate()
-    _ensure_indexes()
+    cfg.settings.workspace_dir = str(Path("workspace").resolve())
 
     # seed
     from cycling_coach.data.sqlite.database import SessionLocal
@@ -284,7 +273,13 @@ def _register_real_model(db_session, version=None):
 
 
 def test_conformal_interval(db_session):
-    """Conformal 校准区间 (P10/P50/P90)"""
+    """Conformal 校准区间 (P10/P50/P90)
+
+    需要真实的 ftp-predictor 模型产物 (workspace/models/ftp_predictor/<ver>/best_model.joblib)。
+    该产物不入 git (体积大), 所以没模型的机器上必须 skip 而不是 fail。
+    """
+    if not EXISTING_VERSIONS:
+        pytest.skip("workspace/models/ftp_predictor/ 下没有模型产物, 跳过")
     from cycling_coach.core.ml.registry import ModelRegistry
 
     _register_real_model(db_session)

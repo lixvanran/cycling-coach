@@ -34,20 +34,13 @@ os.environ["WORKSPACE_DIR"] = str(TMP)
 
 @pytest.fixture(scope="module", autouse=True)
 def _setup_module():
-    """模块级 setup: 切到临时 workspace + 重建 engine + init_db"""
-    from cycling_coach.config import config as cfg
-    from cycling_coach.data.sqlite.database import Base, SessionLocal
-    from cycling_coach.data.sqlite import models  # noqa: F401
-    from sqlalchemy import create_engine
+    """模块级 setup: 重绑 engine 到临时 DB + 建表
 
-    cfg.settings.workspace_dir = str(TMP)
-    new_engine = create_engine(
-        f"sqlite:///{TMP}/cycling_coach.sqlite",
-        connect_args={"check_same_thread": False},
-    )
-    cfg.engine = new_engine
-    Base.metadata.create_all(new_engine)
-    SessionLocal.configure(bind=new_engine)
+    V0.9.0: 改用 database.rebind_engine() (旧的 `cfg.engine = new_engine`
+    是死代码 — 没人读 config.engine, 导致跟其他测试文件共用真实 DB)。
+    """
+    from tests.conftest import use_temp_db
+    use_temp_db("services_v080")
     yield
 
 
