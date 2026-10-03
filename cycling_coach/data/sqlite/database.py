@@ -64,6 +64,8 @@ _ALLOWED_TABLES: set[str] = {
     "ml_model_meta",
     # V0.8.2 B1-3: 阶段周模板
     "phase_workouts",
+    # V0.8.3.1 P0: 加 athlete_id 列 (解决 phase_apply 创建的 planned 没有归属)
+    "planned_workouts",
 }
 
 
@@ -96,6 +98,10 @@ _TABLE_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "training_phases": [
         ("race_type", "VARCHAR(32)"),  # V0.7 比赛类型 TT/road_race/stage_race/gran_fondo/crit/hill_climb/other
         ("race_priority", "VARCHAR(16)"),  # V0.7 优先级 A/B/C
+    ],
+    # V0.8.3.1 P0: planned_workouts 加 athlete_id (老库 NULL 没关系, 新行必填)
+    "planned_workouts": [
+        ("athlete_id", "INTEGER REFERENCES athletes(id)"),
     ],
 }
 
@@ -189,6 +195,8 @@ def _ensure_indexes() -> None:
         "CREATE INDEX IF NOT EXISTS ix_activities_normalized_power ON activities(normalized_power)",
         "CREATE INDEX IF NOT EXISTS ix_act_athlete_start ON activities(athlete_id, start_time)",
         "CREATE INDEX IF NOT EXISTS ix_daily_metrics_athlete_date ON daily_metrics(athlete_id, date)",
+        # V0.8.3.1 P0: planned_workouts 复合索引 (athlete + date 用于日历视图)
+        "CREATE INDEX IF NOT EXISTS ix_planned_athlete_date ON planned_workouts(athlete_id, scheduled_date)",
     ]
     with engine.connect() as conn:
         for sql in _indexes:

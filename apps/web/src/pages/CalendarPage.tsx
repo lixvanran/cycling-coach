@@ -24,8 +24,8 @@ import { useNavigate } from "react-router-dom";
 const INTENT_COLORS: Record<WorkoutIntent, { bg: string; border: string; text: string; light: string; ring: string }> = {
   recovery:    { bg: "bg-status-info",    border: "border-accent-primary/60",    text: "text-white",     light: "bg-status-info" },
   endurance:   { bg: "bg-status-success", border: "border-accent-success", text: "text-white",     light: "bg-status-success" },
-  tempo:       { bg: "bg-status-warning0",  border: "border-accent-warning/60",  text: "text-white",     light: "bg-status-warning" },
-  threshold:   { bg: "bg-status-warning0", border: "border-orange-500/60", text: "text-white",     light: "bg-status-warning" },
+  tempo:       { bg: "bg-accent-warning",  border: "border-accent-warning/60",  text: "text-white",     light: "bg-status-warning" },
+  threshold:   { bg: "bg-accent-warning", border: "border-orange-500/60", text: "text-white",     light: "bg-status-warning" },
   vo2max:      { bg: "bg-accent-danger",    border: "border-accent-danger",    text: "text-white",     light: "bg-status-danger" },
   race:        { bg: "bg-status-info",border: "border-accent-primary/60",text: "text-white",     light: "bg-status-info" },
 };
@@ -755,7 +755,7 @@ function EditPlannedPopover(props: {
               { k: "planned", l: "已计划", c: "bg-bg-subtle text-text-muted" },
               { k: "done", l: "完成", c: "bg-status-success text-white" },
               { k: "skipped", l: "跳过", c: "bg-bg-subtle text-text-muted" },
-              { k: "moved", l: "改期", c: "bg-status-warning0 text-white" },
+              { k: "moved", l: "改期", c: "bg-accent-warning text-white" },
             ] as const).map((s) => (
               <button
                 key={s.k}

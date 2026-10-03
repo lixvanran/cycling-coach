@@ -9,6 +9,16 @@
 // 2. 平台能力 detect + 软失败: 不支持就 fallback, 不抛错
 // 3. 接口稳定: 上层 (page/component) 只调 platform.cap.*, 不直接判断环境
 // 4. desktop 集成点集中在 1 个文件 (platform.ts), 改 1 处即可切换实现
+//
+// V0.8.3.1 P1: 当前 web 模式只用了 useAppEnv() (App.tsx:13), 返回 "web" 是 no-op
+//   暂保留是因为:
+//   - desktop roadmap (V0.8.4 候选): Tauri 打包, 单 .exe 安装
+//   - 1 个 file 就把 capability 全部 expose, 改 1 处可切实现
+//   - 删了的话等真做 desktop 时要重新设计抽象层
+//
+// 不需要的 cleanup:
+//   - 如果 V0.9 之前 desktop 不开始做, 整个文件应该删掉
+//   - 截至 V0.8.3.1 此文件与现有 web 代码解耦, 没产生 runtime overhead
 
 // =============== 类型定义 ===============
 

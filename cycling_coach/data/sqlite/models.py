@@ -204,10 +204,18 @@ class PlannedWorkout(Base):
 
     可以引用 Workout(结构化课程),也可以只是一个简易标题。
     实际执行后可关联到 Activity(自动匹配或手动关联)。
+
+    V0.8.3.1 P0: 加 athlete_id 列 + 复合索引
+    - 之前依赖 period_id (PlanPeriod) 间接归属,但 apply_phase_to_calendar 不挂 period
+    - 直接归属 athlete,后续 query 不用绕
     """
     __tablename__ = "planned_workouts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # V0.8.3.1 P0: athlete_id 必填 (新行写时强制设; 旧行 NULL — 见下方迁移注释)
+    athlete_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("athletes.id"), index=True, nullable=True,
+    )
     period_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("plan_periods.id"), index=True, nullable=True,
     )

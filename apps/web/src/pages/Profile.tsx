@@ -225,7 +225,7 @@ export function Profile() {
                     }`}
                   />
                   {isDirty && (
-                    <span className="absolute right-2 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-status-warning0" />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-accent-warning" />
                   )}
                 </div>
               </div>

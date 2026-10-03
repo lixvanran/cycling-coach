@@ -2,6 +2,8 @@
 from __future__ import annotations
 import logging
 from datetime import date as _date, datetime, timedelta
+# V0.8.3.1 P1: 统一 UTC naive 时间戳
+from cycling_coach.core.time_utils import utcnow_naive
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -94,7 +96,7 @@ def _try_auto_link(db: Session, planned: PlannedWorkout) -> bool:
 
     planned.actual_activity_id = best.id
     planned.status = "done"
-    planned.completed_at = datetime.utcnow()
+    planned.completed_at = utcnow_naive()
     logger.info(
         f"自动关联: planned#{planned.id} ({planned.scheduled_date}) → activity#{best.id}"
     )
@@ -213,7 +215,13 @@ def list_planned(
     db: Session = Depends(get_db),
 ):
     """列出日期范围内的所有计划课(列表视图)"""
-    stmt = select(PlannedWorkout).order_by(PlannedWorkout.scheduled_date.asc())
+    athlete = profile_store.get_or_create_athlete(db)
+    # V0.8.3.1 P0: 按 athlete 过滤 (之前不传 athlete 泄露所有用户的 planned)
+    stmt = (
+        select(PlannedWorkout)
+        .where(PlannedWorkout.athlete_id == athlete.id)
+        .order_by(PlannedWorkout.scheduled_date.asc())
+    )
     if start:
         stmt = stmt.where(PlannedWorkout.scheduled_date >= start)
     if end:
@@ -232,6 +240,7 @@ def create_planned(payload: PlannedCreate, db: Session = Depends(get_db)):
         if not period or period.athlete_id != athlete.id:
             raise HTTPException(400, "plan_period 不存在或不属于本 athlete")
     planned = PlannedWorkout(
+        athlete_id=athlete.id,  # V0.8.3.1 P0: 显式归属
         scheduled_date=payload.scheduled_date,
         title=payload.title,
         intent=payload.intent,
@@ -255,8 +264,10 @@ def update_planned(
     planned_id: int, payload: PlannedUpdate, db: Session = Depends(get_db)
 ):
     """更新单次计划课"""
+    athlete = profile_store.get_or_create_athlete(db)
     p = db.get(PlannedWorkout, planned_id)
-    if not p:
+    # V0.8.3.1 P0: IDOR 防护
+    if not p or p.athlete_id != athlete.id:
         raise HTTPException(404, "计划课不存在")
     for k, v in payload.model_dump(exclude_unset=True).items():
         setattr(p, k, v)
@@ -268,8 +279,10 @@ def update_planned(
 @router.delete("/planned/{planned_id}")
 def delete_planned(planned_id: int, db: Session = Depends(get_db)):
     """删除单次计划课"""
+    athlete = profile_store.get_or_create_athlete(db)
     p = db.get(PlannedWorkout, planned_id)
-    if not p:
+    # V0.8.3.1 P0: IDOR 防护
+    if not p or p.athlete_id != athlete.id:
         raise HTTPException(404, "计划课不存在")
     db.delete(p)
     db.commit()
@@ -281,15 +294,17 @@ def link_planned_to_activity(
     planned_id: int, activity_id: int, db: Session = Depends(get_db)
 ):
     """手动把计划课关联到真实活动"""
+    athlete = profile_store.get_or_create_athlete(db)
     p = db.get(PlannedWorkout, planned_id)
-    if not p:
+    # V0.8.3.1 P0: IDOR 防护
+    if not p or p.athlete_id != athlete.id:
         raise HTTPException(404, "计划课不存在")
     a = db.get(Activity, activity_id)
-    if not a:
+    if not a or a.athlete_id != athlete.id:
         raise HTTPException(404, "活动不存在")
     p.actual_activity_id = a.id
     p.status = "done"
-    p.completed_at = datetime.utcnow()
+    p.completed_at = utcnow_naive()
     db.commit()
     db.refresh(p)
     return _serialize_planned(p)
@@ -298,8 +313,10 @@ def link_planned_to_activity(
 @router.post("/planned/{planned_id}/unlink")
 def unlink_planned(planned_id: int, db: Session = Depends(get_db)):
     """解除关联(回到 planned 状态)"""
+    athlete = profile_store.get_or_create_athlete(db)
     p = db.get(PlannedWorkout, planned_id)
-    if not p:
+    # V0.8.3.1 P0: IDOR 防护
+    if not p or p.athlete_id != athlete.id:
         raise HTTPException(404, "计划课不存在")
     p.actual_activity_id = None
     p.status = "planned"

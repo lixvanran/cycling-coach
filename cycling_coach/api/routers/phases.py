@@ -19,6 +19,8 @@ from sqlalchemy.orm import Session
 from cycling_coach.data.sqlite.database import get_db
 from cycling_coach.data.sqlite.models import TrainingPhase, Activity, PhaseWorkout, PlannedWorkout
 from cycling_coach.core.profile import store as profile_store
+# V0.8.3.1 P1: 统一 UTC naive 时间戳
+from cycling_coach.core.time_utils import utcnow_naive
 
 router = APIRouter(prefix="/api/phases", tags=["phases"])
 
@@ -174,7 +176,7 @@ def create_phase(payload: PhaseCreate, db: Session = Depends(get_db)):
 def current_phase(db: Session = Depends(get_db)):
     """今天的阶段 (None = 无)"""
     athlete = profile_store.get_or_create_athlete(db)
-    now = datetime.utcnow()
+    now = utcnow_naive()
     p = (
         db.query(TrainingPhase)
         .filter(TrainingPhase.athlete_id == athlete.id)
@@ -192,7 +194,7 @@ def current_phase(db: Session = Depends(get_db)):
 def next_race(db: Session = Depends(get_db)):
     """下一个比赛日 (含倒计时)"""
     athlete = profile_store.get_or_create_athlete(db)
-    now = datetime.utcnow()
+    now = utcnow_naive()
     p = (
         db.query(TrainingPhase)
         .filter(TrainingPhase.athlete_id == athlete.id)
@@ -215,8 +217,10 @@ def next_race(db: Session = Depends(get_db)):
 
 @router.patch("/{phase_id}", response_model=PhaseOut)
 def update_phase(phase_id: int, payload: PhaseUpdate, db: Session = Depends(get_db)):
+    athlete = profile_store.get_or_create_athlete(db)
     p = db.get(TrainingPhase, phase_id)
-    if not p:
+    # V0.8.3.1 P0: IDOR 防护 — phase 必须属于当前 athlete
+    if not p or p.athlete_id != athlete.id:
         raise HTTPException(404, f"阶段 {phase_id} 不存在")
     data = payload.model_dump(exclude_unset=True)
     if "phase_type" in data and data["phase_type"] not in PHASE_META:
@@ -234,8 +238,10 @@ def update_phase(phase_id: int, payload: PhaseUpdate, db: Session = Depends(get_
 
 @router.delete("/{phase_id}")
 def delete_phase(phase_id: int, db: Session = Depends(get_db)):
+    athlete = profile_store.get_or_create_athlete(db)
     p = db.get(TrainingPhase, phase_id)
-    if not p:
+    # V0.8.3.1 P0: IDOR 防护
+    if not p or p.athlete_id != athlete.id:
         raise HTTPException(404, f"阶段 {phase_id} 不存在")
     db.delete(p)
     db.commit()
@@ -272,8 +278,10 @@ class PhaseWorkoutOut(BaseModel):
 @router.get("/{phase_id}/workouts", response_model=list[PhaseWorkoutOut])
 def list_phase_workouts(phase_id: int, db: Session = Depends(get_db)):
     """列出阶段的所有周模板(按 week_index, day_of_week 排序)"""
+    athlete = profile_store.get_or_create_athlete(db)
     phase = db.get(TrainingPhase, phase_id)
-    if not phase:
+    # V0.8.3.1 P0: IDOR 防护 — phase 必须属于当前 athlete
+    if not phase or phase.athlete_id != athlete.id:
         raise HTTPException(404, f"阶段 {phase_id} 不存在")
     rows = (
         db.query(PhaseWorkout)
@@ -289,8 +297,10 @@ def add_phase_workout(
     phase_id: int, payload: PhaseWorkoutCreate, db: Session = Depends(get_db)
 ):
     """新增阶段周模板的一个格子"""
+    athlete = profile_store.get_or_create_athlete(db)
     phase = db.get(TrainingPhase, phase_id)
-    if not phase:
+    # V0.8.3.1 P0: IDOR 防护
+    if not phase or phase.athlete_id != athlete.id:
         raise HTTPException(404, f"阶段 {phase_id} 不存在")
     # 校验 workout 存在
     if payload.workout_id is not None:
@@ -330,9 +340,14 @@ def add_phase_workout(
 @router.delete("/{phase_id}/workouts/{pw_id}")
 def delete_phase_workout(phase_id: int, pw_id: int, db: Session = Depends(get_db)):
     """删除阶段周模板"""
+    athlete = profile_store.get_or_create_athlete(db)
     pw = db.get(PhaseWorkout, pw_id)
+    # V0.8.3.1 P0: IDOR 防护 — 同时校验 pw 属于该 phase 且 phase 属于该 athlete
     if not pw or pw.phase_id != phase_id:
         raise HTTPException(404, f"模板 {pw_id} 不属于阶段 {phase_id}")
+    phase = db.get(TrainingPhase, pw.phase_id)
+    if not phase or phase.athlete_id != athlete.id:
+        raise HTTPException(404, f"阶段 {phase_id} 不存在")
     db.delete(pw)
     db.commit()
     return {"ok": True, "id": pw_id}
@@ -359,8 +374,10 @@ def apply_phase_to_calendar(
 
     返回: { ok, applied_count, planned_ids: [int] }
     """
+    athlete = profile_store.get_or_create_athlete(db)
     phase = db.get(TrainingPhase, phase_id)
-    if not phase:
+    # V0.8.3.1 P0: IDOR 防护 — phase 必须属于当前 athlete
+    if not phase or phase.athlete_id != athlete.id:
         raise HTTPException(404, f"阶段 {phase_id} 不存在")
 
     # 1. 校验 start_date
@@ -386,7 +403,6 @@ def apply_phase_to_calendar(
     max_week_index = max(t.week_index for t in templates)
 
     # 4. 对 weeks 范围内的每周, 取出 cycle_week + day_of_week 对应的模板, 写入 PlannedWorkout
-    athlete = profile_store.get_or_create_athlete(db)
     planned_ids: list[int] = []
     from cycling_coach.api.routers.calendar import _try_auto_link
 
@@ -398,6 +414,7 @@ def apply_phase_to_calendar(
             offset_days = (target_week - 1) * 7 + (tpl.day_of_week - 1)
             scheduled = sd + timedelta(days=offset_days)
             pw = PlannedWorkout(
+                athlete_id=athlete.id,  # V0.8.3.1 P0: 显式归属
                 scheduled_date=scheduled,
                 title=tpl.title,
                 intent=tpl.intent,

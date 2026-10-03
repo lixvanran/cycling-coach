@@ -23,6 +23,8 @@ import json
 import logging
 import shutil
 from datetime import datetime
+# V0.8.3.1 P1: 统一 UTC naive 时间戳
+from cycling_coach.core.time_utils import utcnow_naive
 from pathlib import Path
 from typing import Optional, List
 
@@ -440,7 +442,7 @@ async def send_message(
                 rag_sources=rag_sources,
             )
             db.add(asst)
-            s.updated_at = datetime.utcnow()
+            s.updated_at = utcnow_naive()
             db.commit()
             # 推送 sources
             yield f"data: [SOURCES] {json.dumps(rag_sources, ensure_ascii=False)}\n\n"
@@ -518,7 +520,7 @@ async def ai_suggest(
             db.add(asst)
             # 默认 final_strategy = 这次的建议
             s.final_strategy = full_text
-            s.updated_at = datetime.utcnow()
+            s.updated_at = utcnow_naive()
             db.commit()
             yield f"data: [SOURCES] {json.dumps(rag_sources, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"

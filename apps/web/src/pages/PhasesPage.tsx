@@ -39,8 +39,8 @@ import type { TrainingPhase } from "../lib/types";
 const PHASE_COLORS: Record<string, { bg: string; border: string; text: string; bar: string }> = {
   // V0.8.3 B3: TP 老钱风 — 砍 ring, 用 1px 边 (边框表达选中)
   base: { bg: "bg-status-info", border: "border-l-primary", text: "text-accent-primary", bar: "bg-status-info" },
-  build: { bg: "bg-status-warning", border: "border-border", text: "text-accent-warning", bar: "bg-status-warning0" },
-  peak: { bg: "bg-status-danger", border: "border-accent-danger", text: "text-accent-danger", bar: "bg-status-danger0" },
+  build: { bg: "bg-status-warning", border: "border-border", text: "text-accent-warning", bar: "bg-accent-warning" },
+  peak: { bg: "bg-status-danger", border: "border-accent-danger", text: "text-accent-danger", bar: "bg-accent-danger" },
   taper: { bg: "bg-status-success", border: "border-border", text: "text-accent-success", bar: "bg-status-success" },
   recovery: { bg: "bg-bg-subtle", border: "border-slate-300", text: "text-text-secondary", bar: "bg-slate-400" },
   race: { bg: "bg-status-info", border: "border-accent-primary", text: "text-accent-primary", bar: "bg-status-info" },

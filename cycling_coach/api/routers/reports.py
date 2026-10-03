@@ -6,6 +6,8 @@
 from __future__ import annotations
 import logging
 from datetime import datetime
+# V0.8.3.1 P1: 统一 UTC naive 时间戳
+from cycling_coach.core.time_utils import utcnow_naive
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
@@ -41,7 +43,7 @@ def get_weekly_report(
     athlete = profile_store.get_or_create_athlete(db)
     pdf_bytes = generate_weekly_report(db, athlete.id, days=days)
     
-    today = datetime.utcnow().date().isoformat()
+    today = utcnow_naive().date().isoformat()
     filename = f"cycling-coach-weekly-{today}-d{days}.pdf"
     
     return Response(

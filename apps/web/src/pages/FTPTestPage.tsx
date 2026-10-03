@@ -274,8 +274,8 @@ export function FTPTestPage() {
                     className={clsx(
                       "h-full",
                       estimate.confidence > 0.7 ? "bg-status-success" :
-                      estimate.confidence > 0.4 ? "bg-status-warning0" :
-                      "bg-status-danger0"
+                      estimate.confidence > 0.4 ? "bg-accent-warning" :
+                      "bg-accent-danger"
                     )}
                     style={{ width: `${estimate.confidence * 100}%` }}
                   />

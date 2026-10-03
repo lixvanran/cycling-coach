@@ -133,7 +133,7 @@ export function DailyRecommendationCard() {
           {BREAKDOWN_META.map((m) => {
             const v = data.signals_summary.readiness_breakdown?.[m.key] || 0;
             const pct = (v / m.max) * 100;
-            const color = pct >= 70 ? "bg-status-success" : pct >= 40 ? "bg-status-warning0" : "bg-status-danger0";
+            const color = pct >= 70 ? "bg-status-success" : pct >= 40 ? "bg-accent-warning" : "bg-accent-danger";
             return (
               <div key={m.key} className="text-center" title={`${m.label}: ${v}/${m.max} - ${m.desc}`}>
                 <div className="font-medium text-text-secondary">{m.label}</div>

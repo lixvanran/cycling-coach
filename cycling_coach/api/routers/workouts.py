@@ -17,6 +17,7 @@ from sqlalchemy import select, or_, and_
 from sqlalchemy.orm import Session
 
 from cycling_coach.core.profile import store as profile_store
+from cycling_coach.core.time_utils import utcnow_naive
 from cycling_coach.data.sqlite import get_db
 from cycling_coach.data.sqlite.models import Workout, PlannedWorkout, PlanPeriod
 
@@ -509,8 +510,8 @@ def _ensure_system_workouts(db: Session) -> int:
     if existing:
         return 0
     from sqlalchemy import text as _sql_text
-    from datetime import datetime as _dt
-    now = _dt.utcnow().isoformat()
+    # V0.9.0: utcnow_naive 已在文件顶层导入, 这里复用
+    now = utcnow_naive().isoformat()
     count = 0
     for wo in SYSTEM_WORKOUTS:
         db.execute(_sql_text("""
@@ -855,7 +856,7 @@ def export_workout(
             "duration_min": w.duration_min,
             "structure": structure,
             "tags": w.tags or [],
-            "exported_at": datetime.utcnow().isoformat(),
+            "exported_at": utcnow_naive().isoformat(),
             "source": "cycling-coach",
         }, ensure_ascii=False, indent=2)
         media_type = "application/json"

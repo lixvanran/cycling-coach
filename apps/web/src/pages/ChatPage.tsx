@@ -690,7 +690,7 @@ function WorkflowLayout({
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {messages.length === 0 && !showTree ? (
           <div className="h-full flex flex-col items-center justify-center text-center max-w-2xl mx-auto">
-            <div className="w-16 h-16 rounded bg-status-warning0/10 flex items-center justify-center mb-4">
+            <div className="w-16 h-16 rounded bg-accent-warning/10 flex items-center justify-center mb-4">
               <GitBranch size={28} className="text-accent-warning" />
             </div>
             <h2 className="text-lg font-semibold text-text-primary mb-2">

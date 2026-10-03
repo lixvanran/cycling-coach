@@ -1,5 +1,6 @@
 // V0.7.5.4 UX-3: 全局 Toast 替换 alert
 // V0.8.2 UX-25: 加 action 字段支持 undo
+// V0.8.3.1 P1: 砍 backdrop-blur (B3 视觉换皮"严肃克制"风格; backdrop-blur 是"AI 玻璃味")
 // 用法: const toast = useToast();
 //       toast.success("保存成功")
 //       toast.error("失败")
@@ -97,7 +98,7 @@ export function ToastContainer() {
           <div
             key={item.id}
             className={clsx(
-              "pointer-events-auto flex items-center gap-2 px-4 py-2.5 rounded shadow-sm border min-w-[260px] max-w-[480px] backdrop-blur",
+              "pointer-events-auto flex items-center gap-2 px-4 py-2.5 rounded shadow-sm border min-w-[260px] max-w-[480px]",
               COLORS[item.kind]
             )}
             role="status"

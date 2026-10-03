@@ -1,7 +1,7 @@
 """/api/athlete - 运动员画像"""
 from __future__ import annotations
 import logging
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -34,14 +34,16 @@ class AthleteUpdate(BaseModel):
     - 显式传 None 表示"清空该字段"
     - 不传该字段表示"不动"
     Pydantic 默认是"None 等同于未传", 所以用 model_fields_set 区分
+
+    V0.8.3.1 P1: 加范围校验, 防前端误传 (e.g. ftp=999999, weight=-50)
     """
-    name: str | None = None
-    ftp: int | None = None
-    ftp_estimated: int | None = None  # V0.8.3 B4 fix: 加进 schema, 否则前端改完被静默 ignore
-    max_hr: int | None = None
-    lthr: int | None = None
-    weight_kg: float | None = None
-    height_cm: float | None = None
+    name: str | None = Field(None, max_length=64)
+    ftp: int | None = Field(None, ge=0, le=2000)
+    ftp_estimated: int | None = Field(None, ge=0, le=2000)
+    max_hr: int | None = Field(None, ge=20, le=250)
+    lthr: int | None = Field(None, ge=20, le=240)
+    weight_kg: float | None = Field(None, ge=20, le=300)
+    height_cm: float | None = Field(None, ge=50, le=300)
 
 
 @router.get("", response_model=AthleteView)
@@ -72,8 +74,8 @@ def update_athlete(req: AthleteUpdate, db: Session = Depends(get_db)):
         if "name" in explicit_fields and not (explicit_fields["name"] or "").strip():
             explicit_fields["name"] = "Rider"
         a = profile_store.update_athlete(db, a.id, **explicit_fields)
-    # 重算估算
-    a = profile_builder.refresh_athlete_profile(db, a.id)
+    # V0.8.3.1 P1: 不再每次 PATCH 都触发 FTP 重算 (改个名字都要重算 30 个活动)
+    # 用户想刷新 FTP 估算 → 调 POST /api/athlete/refresh-ftp (前端 "重算 FTP" 按钮已接)
     return get_athlete(db)
 
 

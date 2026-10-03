@@ -22,6 +22,11 @@ import { useToast } from "../components/Toast";
 import { useConfirm, ScheduleModal } from "../components/common";
 import type { Workout, WorkoutGoal, WorkoutStep, StepKind } from "../lib/types";
 import type { Block } from "../lib/builderBlocks";
+// V0.8.3.1 P0: 抽出常量/工具到 lib/builderConstants.ts (page 从 1893 行减到 ~1400)
+import {
+  rid, newStep, blockDuration, fmtTime, fmtBigTime,
+  KIND_COLOR, KIND_LABEL, GOAL_OPTIONS, SUGGESTED_TAGS, QUICK_TEMPLATES,
+} from "../lib/builderConstants";
 
 // =============== 类型 ===============
 // V0.8.3 B1-2: Block 类型已抽到 lib/builderBlocks.ts (ChatMessage 共用), 这里直接复用
@@ -35,137 +40,6 @@ type EditTarget =
   | { type: "loop-part"; blockId: string; part: "work" | "rest" }
   | { type: "meta" }  // 编辑标题/描述/标签
   | null;
-
-// =============== 常量 ===============
-
-// 4 种 kind 配色
-const KIND_COLOR: Record<StepKind, {
-  bg: string; border: string; text: string; ring: string; lightBg: string; accent: string;
-}> = {
-  warmup: {
-    bg: "bg-status-info",
-    border: "border-accent-primary/40",
-    text: "text-accent-primary",
-    ring: "",
-    lightBg: "bg-status-info",
-    accent: "#0ea5e9",
-  },
-  main: {
-    bg: "bg-status-warning0",
-    border: "border-accent-warning",
-    text: "text-accent-warning",
-    ring: "",
-    lightBg: "bg-status-warning",
-    accent: "#f59e0b",
-  },
-  recovery: {
-    bg: "bg-status-success",
-    border: "border-accent-success",
-    text: "text-accent-success",
-    ring: "",
-    lightBg: "bg-status-success",
-    accent: "#10b981",
-  },
-  cooldown: {
-    bg: "bg-slate-400",
-    border: "border-slate-400/40",
-    text: "text-text-secondary",
-    ring: "ring-accent-primary/50",
-    lightBg: "bg-slate-100",
-    accent: "#94a3b8",
-  },
-};
-
-const KIND_LABEL: Record<StepKind, string> = {
-  warmup: "热身",
-  main: "主项",
-  recovery: "恢复",
-  cooldown: "放松",
-};
-
-const GOAL_OPTIONS: { key: WorkoutGoal; label: string; color: string; ring: string; chip: string }[] = [
-  { key: "recovery", label: "恢复", color: "sky", ring: "ring-accent-primary", chip: "bg-status-info text-accent-primary border-accent-primary" },
-  { key: "endurance", label: "耐力", color: "emerald", ring: "ring-emerald-400", chip: "bg-status-success text-accent-success border-border" },
-  { key: "tempo", label: "节奏", color: "amber", ring: "ring-amber-400", chip: "bg-status-warning text-accent-warning border-border" },
-  { key: "threshold", label: "阈值", color: "orange", ring: "ring-accent-warning", chip: "bg-status-warning text-accent-warning border-border" },
-  { key: "vo2max", label: "VO2", color: "red", ring: "ring-accent-danger", chip: "bg-status-danger text-accent-danger border-accent-danger" },
-  { key: "race", label: "比赛", color: "fuchsia", ring: "ring-accent-primary", chip: "bg-status-info text-accent-primary border-accent-primary" },
-];
-
-const SUGGESTED_TAGS = ["z1", "z2", "z3", "sweet-spot", "vo2", "intervals", "climbing", "long", "race", "recovery", "test", "endurance", "threshold"];
-
-const QUICK_TEMPLATES: {
-  key: string; label: string; icon: any; color: string; goal: WorkoutGoal; blocks: () => Block[];
-}[] = [
-  {
-    key: "vo2", label: "VO2max 5×3min", icon: Flame, color: "bg-accent-danger", goal: "vo2max",
-    blocks: () => [
-      { id: rid(), kind: "single", step: { kind: "warmup", duration_s: 900, power_pct_ftp: 50, label: "热身" } },
-      { id: rid(), kind: "loop", reps: 5, label: "VO2 5×3min",
-        work: { kind: "main", duration_s: 180, power_pct_ftp: 120, cadence_rpm: 92, label: "全力" },
-        rest: { kind: "recovery", duration_s: 180, power_pct_ftp: 50, label: "间歇" } },
-      { id: rid(), kind: "single", step: { kind: "cooldown", duration_s: 600, power_pct_ftp: 45, label: "冷身" } },
-    ],
-  },
-  {
-    key: "threshold", label: "阈值 2×12min", icon: Mountain, color: "bg-accent-warning", goal: "threshold",
-    blocks: () => [
-      { id: rid(), kind: "single", step: { kind: "warmup", duration_s: 900, power_pct_ftp: 50, label: "热身" } },
-      { id: rid(), kind: "loop", reps: 2, label: "阈值 2×12min",
-        work: { kind: "main", duration_s: 720, power_pct_ftp: 95, cadence_rpm: 90, label: "阈值" },
-        rest: { kind: "recovery", duration_s: 720, power_pct_ftp: 50, label: "恢复" } },
-      { id: rid(), kind: "single", step: { kind: "cooldown", duration_s: 600, power_pct_ftp: 45, label: "冷身" } },
-    ],
-  },
-  {
-    key: "tempo", label: "节奏 2×20min", icon: Activity, color: "bg-accent-warning", goal: "tempo",
-    blocks: () => [
-      { id: rid(), kind: "single", step: { kind: "warmup", duration_s: 900, power_pct_ftp: 50, label: "热身" } },
-      { id: rid(), kind: "loop", reps: 2, label: "节奏 2×20min",
-        work: { kind: "main", duration_s: 1200, power_pct_ftp: 88, cadence_rpm: 88, label: "甜蜜点" },
-        rest: { kind: "recovery", duration_s: 600, power_pct_ftp: 55, label: "间歇" } },
-      { id: rid(), kind: "single", step: { kind: "cooldown", duration_s: 600, power_pct_ftp: 45, label: "冷身" } },
-    ],
-  },
-  {
-    key: "recovery", label: "恢复 30min", icon: Zap, color: "bg-accent-cyan", goal: "recovery",
-    blocks: () => [
-      { id: rid(), kind: "single", step: { kind: "main", duration_s: 1800, power_pct_ftp: 50, cadence_rpm: 85, label: "轻松踩" } },
-    ],
-  },
-];
-
-// 工具函数
-function rid() {
-  return Math.random().toString(36).slice(2, 10);
-}
-function newStep(kind: StepKind = "main"): WorkoutStep {
-  return {
-    kind,
-    duration_s: 600,
-    power_pct_ftp: kind === "warmup" ? 50 : kind === "cooldown" ? 45 : 75,
-    cadence_rpm: 88,
-    label: "",
-    repeat: 1,
-  };
-}
-function blockDuration(b: Block): number {
-  if (b.kind === "single") return b.step.duration_s;
-  return (b.work.duration_s + (b.rest?.duration_s ?? 0)) * b.reps;
-}
-function fmtTime(s: number): string {
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  const sec = s % 60;
-  if (sec === 0) return `${m}min`;
-  return `${m}:${String(sec).padStart(2, "0")}`;
-}
-function fmtBigTime(s: number): string {
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  if (h > 0) return `${h}h${String(m).padStart(2, "0")}m`;
-  return `${m}min`;
-}
 
 // =============== 主体 ===============
 export function BuilderPage() {
@@ -462,7 +336,14 @@ export function BuilderPage() {
     setEditTarget({ type: "block", blockId: newBlock.id });
   }
 
-  function applyTemplate(t: typeof QUICK_TEMPLATES[0]) {
+  // V0.8.3.1 P0: QUICK_TEMPLATES 没有 icon 字段 (lib/builderConstants.ts 不引 lucide 防循环)
+  // 在这里组装: spec + icon → 用 applyTemplate
+  const QUICK_TEMPLATES_WITH_ICONS = QUICK_TEMPLATES.map((t, i) => ({
+    ...t,
+    icon: [Flame, Mountain, Activity, Zap][i] ?? Flame,
+  }));
+
+  function applyTemplate(t: typeof QUICK_TEMPLATES_WITH_ICONS[0]) {
     const newBlocks = [...blocks, ...t.blocks()];
     pushHistory(newBlocks);
     setGoal(t.goal);
@@ -1053,7 +934,7 @@ function BlockLibrary(props: {
           draggable
           onDragStart={(e) => { e.dataTransfer.setData("text/plain", "loop"); props.onDragStartNew(e); }}
           onDragEnd={props.onDragEnd}
-          onClick={() => props.applyTemplate(QUICK_TEMPLATES[0])}
+          onClick={() => props.applyTemplate(QUICK_TEMPLATES_WITH_ICONS[0])}
           className="w-full px-3 py-2.5 rounded text-xs font-semibold cursor-grab active:cursor-grabbing transition-all hover:shadow-md bg-accent-danger text-white border-2 border-accent-warning flex items-center justify-center gap-1.5"
           title="点击应用 VO2 5×3min 模板 / 或拖入"
         >
@@ -1070,7 +951,7 @@ function BlockLibrary(props: {
           快速模板 (一键填充)
         </div>
         <div className="space-y-1.5">
-          {QUICK_TEMPLATES.map((t) => {
+          {QUICK_TEMPLATES_WITH_ICONS.map((t) => {
             const I = t.icon;
             return (
               <button
@@ -1378,7 +1259,7 @@ function LoopBlockCard(props: any) {
           className={clsx("flex-1 flex items-center gap-2 px-3 py-2 border-r border-border transition",
             props.isPartSelected === "work" ? "bg-status-warning" : "hover:bg-status-warning/50")}
         >
-          <span className="px-1.5 py-0.5 rounded text-[10px] bg-status-warning0 text-white font-bold">主项</span>
+          <span className="px-1.5 py-0.5 rounded text-[10px] bg-accent-warning text-white font-bold">主项</span>
           <span className="flex-1 text-xs text-left truncate">{block.work.label || "(未命名)"}</span>
           <span className="text-[10px] text-text-muted">
             {fmtTime(block.work.duration_s)} · {block.work.power_pct_ftp ?? "?"}%FTP

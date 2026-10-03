@@ -42,19 +42,19 @@ const GOAL_COLOR: Record<
     bg: "bg-status-success/15",
     text: "text-accent-success",
     ring: "",
-    chip: "bg-status-success/20 text-emerald-200",
+    chip: "bg-status-success/20 text-accent-success",
   },
   tempo: {
-    bg: "bg-status-warning0/15",
+    bg: "bg-accent-warning/15",
     text: "text-accent-warning",
     ring: "",
-    chip: "bg-status-warning0/20 text-amber-200",
+    chip: "bg-accent-warning/20 text-accent-warning",
   },
   threshold: {
-    bg: "bg-status-warning0/15",
+    bg: "bg-accent-warning/15",
     text: "text-accent-warning",
     ring: "",
-    chip: "bg-status-warning0/20 text-orange-200",
+    chip: "bg-accent-warning/20 text-accent-warning",
   },
   vo2max: {
     bg: "bg-accent-danger/15",
@@ -830,7 +830,7 @@ function WorkoutDetailDrawer({
                       className={clsx(
                         "w-12 text-[10px] text-center px-1.5 py-0.5 rounded",
                         s.kind === "warmup" && "bg-status-info text-accent-primary",
-                        s.kind === "main" && "bg-status-warning0/20 text-accent-warning",
+                        s.kind === "main" && "bg-accent-warning/20 text-accent-warning",
                         s.kind === "recovery" && "bg-status-success/20 text-accent-success",
                         s.kind === "cooldown" && "bg-bg-subtle0/30 text-text-muted"
                       )}
@@ -914,7 +914,7 @@ function WorkoutDetailDrawer({
           </button>
           <button
             onClick={() => downloadExport(workout.id, "erg", workout.title)}
-            className="flex-1 px-2 py-2 bg-status-warning0/10 border border-accent-warning/30 text-accent-warning rounded text-xs hover:bg-status-warning0/20 font-medium"
+            className="flex-1 px-2 py-2 bg-accent-warning/10 border border-accent-warning/30 text-accent-warning rounded text-xs hover:bg-accent-warning/20 font-medium"
             title="训练台通用 (CompuTrainer / TrainerRoad)"
           >
             <Download className="w-3 h-3 inline mr-1" />

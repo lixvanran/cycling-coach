@@ -206,7 +206,7 @@ function SidebarStatus() {
   return (
     <div className="px-4 py-2 border-t border-border">
       <div className="text-[10px] text-text-muted flex items-center gap-1.5">
-        <span className={clsx("w-1.5 h-1.5 rounded-full", mock ? "bg-status-warning0" : "bg-status-success")} />
+        <span className={clsx("w-1.5 h-1.5 rounded-full", mock ? "bg-accent-warning" : "bg-status-success")} />
         {mock ? "Mock 模式 (未配 API key)" : "AI 在线"}
       </div>
     </div>

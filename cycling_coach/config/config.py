@@ -56,6 +56,17 @@ class Settings(BaseSettings):
     ml_use_onnx: bool = False              # 桌面模式 True(轻量 ONNX)
     ml_conformal_coverage: float = 0.8     # 80% 预测区间
 
+    # V0.9.0: Inbox folder watcher (Garmin/FIT 自动同步 — TP 替代品核心闭环)
+    # 用户从 Garmin Connect / Wahoo / Zwift 导出 FIT 丢进 inbox, 自动入库
+    inbox_enabled: bool = True             # False = 关闭 (不影响其他功能)
+    inbox_dir: str = ""                    # 空 = 自动按平台推导 (~/.local/share/cycling-coach/inbox 等)
+    inbox_debounce_seconds: float = 2.0   # 文件大小稳定后多久处理 (避免读到一半)
+    inbox_stable_polls: int = 3            # 连续 N 次大小不变才算"写完"
+    inbox_poll_interval_ms: int = 200      # 大小检查间隔 (ms)
+    inbox_max_file_mb: int = 50            # 大于此 MB 跳过 (防异常)
+    inbox_processed_registry: str = ""     # 空 = 默认 ~/.local/share/cycling-coach/processed.json
+    inbox_extensions: str = ".fit,.tcx,.csv"  # 接受的文件扩展名 (逗号分隔)
+
     # V0.8.0: multi-mind 集成 (HTTP 调独立进程, 不 import 代码)
     # 跑: ./tools/start_multi_mind.sh (默认 :8766)
     # 关: ./tools/stop_multi_mind.sh

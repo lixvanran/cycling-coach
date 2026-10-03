@@ -66,6 +66,13 @@ def _handle_sigterm(signum, frame) -> None:
 
 
 def main() -> None:
+    # V0.9.0: 子命令分发 — `python -m cycling_coach folder-watch ...`
+    if len(sys.argv) >= 2 and sys.argv[1] == "folder-watch":
+        from cycling_coach.cli.folder_watch import main as folder_watch_main
+        # 去掉 'folder-watch' 让 argparse 看到正确的 subcommand
+        sys.argv = [sys.argv[0]] + sys.argv[2:]
+        sys.exit(folder_watch_main())
+
     host = getattr(settings, "backend_host", "127.0.0.1")
     port = int(getattr(settings, "backend_port", 8765))
     log_level = getattr(settings, "log_level", "info")
