@@ -95,19 +95,29 @@ def pa_hr_decoupling(activity: Activity) -> dict:
     - 需要功率 + 心率同步数据
     - 高强度间歇不适用 (功率波动大)
 
-    返回:
+    返回 (V0.9.0 订正: 下面这份 docstring 原先写的是扁平的
+    first_half_ef / second_half_ef, 但代码实际返回的是**嵌套结构**。
+    我照着这份 docstring 写测试, 写了 `res.get("ef1")` —— 恒为 None,
+    断言一次都没执行, 测试却一直是绿的。错文档比没文档危险。):
     {
+      "applicable": true,          # >= 60min 且 功率+HR 数据齐全
+      "duration_s": 3600,
       "decoupling_pct": 8.5,
-      "first_half_ef": 1.42,      # 前半 EF
-      "second_half_ef": 1.30,     # 后半 EF
-      "first_half_power": 220,    # 前半平均功率
-      "first_half_hr": 155,       # 前半平均心率
-      "second_half_power": 215,
-      "second_half_hr": 165,
-      "interpretation": "normal",  # excellent / normal / high / warning
-      "duration_s": 3600,         # 活动时长 (秒)
-      "applicable": true,         # 是否适用 (>= 60min 且 功率+HR 数据)
+      "first_half": {
+        "duration_s": 1800, "avg_power": 220, "avg_hr": 155,
+        "efficiency_factor": 1.42,   # EF = 平均功率 / 平均心率
+      },
+      "second_half": {
+        "duration_s": 1800, "avg_power": 215, "avg_hr": 165,
+        "efficiency_factor": 1.30,
+      },
+      "interpretation": "normal",    # excellent / normal / high / warning
+      "interpretation_label": "正常",
+      "color": "yellow",
     }
+
+    注意 EF 的真实量级: 骑行 EF = 功率(W) / 心率(bpm), 通常 1.3~1.8。
+    0.75~1.10 那是跑步的量级, 拿它当骑行断言会永远失败或永远不执行。
     """
     samples = activity.samples
     if not samples:

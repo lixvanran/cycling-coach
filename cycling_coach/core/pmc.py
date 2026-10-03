@@ -129,15 +129,37 @@ def recompute_pmc(
 
     Args:
         athlete_id: 运动员 id
-        anchor_date: 重算起点(默认最早活动日;新增活动时传 activity.start_time.date())
+        anchor_date: **只重写这一天及之后的行**; 但计算所需的活动仍然全量加载
         backfill_days: 向前回溯天数(默认 365,够 PMC 看趋势)
 
     Returns: upsert 的行数
+
+    ⚠️ V0.9.0 修掉的严重 bug —— anchor_date 不能用来裁剪输入数据
+    ------------------------------------------------------------------
+    原来这里写的是:
+
+        if anchor_date:
+            stmt = stmt.where(Activity.start_time >= anchor_date)
+        ...
+        start = min(earliest, latest - timedelta(days=backfill_days))
+
+    后果: 增量导入新训练时, 只有 anchor 当天之后的活动参与聚合, 前面
+    (up to 365 天) 全部被当作 TSS=0, EWMA 从"全是零"开始算, 然后
+    **把之前算对的 daily_metrics 行全部覆盖掉**。
+
+    实测: 导入 45 次训练后, 366 行 daily_metrics 里 365 行 TSS=0,
+    CTL 变成 0.3 —— 一个认真训练了 8 周的人, 体能值被告知是 0.3。
+    手动全量重算一次, CTL 立刻回到 56.1。
+
+    这不是"新用户没数据"的小问题, 是**每个用户每天导入训练都会中招**:
+    早上骑完导入, 应用就告诉你体能清零了。
+
+    正确做法: anchor_date 只控制"写回哪些行", 不控制"读哪些活动"。
+    EWMA 必须从真实历史起算, 否则 seed 值本身就是错的。
     """
-    # 1. 找所有活动
+    # 1. 找所有活动 —— 无论有没有 anchor_date, 都必须全量加载。
+    #    EWMA 是递推的, seed 错了后面全错。
     stmt = select(Activity).where(Activity.athlete_id == athlete_id)
-    if anchor_date:
-        stmt = stmt.where(Activity.start_time >= datetime.combine(anchor_date, datetime.min.time()))
     activities = list(db.execute(stmt).scalars())
 
     if not activities:
@@ -160,14 +182,18 @@ def recompute_pmc(
         series.append((cur, bucket["tss"], bucket["count"], bucket["duration_s"]))
         cur += timedelta(days=1)
 
-    # 4. 算 PMC
+    # 4. 算 PMC (基于**全量**历史)
     daily_tss = [s[1] for s in series]
     ctl_list, atl_list = compute_ctl_atl(daily_tss)
     ramp_list = compute_ramp_rate(ctl_list)
 
     # 5. upsert
+    #    anchor_date 只用于跳过"不需要重写"的早期行 —— 省 IO, 但不碰计算。
+    skip_before = anchor_date if anchor_date and anchor_date > start else None
     upserted = 0
     for i, (d, tss, count, dur) in enumerate(series):
+        if skip_before is not None and d < skip_before:
+            continue
         ctl = ctl_list[i]
         atl = atl_list[i]
         tsb = ctl - atl

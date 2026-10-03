@@ -172,9 +172,39 @@ def _build_calendar_month(
     total_planned = sum(len(v) for v in planned_by_day.values())
     done_count = sum(1 for p in planned_rows if p.status == "done")
     skipped_count = sum(1 for p in planned_rows if p.status == "skipped")
-    completion_rate = (done_count / total_planned * 100) if total_planned else 0.0
+
+    # V0.9.0: 完成率口径。
+    # 原来分母是 total_planned, 把"主动跳过"也算进去了 —— 但用户主动
+    # 决定不练一节恢复骑, 不该被算成"没完成"。演示数据里 30 计划 / 23 完成 /
+    # 4 跳过, 旧口径报 76.7%, 排除跳过后是 88.5%, 差了 12 个百分点。
+    # TP 一类的训练工具都是把 skip 排除的, 否则用户会为了刷分把不想练的课
+    # 标成 done, 数据就失去意义了。
+    #
+    # 两种都返回: 排除跳过的是"完成率"(给用户看的),
+    # 含跳过的是"履约率"(用户想看自己有多听话时用)。
+    countable = total_planned - skipped_count
+    completion_rate = (done_count / countable * 100) if countable else 0.0
+    adherence_rate = (done_count / total_planned * 100) if total_planned else 0.0
+
     total_actual_tss = sum((a.metrics or {}).get("tss") or 0 for a in acts)
     total_actual_minutes = sum((a.duration_s or 0) for a in acts) / 60.0
+
+    # V0.9.0: 计划 TSS vs 实际 TSS —— compliance 的核心。
+    # 之前这个接口只告诉用户"完成了几次", 但训练里真正要回答的问题是
+    # "这周我练够了没有"。Roadmap 里这是 P0 空白。
+    total_planned_tss = sum(p.tss_target or 0 for p in planned_rows
+                             if p.status != "skipped")
+    completed_tss = 0
+    for p in planned_rows:
+        if p.status != "done" or not p.actual_activity_id:
+            continue
+        a = next((x for x in acts if x.id == p.actual_activity_id), None)
+        if a is None:
+            continue
+        completed_tss += (a.metrics or {}).get("tss") or 0
+    load_completion = (
+        completed_tss / total_planned_tss * 100 if total_planned_tss else 0.0
+    )
 
     return {
         "year": year,
@@ -188,9 +218,15 @@ def _build_calendar_month(
             "done_count": done_count,
             "skipped_count": skipped_count,
             "completion_rate": round(completion_rate, 1),
+            # 履约率 = 完成 / 全部计划 (含跳过的), 用户想看"我有多听话"时用这个
+            "adherence_rate": round(adherence_rate, 1),
             "actual_activities": len(acts),
             "actual_tss_total": round(total_actual_tss, 0),
             "actual_hours_total": round(total_actual_minutes / 60, 1),
+            # 计划 vs 实际负荷 —— "这周练够了没" 的答案
+            "planned_tss_total": round(total_planned_tss, 0),
+            "completed_tss_total": round(completed_tss, 0),
+            "load_completion": round(load_completion, 1),
         },
     }
 

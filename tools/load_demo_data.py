@@ -1,0 +1,316 @@
+#!/usr/bin/env python3
+"""装载演示训练数据 —— 8 周真实周期化 + 对应课表
+
+## 为什么要这个
+
+1. **用户刚装上时是空的**。空库状态下所有页面都是"暂无数据",
+   用户无法判断这个软件到底好不好用。TP 装上就有示例。
+2. **开发走查必须有真实数据**。空库只能验证"不崩", 验证不了
+   "算得对不对""显示得清楚不清楚""慢不慢"。
+
+## 造的是什么
+
+8 周完整周期化, 不是一个随机堆:
+
+    W1-W2  Base      耐力为主, 低强度为主
+    W3-W4  Build     加入甜点 + 阈值
+    W5     Recovery  大幅降量
+    W6-W7  Build2    阈值 + VO2max
+    W8     Taper      降量 + 少量强度 (赛前减量)
+
+课表里刻意混入真实的不完美, 否则演示数据会骗人:
+- 约 15% 的计划**没完成** (真实生活: 加班/下雨/生病)
+- 约 8% 被**主动跳过**
+- 完成的多在目标 TSS 的 85%~120% 之间, 少数严重偏离
+- 有一周只练了 2 次 (现实里这种事真的发生)
+
+## ⚠️ 它会写进真实数据库
+
+用 `--force` 之外的任何方式运行前请确认你清楚后果。
+建议先用一个空 workspace 试。
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import os
+import random
+import sys
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).parent.parent.resolve()
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
+
+FTP = 280
+LTHR = 168
+HR_MAX = 188
+WEIGHT = 68.0
+
+# ---------------------------------------------------------------- 周期化
+# 显式引用课名, 不用模板索引 —— 第一版用 index 导致 8 周几乎全是耐力骑,
+# 阈值课和间歇课一次都没出现, 周期化形同虚设。
+# (时长, 功率系数) 由课型自带, 这里只决定"练什么 + 练几节"
+WEEK_PLAN: list[list[tuple[str, float, float]]] = [
+    #                     课名,          节数, 强度系数
+    # W1-W2 Base: 耐力为主
+    [("恢复骑", 1, 1.0), ("耐力骑", 1, 1.0), ("恢复骑", 1, 1.0),
+     ("长耐力", 1, 0.95), ("恢复骑", 1, 1.0), ("耐力骑", 1, 0.9), ("长耐力", 1, 1.05)],
+    [("恢复骑", 1, 1.0), ("耐力骑", 1, 1.0), ("甜点课", 1, 0.85),
+     ("耐力骑", 1, 1.0), ("恢复骑", 1, 1.0), ("爬坡耐力", 1, 0.9), ("长耐力", 1, 1.0)],
+    # W3-W4 Build: 加入阈值
+    [("耐力骑", 1, 1.0), ("阈值课", 1, 0.95), ("恢复骑", 1, 1.0),
+     ("甜点课", 1, 0.95), ("耐力骑", 1, 1.0), ("恢复骑", 1, 1.0), ("长耐力", 1, 1.0)],
+    [("恢复骑", 1, 1.0), ("甜点课", 1, 1.0), ("耐力骑", 1, 1.0),
+     ("阈值课", 1, 0.95), ("恢复骑", 1, 1.0), ("爬坡耐力", 1, 0.95), ("长耐力", 1, 1.0)],
+    # W5 Recovery: 大幅降量
+    [("恢复骑", 1, 0.85), ("恢复骑", 1, 0.85), ("耐力骑", 1, 0.8),
+     ("恢复骑", 1, 0.85), ("恢复骑", 1, 0.85), ("恢复骑", 1, 0.8), ("耐力骑", 1, 0.85)],
+    # W6-W7 Build2: 阈值 + VO2max + 冲刺
+    [("耐力骑", 1, 1.0), ("阈值课", 1, 1.0), ("甜点课", 1, 1.0),
+     ("VO2max 间歇", 1, 0.95), ("恢复骑", 1, 1.0), ("冲刺", 1, 0.9), ("长耐力", 1, 1.0)],
+    [("恢复骑", 1, 1.0), ("阈值课", 1, 1.0), ("耐力骑", 1, 1.0),
+     ("VO2max 间歇", 1, 1.0), ("恢复骑", 1, 1.0), ("冲刺", 1, 1.0), ("甜点课", 1, 1.0)],
+    # W8 Taper: 赛前减量
+    [("恢复骑", 1, 0.7), ("甜点课", 1, 0.6), ("耐力骑", 1, 0.7),
+     ("恢复骑", 1, 0.6), ("阈值课", 1, 0.55), ("恢复骑", 1, 0.5), ("恢复骑", 1, 0.5)],
+]
+
+# 课型池 (name, intent, segments) —— 从 realistic_rides 复用
+from realistic_rides import WORKOUT_LIBRARY  # noqa: E402
+
+BY_NAME: dict[str, tuple[str, str, list]] = {
+    name: (name, intent, segs) for name, intent, segs in WORKOUT_LIBRARY
+}
+
+
+def scaled(segs: list, factor: float) -> list:
+    """按强度系数缩放功率 —— 恢复周用 0.7 就是全课功率 x0.7"""
+    return [(m, max(55, int(w * factor))) for m, w in segs]
+
+
+def build_week_rides(week_idx: int) -> list[tuple[str, str, list, float]]:
+    """返回 [(课名, intent, segments, 强度系数)]"""
+    out = []
+    for name, sessions, factor in WEEK_PLAN[week_idx]:
+        base = BY_NAME[name]
+        for k in range(sessions):
+            out.append((name, base[1], scaled(base[2], factor), factor))
+    return out
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="装载 8 周演示训练数据")
+    ap.add_argument("--weeks", type=int, default=8)
+    ap.add_argument("--end", type=str, default=None, help="最后一天 YYYY-MM-DD, 默认今天")
+    ap.add_argument("--athlete", type=str, default="演示车手")
+    ap.add_argument("--workspace", type=str, default=None)
+    ap.add_argument("--no-plans", action="store_true", help="只造训练记录, 不造课表")
+    ap.add_argument("--force", action="store_true",
+                    help="先删掉已有的演示车手及其数据, 再重新生成 (不加就是复用现有数据)")
+    args = ap.parse_args()
+
+    if args.workspace:
+        os.environ["WORKSPACE_DIR"] = args.workspace
+    os.environ.setdefault("M3_API_KEY", "")
+
+    rng = random.Random(20261003)
+    end = date.fromisoformat(args.end) if args.end else date.today()
+    start = end - timedelta(days=args.weeks * 7 - 1)
+    # 对齐到周一
+    start -= timedelta(days=start.weekday())
+
+    from cycling_coach.data.sqlite import database as D
+    from cycling_coach.data.sqlite.models import Activity, Athlete, PlannedWorkout
+    from cycling_coach.data.parsers.fit_parser import parse_fit
+    from cycling_coach.core.services.activity import ActivityService
+
+    D.init_db()
+    db = D.SessionLocal()
+
+    # ---- 车手 ----
+    # ⚠️ 顺序很重要: 必须先建好车手, 再建 ActivityService。
+    # ActivityService.__init__ 会调 get_or_create_athlete(), 而它是
+    # "返回第 1 个 athlete, 没有就建一个叫 Rider(ftp=250)"。
+    # 原来的写法先建 service, 结果 service 绑到了自动创建的 Rider 上,
+    # 而 planned_workouts 挂在真正的演示车手上 ——
+    # 45 条活动归 athlete 1, 51 个计划课归 athlete 2, 两边互相看不见,
+    # 而且 TSS 是按 FTP=250 而不是 280 算的。
+    if args.force:
+        from cycling_coach.data.sqlite.models import (
+            Activity, DailyMetric, PlannedWorkout,
+        )
+        old_a = db.query(Athlete).filter(Athlete.name == args.athlete).first()
+        if old_a:
+            acts = db.query(Activity).filter(Activity.athlete_id == old_a.id).all()
+            ids = [x.id for x in acts]
+            db.query(PlannedWorkout).filter(
+                PlannedWorkout.athlete_id == old_a.id).delete()
+            if ids:
+                db.query(Activity).filter(Activity.id.in_(ids)).delete(
+                    synchronize_session=False)
+            db.query(DailyMetric).filter(
+                DailyMetric.athlete_id == old_a.id).delete()
+            db.delete(old_a)
+            db.commit()
+            print(f"已清除旧的演示数据: {len(ids)} 条活动")
+
+    a = db.query(Athlete).filter(Athlete.name == args.athlete).first()
+    if a is None:
+        a = Athlete(
+            name=args.athlete, ftp=FTP, lthr=LTHR,
+            max_hr=HR_MAX, weight_kg=WEIGHT,
+        )
+        db.add(a)
+        db.commit()
+        db.refresh(a)
+    print(f"车手: {a.name}  FTP={a.ftp}  LTHR={a.lthr}")
+
+    # 现在建 service, 它应该绑到刚建好的车手上
+    svc = ActivityService(db)
+    if svc.athlete.id != a.id:
+        # 静默继续下去就是"活动归 A、课表归 B", 直接失败
+        raise SystemExit(
+            f"归属不一致: ActivityService 绑到了 athlete "
+            f"#{svc.athlete.id}({svc.athlete.name}, ftp={svc.athlete.ftp}), "
+            f"但计划课会挂在 #{a.id}({a.name}, ftp={a.ftp})。\n"
+            f"库里已有别的 athlete 占着 id={svc.athlete.id}。"
+            f"请用 --force 重建, 或先清空该 workspace。"
+        )
+
+    out_dir = Path(os.environ["WORKSPACE_DIR"]) / "_demo_fits"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    n_ride = n_plan = n_done = n_skip = n_miss = 0
+    tss_planned = tss_actual = 0
+
+    from realistic_rides import build_profile_fit
+
+    for w in range(args.weeks):
+        week_start = start + timedelta(days=w * 7)
+        rides = build_week_rides(w)
+        # 第 3 周刻意来一次"只练了 2 次" —— 现实里真会发生
+        if w == 2:
+            rides = rides[:2]
+
+        for day_idx, (name, intent, segs, factor) in enumerate(rides):
+            d = week_start + timedelta(days=day_idx)
+            if d > end:
+                continue
+            # 达成情况: 15% 没做, 8% 主动跳过
+            roll = rng.random()
+            planned = not args.no_plans
+            if roll < 0.08:
+                status = "skipped"
+            elif roll < 0.23:
+                status = "missed"
+            else:
+                status = "done"
+
+            # ---- 先算这节课该有多少 TSS (用恒定功率快速估算做目标值) ----
+            avg_w = sum(w_ * m for m, w_ in segs) / sum(m for m, _ in segs)
+            hours = sum(m for m, _ in segs) / 60.0
+            # TSS = 小时 x (平均功率/FTP)^2 x 100
+            # 第一版误用 x60, 导致"实际/计划"算出 194% —— 目标值偏小 40%,
+            # 任何达成都显示成超额完成, 这种错会直接让 compliance 失去意义。
+            tss_target = max(20, int(hours * (avg_w / FTP) ** 2 * 100))
+
+            planned_id = None
+            if planned:
+                pw = PlannedWorkout(
+                    athlete_id=a.id, scheduled_date=d, title=name, intent=intent,
+                    duration_target_min=int(hours * 60), tss_target=tss_target,
+                    status=("skipped" if status == "skipped" else "planned"),
+                )
+                db.add(pw)
+                db.commit()
+                db.refresh(pw)
+                planned_id = pw.id
+                n_plan += 1
+                tss_planned += tss_target
+                if status == "skipped":
+                    n_skip += 1
+
+            if status == "skipped":
+                continue
+
+            # ---- 完成的部分: 实际功率在目标的 85%~120% ----
+            if status == "missed":
+                perf = rng.uniform(0.55, 0.8)
+            else:
+                perf = rng.uniform(0.85, 1.15)
+            # perf 表达的是"实际 TSS 达到目标的多少", 必须作用在 TSS 上。
+            # TSS ∝ 功率², 所以功率要乘 sqrt(perf)。
+            # 第一版直接乘功率, 结果实际/目标 TSS 中位数 1.46 ——
+            # 演示数据自己就把负荷达成率报成 139%, 用户看到的全是"超额完成"。
+            k = perf ** 0.5
+            actual_segs = [(m, max(55, int(w_ * k))) for m, w_ in segs]
+
+            path = out_dir / f"w{w+1}_d{day_idx}_{intent}.fit"
+            start_dt = datetime.combine(
+                d, datetime.min.time(), tzinfo=timezone.utc
+            ) + timedelta(hours=6)
+            gt = build_profile_fit(
+                path, actual_segs, start=start_dt, seed=w * 100 + day_idx,
+                ftp=FTP, lthr=LTHR,
+            )
+
+            try:
+                res = asyncio.run(svc.upload(path.name, path.read_bytes()))
+            except Exception as e:
+                print(f"  ! 第{w+1}周 {name} 导入失败: {type(e).__name__}: {e}")
+                db.rollback()
+                continue
+            act_id = res.get("id") if isinstance(res, dict) else getattr(res, "id", None)
+            n_ride += 1
+            act_tss = 0
+            act = db.query(Activity).filter(Activity.id == act_id).first()
+            if act:
+                act_tss = (act.metrics or {}).get("tss") or 0
+                tss_actual += act_tss
+            if planned_id and act_id:
+                pw = db.get(PlannedWorkout, planned_id)
+                # "missed" = 计划了但没完成 (拖延/半途而废), 不能标成 done,
+                # 否则完成率永远是 100%, 演示数据反而在骗人。
+                pw.status = "done" if status == "done" else "missed"
+                if status == "done":
+                    pw.actual_activity_id = act_id
+                    pw.completed_at = act.start_time
+                    db.commit()
+                    n_done += 1
+                else:
+                    db.commit()
+                    n_miss += 1
+            print(f"  W{w+1} {d} {name:<12} {intent:<10} "
+                  f"功率{gt['avg_power']:>3.0f}W  {gt['duration_s']//60:>3}min  "
+                  f"TSS {act_tss:>5.0f}/{tss_target:<4} {status}")
+
+    db.close()
+    print()
+    print("=" * 56)
+    print(f"训练记录 {n_ride} 条 | 计划课 {n_plan} 条")
+    print(f"  完成 {n_done} | 未完成 {n_miss} | 主动跳过 {n_skip}")
+    print(f"计划 TSS 合计 {tss_planned:.0f} | 实际 TSS 合计 {tss_actual:.0f} "
+          f"({tss_actual/tss_planned*100 if tss_planned else 0:.0f}%)")
+    print(f"数据目录: {os.environ['WORKSPACE_DIR']}")
+
+    # 交付前自检: 活动和课表必须挂在同一个车手上
+    from cycling_coach.data.sqlite.models import Activity as _Act
+    from sqlalchemy import text as _sql_text
+    acts_ath = {r[0] for r in db.execute(
+        _sql_text("SELECT DISTINCT athlete_id FROM activities")).fetchall()}
+    plan_ath = {r[0] for r in db.execute(
+        _sql_text("SELECT DISTINCT athlete_id FROM planned_workouts")).fetchall()}
+    if not args.no_plans and acts_ath and plan_ath and acts_ath != plan_ath:
+        raise SystemExit(
+            f"❌ 归属校验失败: 活动在 athlete {acts_ath}, 课表在 {plan_ath}。"
+            f"这种数据看起来正常但用起来全错, 宁可构建失败。"
+        )
+    print(f"归属校验: 活动与课表均在 athlete {acts_ath or plan_ath} ✅")
+    print("=" * 56)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
