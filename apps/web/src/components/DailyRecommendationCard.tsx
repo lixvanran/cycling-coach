@@ -18,7 +18,12 @@ import {
 import clsx from "clsx";
 
 interface Recommendation {
-  category: "workout" | "warning" | "tip" | "lifestyle";
+  // V0.9.0: 补 "info"。后端 recommendations.py 的 _insufficient_data_recommendation
+  // 会用 category="info" 发"还不能算今日状态 / 还没有任何训练数据"这类引导。
+  // 类型里漏了它, 于是组件里 `r.category === "info"` 被 tsc 判成永假分支 ——
+  // 那些引导会落进 else, 用**警告色 + 警告图标**渲染。
+  // 用户看到的却是"还没有任何训练数据"配一圈琥珀色警告条, 很像出了故障。
+  category: "workout" | "warning" | "tip" | "lifestyle" | "info";
   priority: number;
   title: string;
   detail: string;
@@ -220,13 +225,18 @@ export function DailyRecommendationCard() {
                   ? "bg-status-danger"
                   : r.category === "info"
                     ? "bg-bg-subtle"          // V0.9.0: info 类(数据不足提示)不该染成警告色
-                    : "bg-status-warning"
+                    : r.category === "tip"
+                      ? "bg-status-success/10"  // V0.9.0: tip 是"好消息"(如 HRV 优秀),
+                                                // 落到 else 会渲染成琥珀警告色 —— 看着像在报警
+                      : "bg-status-warning"
               )}
             >
               {r.category === "warning" ? (
                 <AlertTriangle className="w-3.5 h-3.5 text-accent-danger flex-shrink-0 mt-0.5" />
               ) : r.category === "info" ? (
                 <Info className="w-3.5 h-3.5 text-text-secondary flex-shrink-0 mt-0.5" />
+              ) : r.category === "tip" ? (
+                <Lightbulb className="w-3.5 h-3.5 text-accent-success flex-shrink-0 mt-0.5" />
               ) : (
                 <Lightbulb className="w-3.5 h-3.5 text-accent-warning flex-shrink-0 mt-0.5" />
               )}

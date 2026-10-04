@@ -336,13 +336,6 @@ export function BuilderPage() {
     setEditTarget({ type: "block", blockId: newBlock.id });
   }
 
-  // V0.8.3.1 P0: QUICK_TEMPLATES 没有 icon 字段 (lib/builderConstants.ts 不引 lucide 防循环)
-  // 在这里组装: spec + icon → 用 applyTemplate
-  const QUICK_TEMPLATES_WITH_ICONS = QUICK_TEMPLATES.map((t, i) => ({
-    ...t,
-    icon: [Flame, Mountain, Activity, Zap][i] ?? Flame,
-  }));
-
   function applyTemplate(t: typeof QUICK_TEMPLATES_WITH_ICONS[0]) {
     const newBlocks = [...blocks, ...t.blocks()];
     pushHistory(newBlocks);
@@ -833,6 +826,20 @@ export function BuilderPage() {
     </div>
   );
 }
+
+// V0.9.0 修 P0: **必须是模块级**。
+//
+// 原来这个常量定义在 BuilderPage 函数体内部, 而用到它的 BlockLibrary
+// 是模块级的另一个组件 —— 那里访问不到, 运行时 ReferenceError。
+// 症状: 打开"新建课程"页时左侧积木库/快速模板那块直接崩, 白屏。
+//
+// 它只依赖模块级的 QUICK_TEMPLATES 和 lucide 图标, 不依赖任何组件状态,
+// 所以放在模块作用域才是它本来该待的地方。
+// tsc 早就报了 (TS2304), 但一直没人跑 npm run build, 错误就攒在那儿。
+const QUICK_TEMPLATES_WITH_ICONS = QUICK_TEMPLATES.map((t, i) => ({
+  ...t,
+  icon: [Flame, Mountain, Activity, Zap][i] ?? Flame,
+}));
 
 // =============== 左侧积木库 ===============
 function BlockLibrary(props: {

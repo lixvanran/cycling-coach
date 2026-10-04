@@ -101,3 +101,9 @@ SECURITY.md
 
 # Screenshot temp
 screenshots/
+
+# V0.9.0: tsc 产物的编译中间物 (tsc --noEmit 也会吐 tsbuildinfo)
+# vite.config.js / .d.ts 也是 tsc 把配置当源码编译出来的产物
+*.tsbuildinfo
+apps/web/vite.config.js
+apps/web/vite.config.d.ts

@@ -27,11 +27,11 @@
  *    所以标记跨 delta 边界被切开完全无害 —— 这是本实现天然具备的性质,
  *    但必须写测试锁住, 改的时候容易改错。
  *
- * ## 已知局限
+ * 测试在 `src/__tests__/splitThinking.test.ts` (vitest, node 环境)。
  *
- * 仓库里没有前端测试框架 (`package.json` 无 test 脚本, devDependencies
- * 里没有 vitest / testing-library), 所以本文件目前只能靠人工和
- * tsc 保证。**带 TODO 标记的用例就是待接入自动化的那批。**
+ * 用例表**故意不放这里** —— 放在被测模块里再由测试 import, 看着 DRY,
+ * 实际是"自己测自己": 改一下期望值测试就跟着绿, 而且改得悄无声息。
+ * 期望值写在测试文件里, 改动在 diff 上看得见。
  */
 
 export interface SplitResult {
@@ -88,53 +88,3 @@ export function splitThinkingAnswer(fullText: string): SplitResult {
   }
   return { content: fullText, thinking: "", phase: "pre" };
 }
-
-/**
- * TODO(vitest): 等前端测试框架接上后, 把下面的用例直接搬成单测。
- * 每一行都对应一个真实踩过的坑, 别在重构时弄丢。
- */
-export const SPLIT_CASES: Array<{ name: string; input: string; expect: Partial<SplitResult> }> = [
-  {
-    name: "标准格式: 两个标题都带空格",
-    input: "## Thinking\n推理过程\n## Answer\n今天练 Z2",
-    expect: { content: "今天练 Z2", thinking: "推理过程", phase: "answer" },
-  },
-  {
-    name: "实测坑1: 标记无空格 (M3 真实流的实际形态)",
-    input: "##Thinking\n分析 CTL 43\n##Answer\n今天练 Z2",
-    expect: { content: "今天练 Z2", thinking: "分析 CTL 43", phase: "answer" },
-  },
-  {
-    name: "三个井号也认",
-    input: "### Thinking\n推理\n### Answer\n答案",
-    expect: { content: "答案", phase: "answer" },
-  },
-  {
-    name: "实测坑2: 回答正文里含 '## Thinking' 不能把答案切空",
-    input: "##Answer\n示例:\n```md\n## Thinking\nfoo\n```\n结束",
-    expect: { content: "示例:\n```md\n## Thinking\nfoo\n```\n结束" },
-  },
-  {
-    // 期望是 answer 而不是 pre: 标题本身要被切掉。
-    // 写成 pre 是我第一版想错了 —— 跑出来才发现这个分支的行为和直觉不同。
-    name: "只有 Answer 没有 Thinking -> 切掉标题, 全当答案",
-    input: "## Answer\n直接回答",
-    expect: { content: "直接回答", thinking: "", phase: "answer" },
-  },
-  {
-    name: "什么标题都还没有 -> pre 阶段全显示",
-    input: "今天",
-    expect: { content: "今天", thinking: "", phase: "pre" },
-  },
-  {
-    name: "实测坑3: 只有 Thinking 还没流到 Answer",
-    input: "## Thinking\n推理中",
-    expect: { content: "", thinking: "推理中", phase: "thinking" },
-  },
-];
-
-/**
- * TODO(vitest): 流式累积的正确性 —— 对累积全文重新切分, 标记跨 delta 边界无害。
- * 用下面的 DELTA_SEQ 逐帧累积断言。
- */
-export const DELTA_SEQ: string[] = ["##", "Think", "ing\n\n分析 CTL 43\n", "##Ans", "wer\n\n今天练 Z2"];

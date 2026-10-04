@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Recommendation:
     """一条训练建议"""
-    category: str  # "workout" | "warning" | "tip" | "lifestyle"
+    category: str  # "workout" | "warning" | "tip" | "lifestyle" | "info"
     priority: int  # 1-5, 5 = 最重要
     title: str
     detail: str

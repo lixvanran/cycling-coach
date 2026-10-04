@@ -21,7 +21,10 @@ import type {
 import { useNavigate } from "react-router-dom";
 
 // 训练意图 → 颜色 (TP 风格, 更饱和)
-const INTENT_COLORS: Record<WorkoutIntent, { bg: string; border: string; text: string; light: string; ring: string }> = {
+// V0.9.0: 去掉 ring 字段。这个类型要求 ring, 但全文件**从来没有读过**
+// `.ring` —— 6 个条目因此报 TS2741。给它编个假值不如删掉:
+// 没人读的类型字段只会让人以为这里有功能。
+const INTENT_COLORS: Record<WorkoutIntent, { bg: string; border: string; text: string; light: string }> = {
   recovery:    { bg: "bg-status-info",    border: "border-accent-primary/60",    text: "text-white",     light: "bg-status-info" },
   endurance:   { bg: "bg-status-success", border: "border-accent-success", text: "text-white",     light: "bg-status-success" },
   tempo:       { bg: "bg-accent-warning",  border: "border-accent-warning/60",  text: "text-white",     light: "bg-status-warning" },
