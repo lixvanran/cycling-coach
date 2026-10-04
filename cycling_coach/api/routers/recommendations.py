@@ -77,12 +77,27 @@ def get_readiness_only(db: Session = Depends(get_db)):
             },
         }
     score, breakdown = compute_readiness(db, athlete.id)
+    from cycling_coach.core.coaching.recommendations import readiness_coverage
+    coverage = readiness_coverage(breakdown)
+    # V0.9.0: score 可能是 None (过了活动数门槛, 但 HRV/ACWR/负荷算不出来)。
+    # 原来这里是 `score >= 80` —— Python 3 里 `None >= 80` 抛 TypeError,
+    # 整个 readiness 接口直接 500。现在如实说"数据不足"。
+    if score is None:
+        label = "数据不足"
+    elif score >= 80:
+        label = "极佳"
+    elif score >= 60:
+        label = "良好"
+    elif score >= 40:
+        label = "中等"
+    elif score >= 20:
+        label = "低迷"
+    else:
+        label = "危险"
     return {
         "readiness_score": score,
-        "readiness_label": (
-            "极佳" if score >= 80 else "良好" if score >= 60
-            else "中等" if score >= 40 else "低迷" if score >= 20 else "危险"
-        ),
+        "readiness_label": label,
+        "readiness_coverage": coverage,
         "breakdown": breakdown,
         "data_sufficiency": suff,
         "weights": {

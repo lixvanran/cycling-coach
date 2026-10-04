@@ -66,6 +66,53 @@ class DailyRecommendation:
 MIN_ACTIVITIES_FOR_READINESS = 7
 MIN_DAYS_SPAN_FOR_READINESS = 7
 
+# V0.9.0: readiness 五维的权重, 以及"敢不敢给分"的门槛
+#
+# 起因: 上面那个 MIN_ACTIVITIES 门槛只解决了"完全没有数据"的情况, 但**没有解决
+# "有活动、可是某些维度算不出来"**。实测(8 次活动 / 7 天, 零 HRV 记录, 算不出
+# ACWR)的用户拿到 67 分"良好" + 阈值间歇处方, 其中:
+#     hrv  20/30  ← 纯编的 (status=insufficient_data 仍然给了 2/3 分)
+#     acwr 25/25  ← 纯编的, 而且是**满分**, 等于宣称"负荷平衡完美";
+#                    而 ACWR 结构上需要 28 天 chronic, 7 天根本算不出来
+# 也就是说 **75% 的分数来自没有数据的维度**, 并且直接驱动了训练处方。
+#
+# 根因是每个维度在无数据时各自编了一个"看起来合理"的高分默认值, 方向跟
+# "数据越少分越高"一样是反的。所以顶层门槛不够 —— 必须在**每个维度内部**
+# 区分"真实测量"和"兜底猜测"。
+#
+# 现在的规则:
+#   - 只有**真实有数据**的维度才进 breakdown
+#   - 分数按**可用维度的满分**归一化 (全 5 维时与旧算法完全一致, 无回归)
+#   - 可用维度 < 2, 或缺训练负荷维度(没有它就没法谈"今天该不该练") → 返回 None
+READINESS_WEIGHTS = {"hrv": 30, "acwr": 25, "tsb": 20, "phase": 15, "rpe": 10}
+
+# 训练负荷是 readiness 的地基: 不知道最近骑了多少, 就没资格说今天该上什么强度
+REQUIRED_READINESS_DIMENSION = "tsb"
+
+# 低于这个可用维度数就不给分 —— 单一维度归一化出来的 0-100 看着和五维的一样权威
+MIN_DIMENSIONS_FOR_READINESS = 2
+
+
+def readiness_coverage(breakdown: dict) -> dict:
+    """把 breakdown 变成一句人能读懂的"这个分是怎么来的"
+
+    V0.9.0: readiness 分数即使是真的, 也只代表**部分**维度。必须把依据说清楚,
+    否则一个 67 分和另一个数据齐全用户的 67 分看起来毫无区别 —— 但前者可能是
+    拿两个维度归一化出来的。
+    """
+    have = [k for k in READINESS_WEIGHTS if k in breakdown]
+    missing = [k for k in READINESS_WEIGHTS if k not in breakdown]
+    _names = {"hrv": "HRV", "acwr": "ACWR", "tsb": "训练负荷", "phase": "周期阶段", "rpe": "主观疲劳"}
+    return {
+        "available": have,
+        "missing": missing,
+        "available_labels": [_names[k] for k in have],
+        "missing_labels": [_names[k] for k in missing],
+        "n_available": len(have),
+        "n_total": len(READINESS_WEIGHTS),
+        "complete": not missing,
+    }
+
 
 def _data_sufficiency(db: Session, athlete_id: int) -> dict:
     """查数据够不够算 readiness — 并如实报告缺什么
@@ -126,51 +173,64 @@ def compute_readiness(
     - TSB: 20 (训练平衡)
     - Phase: 15 (周期阶段适配)
     - RPE 7d: 10 (主观疲劳)
+
+    V0.9.0: **只把真实有数据的维度算进分数**, 返回的 breakdown 里也只有这些维度。
+    原来无数据时每个维度各自编一个高分默认值 (ACWR 缺数据默认 1.0 拿满分 25/25,
+    HRV 无数据拿 20/30), 于是一个算不出 ACWR 的用户拿到满分负荷平衡分, 还会
+    因为这个假分被派去骑阈值间歇。分数按可用维度的满分归一化; 维度太少或缺
+    训练负荷维度时返回 None —— 宁可说算不出来, 也不要自信地给错建议。
+
+    返回: (score, breakdown)。score 是 Optional[int], 调用方**必须**处理 None。
     """
     breakdown = {}
-    
-    # 1. HRV (30 分)
+
+    # 1. HRV (30 分) — 只有真测到 HRV 才算
     hrv = compute_hrv_state(db, athlete_id)
     if hrv["status"] == "ok":
         hrv_score = 30
+        breakdown["hrv"] = hrv_score
     elif hrv["status"] == "caution":
-        hrv_score = 15
+        breakdown["hrv"] = 15
     elif hrv["status"] == "warning":
-        hrv_score = 0
-    else:
-        hrv_score = 20  # insufficient_data
-    breakdown["hrv"] = hrv_score
-    
-    # 2. ACWR (25 分)
+        breakdown["hrv"] = 0
+    # status == "insufficient_data" → 整维不计入。
+    # 原来这里给 20/30 (2/3 分), 意思���"没测心率但我按三分之二算上了"。
+
+    # 2. ACWR (25 分) — 算不出来就不算。ACWR 需要 28 天 chronic, 短期用户必然算不出。
     acwr = get_acwr(db, days=7)  # get_acwr_overview 内部用 athlete_id
     today = acwr.get("today", {}) if isinstance(acwr, dict) else {}
-    acwr_val = today.get("acwr", 1.0) if today else 1.0
-    # 0.8-1.3 sweet spot
-    if 0.8 <= acwr_val <= 1.3:
-        acwr_score = 25
-    elif 0.6 <= acwr_val < 0.8 or 1.3 < acwr_val <= 1.5:
-        acwr_score = 15
-    elif 1.5 < acwr_val <= 1.8:
-        acwr_score = 5  # 危险区
-    else:
-        acwr_score = 0  # 过低/过高
-    breakdown["acwr"] = acwr_score
-    
-    # 3. TSB (20 分)
+    acwr_val = today.get("acwr") if today else None
+    if acwr_val is not None:
+        # 0.8-1.3 sweet spot
+        if 0.8 <= acwr_val <= 1.3:
+            acwr_score = 25
+        elif 0.6 <= acwr_val < 0.8 or 1.3 < acwr_val <= 1.5:
+            acwr_score = 15
+        elif 1.5 < acwr_val <= 1.8:
+            acwr_score = 5  # 危险区
+        else:
+            acwr_score = 0  # 过低/过高
+        breakdown["acwr"] = acwr_score
+    # 原来: acwr_val = today.get("acwr", 1.0) if today else 1.0
+    # 无数据 → 默认 1.0 → 落在甜区 → **满分 25/25**。
+
+    # 3. TSB (20 分) — 训练负荷, readiness 的地基
     pmc = get_pmc_today(db, athlete_id)
-    tsb = pmc.get("tsb", 0)
-    if -10 <= tsb <= 20:
-        tsb_score = 20  # 状态良好
-    elif -20 <= tsb < -10 or 20 < tsb <= 30:
-        tsb_score = 15
-    elif -30 <= tsb < -20:
-        tsb_score = 5  # 累积疲劳
-    elif tsb > 30:
-        tsb_score = 10  # 减量中
-    else:
-        tsb_score = 0  # 极疲劳
-    breakdown["tsb"] = tsb_score
-    
+    if pmc.get("status_label") != "无数据":
+        tsb = pmc.get("tsb", 0)
+        if -10 <= tsb <= 20:
+            tsb_score = 20  # 状态良好
+        elif -20 <= tsb < -10 or 20 < tsb <= 30:
+            tsb_score = 15
+        elif -30 <= tsb < -20:
+            tsb_score = 5  # 累积疲劳
+        elif tsb > 30:
+            tsb_score = 10  # 减量中
+        else:
+            tsb_score = 0  # 极疲劳
+        breakdown["tsb"] = tsb_score
+    # 原来: tsb = pmc.get("tsb", 0) —— 无数据时 0 落在 -10~20, **满分 20/20**。
+
     # 4. Phase (15 分) — 周期化阶段适配
     phase = derive_phase(db, athlete_id)
     if phase.suggested_type in ("build", "peak"):
@@ -186,13 +246,13 @@ def compute_readiness(
     else:
         phase_score = 10
     breakdown["phase"] = phase_score
-    
-    # 5. RPE 7d (10 分) — 主观疲劳
-    today = datetime.utcnow().date()
+
+    # 5. RPE 7d (10 分) — 主观疲劳。没有记录就是没有, 不给中性分
+    today_d = datetime.utcnow().date()
     rpe_7d = (
         db.query(DailyMetric)
         .filter(DailyMetric.athlete_id == athlete_id)
-        .filter(DailyMetric.date >= today - timedelta(days=7))
+        .filter(DailyMetric.date >= today_d - timedelta(days=7))
         .filter(DailyMetric.rpe.isnot(None))
         .all()
     )
@@ -206,12 +266,20 @@ def compute_readiness(
             rpe_score = 3  # 高
         else:
             rpe_score = 0  # 极高
-    else:
-        rpe_score = 5  # 无数据
-    breakdown["rpe"] = rpe_score
-    
+        breakdown["rpe"] = rpe_score
+    # 原来: 无 RPE 记录时给 5/10 中性分。
+
+    # 数据够不够给一个分?
+    if REQUIRED_READINESS_DIMENSION not in breakdown:
+        return None, breakdown
+    if len(breakdown) < MIN_DIMENSIONS_FOR_READINESS:
+        return None, breakdown
+
+    # 按**可用维度**的满分归一化。
+    # 五个维度齐全时 max_total == 100, 与旧算法逐位一致 —— 不会给老用户改分。
     total = sum(breakdown.values())
-    return total, breakdown
+    max_total = sum(READINESS_WEIGHTS[k] for k in breakdown)
+    return round(total / max_total * 100), breakdown
 
 
 def _insufficient_data_recommendation(suff: dict) -> DailyRecommendation:
@@ -260,6 +328,26 @@ def _insufficient_data_recommendation(suff: dict) -> DailyRecommendation:
     )
 
 
+def _missing_dimension_guidance(missing: list[str]) -> str:
+    """缺某个维度时, 告诉用户**具体怎么做**才能补上
+
+    V0.9.0: 光说"缺 ACWR"没用 —— 用户要的是"我该干什么"。
+    这些都是用户能自己做的动作, 不是"请升级设备"这种无解的建议。
+    """
+    parts = []
+    if "hrv" in missing:
+        parts.append("心率带能提供每日晨起 HRV（约需 2 周建立基线）")
+    if "acwr" in missing:
+        parts.append("ACWR 需要 28 天训练史, 继续记录就会自动出现")
+    if "tsb" in missing:
+        parts.append("导入带功率的训练记录, 才有训练负荷可算")
+    if "rpe" in missing:
+        parts.append("每次训练后填一次主观疲劳度 (RPE 1-10)")
+    if "phase" in missing:
+        parts.append("完成一次周期设定, 才有训练阶段可判")
+    return "；".join(parts) or "继续积累数据"
+
+
 def generate_recommendations(
     db: Session, athlete_id: int
 ) -> DailyRecommendation:
@@ -276,16 +364,25 @@ def generate_recommendations(
         return _insufficient_data_recommendation(suff)
 
     readiness, breakdown = compute_readiness(db, athlete_id)
-    
+    coverage = readiness_coverage(breakdown)
+
     # 5 维数据
     pmc = get_pmc_today(db, athlete_id)
     ctl, atl, tsb = pmc.get("ctl", 0), pmc.get("atl", 0), pmc.get("tsb", 0)
     hrv = compute_hrv_state(db, athlete_id)
     phase = derive_phase(db, athlete_id)
     signals = detect_phase_signals(db, athlete_id)
-    
+
     # readiness 标签
-    if readiness >= 80:
+    # V0.9.0: readiness 可能是 None (数据够门槛但关键维度算不出来)。
+    # 原来这里是 score >= 80 直接开跑 —— Python 3 里 None >= 80 是 TypeError,
+    # 会让整个 /api/recommendations/readiness 500。
+    if readiness is None:
+        readiness_label = "数据不足"
+        rec_type = "none"
+        intensity = f"数据不足，暂不给出训练强度建议（缺: {('、'.join(coverage['missing_labels']) or '未知')}）"
+        target = 0
+    elif readiness >= 80:
         readiness_label = "极佳"
         rec_type = "vo2"
         intensity = "高强度日: VO2max 间歇 (4-6×3min @ 110-120% FTP, 间歇 3min Z1)"
@@ -310,10 +407,24 @@ def generate_recommendations(
         rec_type = "rest"
         intensity = "完全休息: 建议今天不骑车, 优先睡眠/营养"
         target = 0
-    
+
     # 生成建议列表
     recs = []
     warnings = []
+
+    # V0.9.0: 分数即使是真的, 也只代表部分维度。必须让用户知道这个分怎么来的,
+    # 否则"67 分"看起来和另一个数据齐全用户的 67 分毫无区别。
+    if readiness is not None and not coverage["complete"]:
+        recs.append(Recommendation(
+            category="info", priority=2,
+            title=f"今日状态基于 {coverage['n_available']}/{coverage['n_total']} 个维度",
+            detail=(
+                f"可用: {'、'.join(coverage['available_labels'])}；"
+                f"缺: {'、'.join(coverage['missing_labels'])}"
+            ),
+            action=_missing_dimension_guidance(coverage["missing"]),
+            icon="📐",
+        ))
     
     # HRV 触发
     if hrv["status"] == "warning":
@@ -454,6 +565,9 @@ def generate_recommendations(
         warnings=warnings,
         signals_summary={
             "readiness_breakdown": breakdown,
+            # V0.9.0: 前端要能告诉用户"这个分基于哪几个维度"。
+            # 没有它, breakdown 里的键变少时用户只会觉得"数据丢了", 不会知道是诚实。
+            "readiness_coverage": coverage,
             "tsb": tsb,
             "ctl": ctl,
             "atl": atl,

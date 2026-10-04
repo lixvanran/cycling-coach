@@ -113,8 +113,22 @@ def generate_weekly_report(
     story.append(Spacer(1, 4*mm))
     
     # === 2. Readiness 头部卡 ===
-    readiness_color = "#10b981" if readiness >= 80 else "#22c55e" if readiness >= 60 else "#f59e0b" if readiness >= 40 else "#f97316" if readiness >= 20 else "#ef4444"
-    story.append(Paragraph(f'<font color="{readiness_color}" size="32"><b>{readiness}</b></font> <font size="12" color="#64748b">/ 100 · {rec.readiness_label}</font>', body))
+    # V0.9.0: readiness 可能是 None。原来直接 `readiness >= 80` —— Python 3 里
+    # None >= 80 抛 TypeError, 整个周报 PDF 生成失败; 就算不崩, f-string 也会
+    # 把 "None" 印到周报上。数据不足就如实写"数据不足", 并说明缺什么。
+    from cycling_coach.core.coaching.recommendations import readiness_coverage
+    coverage = readiness_coverage(breakdown)
+    if readiness is None:
+        readiness_color = "#94a3b8"
+        readiness_html = (
+            '<font color="#94a3b8" size="32"><b>--</b></font>'
+            '<font size="12" color="#64748b">/ 100 · 数据不足</font>'
+        )
+    else:
+        readiness_color = "#10b981" if readiness >= 80 else "#22c55e" if readiness >= 60 else "#f59e0b" if readiness >= 40 else "#f97316" if readiness >= 20 else "#ef4444"
+        cov_txt = "" if coverage["complete"] else f' · 基于 {coverage["n_available"]}/{coverage["n_total"]} 维'
+        readiness_html = f'<font color="{readiness_color}" size="32"><b>{readiness}</b></font> <font size="12" color="#64748b">/ 100 · {rec.readiness_label}{cov_txt}</font>'
+    story.append(Paragraph(readiness_html, body))
     story.append(Spacer(1, 2*mm))
     story.append(Paragraph(f'<b>推荐今日训练:</b> {rec.recommended_intensity}', body))
     story.append(Spacer(1, 2*mm))

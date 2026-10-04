@@ -42,6 +42,18 @@ interface DailyRecommendation {
   warnings: string[];
   signals_summary: {
     readiness_breakdown: Record<string, number>;
+    // V0.9.0: readiness 分数只代表**部分**维度。coverage 用来告诉用户
+    // "这个分是基于哪几个维度算的"。没有它, 一个 2/5 维归一化出来的 67 分
+    // 和一个五维齐全的 67 分看起来毫无区别 —— 但它们的可信度完全不同。
+    readiness_coverage?: {
+      available: string[];
+      missing: string[];
+      available_labels: string[];
+      missing_labels: string[];
+      n_available: number;
+      n_total: number;
+      complete: boolean;
+    };
     tsb: number;
     ctl: number;
     atl: number;
@@ -119,6 +131,7 @@ export function DailyRecommendationCard() {
   // 新用户还没上传过一次训练就被告知"状态极佳", 纯误导。
   // 现在如实显示"数据不足", 并告诉他要做什么才能算。
   const hasScore = typeof data.readiness_score === "number";
+  const cov = data.signals_summary?.readiness_coverage;
   const suff = (data.signals_summary as any)?.data_sufficiency;
 
   return (
@@ -143,6 +156,13 @@ export function DailyRecommendationCard() {
               </div>
               <div className="text-[10px] text-text-secondary -mt-1">readiness</div>
               <div className={`text-xs font-medium ${rStyle.text}`}>{rStyle.label}</div>
+              {/* V0.9.0: 分数只基于部分维度时, 必须写在分数正下方 ——
+                  放大了看第一眼就能发现, 而不是要展开详情才知道。 */}
+              {cov && !cov.complete && (
+                <div className="text-[9px] text-text-secondary mt-0.5">
+                  基于 {cov.n_available}/{cov.n_total} 维
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -177,12 +197,29 @@ export function DailyRecommendationCard() {
       <div className="bg-white/60 rounded p-2 mb-3">
         <div className="grid grid-cols-5 gap-1 text-[10px]">
           {BREAKDOWN_META.map((m) => {
-            const v = data.signals_summary.readiness_breakdown?.[m.key] || 0;
-            const pct = (v / m.max) * 100;
-            const color = pct >= 70 ? "bg-status-success" : pct >= 40 ? "bg-accent-warning" : "bg-accent-danger";
+            const raw = data.signals_summary.readiness_breakdown?.[m.key];
+            // V0.9.0: 缺失维度是 **undefined**, 不是 0。
+            // `|| 0` 会把它渲染成"这一项得了 0 分" —— 而真相是"这一项没数据"。
+            // 0 分和没数据在训练决策上是两件完全不同的事: 0 分意味着"很差",
+            // 没数据意味着"不知道"。混为一谈就是在骗人。
+            const has = raw !== undefined && raw !== null;
+            const v = has ? raw : 0;
+            const pct = has ? (v / m.max) * 100 : 0;
+            const color = !has
+              ? "bg-border"
+              : pct >= 70 ? "bg-status-success" : pct >= 40 ? "bg-accent-warning" : "bg-status-danger";
             return (
-              <div key={m.key} className="text-center" title={`${m.label}: ${v}/${m.max} - ${m.desc}`}>
-                <div className="font-medium text-text-secondary">{m.label}</div>
+              <div
+                key={m.key}
+                className="text-center"
+                title={has
+                  ? `${m.label}: ${v}/${m.max} - ${m.desc}`
+                  : `${m.label}: 无数据 — 参与不了本次评分（不是 0 分）`}
+              >
+                <div className={`font-medium ${has ? "text-text-secondary" : "text-text-muted"}`}>
+                  {m.label}
+                  {!has && <div className="text-[9px] font-normal">无数据</div>}
+                </div>
                 <div className="font-mono text-text-secondary">{v}/{m.max}</div>
                 <div className="w-full bg-slate-200 rounded-full h-1 mt-0.5">
                   <div className={`${color} h-1 rounded-full transition-all`} style={{ width: `${pct}%` }} />
