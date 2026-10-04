@@ -86,6 +86,48 @@ MIN_DAYS_SPAN_FOR_READINESS = 7
 #   - 可用维度 < 2, 或缺训练负荷维度(没有它就没法谈"今天该不该练") → 返回 None
 READINESS_WEIGHTS = {"hrv": 30, "acwr": 25, "tsb": 20, "phase": 15, "rpe": 10}
 
+# ACWR 的慢性窗口。取数天数必须 >= 它, 否则 compute_acwr() 直接返回空序列。
+ACWR_CHRONIC_WINDOW_DAYS = 28
+
+# ACWR 还要求**真实的训练史**够长, 不只是补零后的序列够长。
+#
+# `compute_daily_tss()` 会把没有活动的日期补成 TSS=0, 所以返回的序列长度
+# 恒等于 days+1 —— `compute_acwr()` 开头那个 `len(daily_tss) < 28` 的守卫
+# **从来没有真正检验过训练史**, 它检验的是补零的长度。
+#
+# 后果: 只有 8 天训练的新用户也能算出 ACWR, 只是 28 天慢性窗口里有 20 天
+# 是"还没开始骑", 被当成了"休息日"。chronic 被稀释, 比值虚高或虚低。
+# (跟 V0.9.0 早先修的 normalized_power 零填充、W′ 平衡把缺失采样当 0W
+#  是同一类问题。)
+#
+# 判据是"**整个慢性窗口都被真实历史覆盖**", 不是"最近骑过几天"。
+#
+# 我第一版写成"最近 28 天里至少骑过 7 天", 结果 8 天连续训练的新用户照样放行 ——
+# 而那种情况下 chronic = 8 天 TSS / 28, acute = 7 天 / 7, 比值能到 3.5,
+# 直接落进 danger 区, 等于对一个刚入门的人说"你严重过载了"。
+# 比例本身没错, 错的是 chronic 的分母里有 20 天是"还没开始骑"。
+MIN_TRAINING_HISTORY_DAYS_FOR_ACWR = 28
+
+
+def _acwr_history_is_real(db: Session, athlete_id: int) -> bool:
+    """训练史是否够算 ACWR — 只看**真实存在过多少天**, 不信补零后的序列长度
+
+    ACWR = 7 天平均 / 28 天平均。28 天那一半必须真的是"这 28 天里的训练"，
+    否则"还没开始骑的那些天"会被当成休息日, chronic 被稀释, 比值失真。
+    """
+    first = (
+        db.query(Activity.start_time)
+        .filter(Activity.athlete_id == athlete_id)
+        .order_by(Activity.start_time.asc())
+        .limit(1)
+        .scalar()
+    )
+    if first is None:
+        return False
+    if isinstance(first, str):
+        first = datetime.fromisoformat(first)
+    return (datetime.utcnow() - first).days >= MIN_TRAINING_HISTORY_DAYS_FOR_ACWR
+
 # 训练负荷是 readiness 的地基: 不知道最近骑了多少, 就没资格说今天该上什么强度
 REQUIRED_READINESS_DIMENSION = "tsb"
 
@@ -197,10 +239,19 @@ def compute_readiness(
     # 原来这里给 20/30 (2/3 分), 意思���"没测心率但我按三分之二算上了"。
 
     # 2. ACWR (25 分) — 算不出来就不算。ACWR 需要 28 天 chronic, 短期用户必然算不出。
-    acwr = get_acwr(db, days=7)  # get_acwr_overview 内部用 athlete_id
+    # V0.9.0: days 必须是 ACWR 的 chronic_window(28), 原来传的是 7。
+    # compute_acwr() 开头就是 `if len(daily_tss) < chronic_window: return []`,
+    # 而 days=7 最多只能取到 8 条 → **恒为真** → series 恒空 → today 恒 None。
+    # 也就是说 ACWR 在这条路径上从来没有算出来过, 对所有用户都一样。
+    # 之前没暴露, 恰恰是因为 `get("acwr", 1.0)` 那个编造默认值把
+    # "算不出来"伪装成了"完美平衡 25/25" —— 一个坏掉的功能被假数据盖住了。
+    # 实测(demo 数据 45 次活动 / 8 周): days=7 → today=None;
+    # days=28 → today={'acwr': 0.42, 'zone': 'low'}, 是真实读数。
+    acwr = get_acwr(db, days=ACWR_CHRONIC_WINDOW_DAYS)  # get_acwr_overview 内部用 athlete_id
     today = acwr.get("today", {}) if isinstance(acwr, dict) else {}
     acwr_val = today.get("acwr") if today else None
-    if acwr_val is not None:
+    # 训练史不够 → 这个 ACWR 是在补零序列上算出来的, 不能用
+    if acwr_val is not None and _acwr_history_is_real(db, athlete_id):
         # 0.8-1.3 sweet spot
         if 0.8 <= acwr_val <= 1.3:
             acwr_score = 25
@@ -454,10 +505,22 @@ def generate_recommendations(
         ))
     
     # ACWR 触发
-    acwr = get_acwr(db, days=7)  # get_acwr_overview 内部用 athlete_id
+    # V0.9.0: days 必须是 ACWR 的 chronic_window(28), 原来传的是 7。
+    # compute_acwr() 开头就是 `if len(daily_tss) < chronic_window: return []`,
+    # 而 days=7 最多只能取到 8 条 → **恒为真** → series 恒空 → today 恒 None。
+    # 也就是说 ACWR 在这条路径上从来没有算出来过, 对所有用户都一样。
+    # 之前没暴露, 恰恰是因为 `get("acwr", 1.0)` 那个编造默认值把
+    # "算不出来"伪装成了"完美平衡 25/25" —— 一个坏掉的功能被假数据盖住了。
+    # 实测(demo 数据 45 次活动 / 8 周): days=7 → today=None;
+    # days=28 → today={'acwr': 0.42, 'zone': 'low'}, 是真实读数。
+    acwr = get_acwr(db, days=ACWR_CHRONIC_WINDOW_DAYS)  # get_acwr_overview 内部用 athlete_id
     today = acwr.get("today", {}) if isinstance(acwr, dict) else {}
-    acwr_val = today.get("acwr", 1.0) if today else 1.0
-    if acwr_val > 1.5:
+    # V0.9.0: 原来这里是 `today.get("acwr", 1.0) if today else 1.0` ——
+    # 算不出来时默认 1.0, 于是**永远不会**触发 >1.5 的警告, 也不会提示任何东西。
+    # 修复 readiness 那一处时我漏了这一处, 变异测试也没覆盖到, 是自己核对时发现的。
+    # 算不出来就是算不出来, 不该拿 1.0 当"正常"悄悄放过。
+    acwr_val = today.get("acwr") if today else None
+    if acwr_val is not None and acwr_val > 1.5:
         recs.append(Recommendation(
             category="warning", priority=5,
             title="ACWR 危险区",

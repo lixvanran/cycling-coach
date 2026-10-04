@@ -224,62 +224,369 @@ def test_missing_guidance_is_actionable():
     assert txt.strip() != ""
 
 
-# ---------------------------------------------------------------- 变异测试: 证明这些测试抓得住回归
+# ---------------------------------------------------------------- ACWR 参数 P0
 
-def test_fix_structure_still_present():
-    """记录每种"改回旧写法"分别会让哪条测试红 —— 顺带确认修复的结构没被挪走
+# 起因: 8 周 / 45 次活动的 demo 用户, ACWR 维度居然还是 missing。
+# 一开始以为"数据还不够", 查下去发现不是数据问题:
+#
+#     compute_acwr() 开头: `if len(daily_tss) < chronic_window: return []`
+#     chronic_window = 28
+#     而 compute_readiness 传的是 `get_acwr(db, days=7)`
+#     → 最多取到 8 条 → **恒为真** → series 恒空 → today 恒 None
+#
+# ACWR 在 readiness 这条路径上**从来没算出来过, 对所有用户都一样**。
+# 之所以长期没暴露, 恰恰因为 `get("acwr", 1.0)` 把"算不出来"
+# 伪装成了"负荷平衡完美 25/25" —— 一个坏掉的功能被假数据盖住了。
+#
+# **假数据不只是撒谎, 它还会掩盖真 bug**: 只要默认值填得"合理",
+# 没人会去查那个值到底是不是真的。
 
-    - acwr 退回 `today.get("acwr", 1.0) if today else 1.0`
-        -> test_no_full_marks_without_data 红
-    - hrv 的 else 分支加回 `hrv_score = 20`
-        -> test_no_hrv_score_without_hrv_data 红
-    - rpe 的 else 分支加回 `rpe_score = 5`
-        -> test_no_neutral_rpe_score_without_rpe 红
-    - breakdown 里把缺失维度补回来
-        -> test_normalization_only_over_available 红
-    - 去掉 `required` / `len(breakdown) < 2` 的 None 返回
-        -> test_returns_none_without_load_dimension 语义失效(需人工确认)
 
-    这条测试本身只做一件轻量的事: 确认"只把有数据的维度塞进 breakdown"
-    这个结构还在。变异留痕靠上面那几条断言, 不靠这里。
+def test_acwr_window_param_is_actually_computable():
+    """ACWR 的取数天数必须 >= 库的 chronic_window, 且不该靠人记这个数"""
+    import inspect
+    import cycling_coach.core.metrics.acwr as acwr_mod
+    from cycling_coach.core.coaching.recommendations import (
+        ACWR_CHRONIC_WINDOW_DAYS, MIN_TRAINING_HISTORY_DAYS_FOR_ACWR)
+
+    chronic = inspect.signature(acwr_mod.compute_acwr).parameters["chronic_window"].default
+    assert ACWR_CHRONIC_WINDOW_DAYS == chronic
+    # 训练史守卫也要 >= 同一个窗口, 否则等于没守
+    assert MIN_TRAINING_HISTORY_DAYS_FOR_ACWR >= chronic
+
+
+def test_acwr_called_with_sufficient_window(fresh, monkeypatch, short_history_athlete):
+    """行为测试: readiness 调 get_acwr 时传的 days 必须够 chronic 窗口
+
+    这条早先写成了 `assert "days=7" not in 源码`, **失败**, 两个原因:
+
+    1. 我为了解释这个 bug 在注释里写了 `days=7 最多只能取到 8 条` ——
+       断言分不清代码和说明。后来改用 tokenize 剥注释, 但行列换算写反了,
+       结果 `"days=7" not in src` **恒为真**。做变异测试把 days 退回 7 时,
+       13 条测试照样全绿 —— 断言从来没生效过。
+    2. 就算剥注释做对了, 它测的也是"源码长什么样", 不是"行为对不对"。
+
+    教训: **参数传递要用行为测试盯, 不要 grep 源码。** 注释怎么写不该影响测试。
     """
     import cycling_coach.core.coaching.recommendations as mod
-    src = _executable_source(mod.__file__)
-    # 三个维度的写入都必须在"有数据"分支内, 而不是无条件
-    assert "breakdown" in src
-    # 归一化的分母是可用维目的满分, 不是写死的 100
-    assert "max_total" in src and "READINESS_WEIGHTS" in src
+
+    seen: list[int] = []
+    real = mod.get_acwr
+
+    def spy(db, days=90):
+        seen.append(days)
+        return real(db, days=days)
+
+    monkeypatch.setattr(mod, "get_acwr", spy)
+    mod.compute_readiness(fresh, short_history_athlete)
+
+    assert seen, "compute_readiness 根本没调 get_acwr"
+    for d in seen:
+        assert d >= 28, f"传给 get_acwr 的 days={d} < 28, ACWR 会恒定算不出来"
 
 
-def _executable_source(path) -> str:
-    """只取可执行代码, 去掉注释。
+def test_acwr_excluded_when_history_is_padded_zeros(fresh, short_history_athlete):
+    """训练史太短时 ACWR 必须**不计入**, 而不是拿补零序列算出一个数
 
-    这一步是必须的: 实现里我特意留了注释解释"原来这里是无数据默认 1.0",
-    而注释里就写着 `today.get("acwr", 1.0)`。不去掉注释的话, 下面那些
-    源码级断言会**被我自己的说明文字绊倒** —— 检查代码的测试被散文污染。
+    `compute_daily_tss()` 会把没有活动的日期补成 TSS=0, 所以序列长度恒等于
+    days+1 —— `compute_acwr()` 那个 `len < 28` 的守卫**从来没真正检验过训练史**。
+
+    我第一版守卫写成"最近 28 天至少骑过 7 天", 结果 8 天连续训练的新用户照样
+    放行: chronic = 8 天 TSS / 28, acute = 7 天 / 7, 比值能到 3.5 落进 danger 区,
+    等于对一个刚入门的人说"你严重过载了"。比例没错, 错的是分母里有 20 天
+    是"还没开始骑"。现在要求**整个慢性窗口都被真实历史覆盖**。
     """
-    import io
-    import tokenize
-    out = []
-    with open(path, "rb") as fh:
-        for tok in tokenize.tokenize(fh.readline):
-            if tok.type == tokenize.COMMENT:
-                continue
-            out.append(tok.string)
-    return "\n".join(out)
+    from cycling_coach.core.coaching.recommendations import (
+        compute_readiness, readiness_coverage)
+
+    _score, bd = compute_readiness(fresh, short_history_athlete)
+    cov = readiness_coverage(bd)
+    # 8 天训练史 -> 必须排除 ACWR
+    assert "acwr" in cov["missing"], (
+        "训练史只有 8 天, ACWR 却算出来了 —— 那是拿补零序列算的"
+    )
+    assert "acwr" not in bd
 
 
-def test_implementation_has_no_fabricated_defaults():
-    """源码级防护: 四个"编造默认值"必须都不在**可执行代码**里"""
+def test_acwr_included_for_long_history(fresh):
+    """反过来: 训练史够长时 ACWR 必须真的算出来 (上一轮只验了"不编造", 没验"能算")"""
+    import asyncio
+    import tempfile
+    from pathlib import Path
+    from datetime import datetime, timedelta, timezone
+    from cycling_coach.core.services.activity import ActivityService
+    from cycling_coach.core.coaching.recommendations import compute_readiness
+    from tests.fit_fixtures import build_fit
+
+    use_temp_db("v090_acwr_long_history")
+    from cycling_coach.data.sqlite.database import SessionLocal
+    from cycling_coach.core.profile import store as profile_store
+    db = SessionLocal()
+    ath = profile_store.get_or_create_athlete(db)
+    ath.ftp = 250
+    db.commit()
+
+    # 40 天训练史 —— 覆盖 28 天慢性窗口
+    tmp = Path(tempfile.mkdtemp(prefix="cc_acwr_"))
+    svc = ActivityService(db)
+    loop = asyncio.new_event_loop()
+    base = datetime.now(timezone.utc) - timedelta(days=45)
+    try:
+        for w in range(6):
+            for d in (0, 2, 4):
+                p = tmp / f"a{w}_{d}.fit"
+                build_fit(p, duration_s=3600, avg_power=180, avg_hr=145,
+                          speed_mps=8.0, start=base + timedelta(days=w * 7 + d))
+                loop.run_until_complete(
+                    svc.upload(filename=p.name, file_bytes=p.read_bytes()))
+    finally:
+        loop.close()
+
+    _score, bd = compute_readiness(db, ath.id)
+    assert "acwr" in bd, (
+        "18 次训练 / 40 天历史, ACWR 仍算不出来 —— 参数或守卫又出问题了"
+    )
+# ---------------------------------------------------------------- ACWR 参数 P0
+
+# 起因: 8 周 / 45 次活动的 demo 用户, ACWR 维度居然还是 missing。
+# 一开始以为"数据还不够", 查下去发现不是数据问题:
+#
+#     compute_acwr() 开头: `if len(daily_tss) < chronic_window: return []`
+#     chronic_window = 28
+#     而 compute_readiness 传的是 `get_acwr(db, days=7)`
+#     → 最多取到 8 条 → **恒为真** → series 恒空 → today 恒 None
+#
+# ACWR 在 readiness 这条路径上**从来没算出来过, 对所有用户都一样**。
+# 之所以长期没暴露, 恰恰因为 `get("acwr", 1.0)` 把"算不出来"
+# 伪装成了"负荷平衡完美 25/25" —— 一个坏掉的功能被假数据盖住了。
+#
+# **假数据不只是撒谎, 它还会掩盖真 bug**: 只要默认值填得"合理",
+# 没人会去查那个值到底是不是真的。
+
+
+def test_acwr_window_param_is_actually_computable():
+    """ACWR 的取数天数必须 >= 库的 chronic_window, 且不该靠人记这个数"""
+    import inspect
+    import cycling_coach.core.metrics.acwr as acwr_mod
+    from cycling_coach.core.coaching.recommendations import (
+        ACWR_CHRONIC_WINDOW_DAYS, MIN_TRAINING_HISTORY_DAYS_FOR_ACWR)
+
+    chronic = inspect.signature(acwr_mod.compute_acwr).parameters["chronic_window"].default
+    assert ACWR_CHRONIC_WINDOW_DAYS == chronic
+    # 训练史守卫也要 >= 同一个窗口, 否则等于没守
+    assert MIN_TRAINING_HISTORY_DAYS_FOR_ACWR >= chronic
+
+
+def test_acwr_called_with_sufficient_window(fresh, monkeypatch, short_history_athlete):
+    """行为测试: readiness 调 get_acwr 时传的 days 必须够 chronic 窗口
+
+    这条早先写成了 `assert "days=7" not in 源码`, **失败**, 两个原因:
+
+    1. 我为了解释这个 bug 在注释里写了 `days=7 最多只能取到 8 条` ——
+       断言分不清代码和说明。后来改用 tokenize 剥注释, 但行列换算写反了,
+       结果 `"days=7" not in src` **恒为真**。做变异测试把 days 退回 7 时,
+       13 条测试照样全绿 —— 断言从来没生效过。
+    2. 就算剥注释做对了, 它测的也是"源码长什么样", 不是"行为对不对"。
+
+    教训: **参数传递要用行为测试盯, 不要 grep 源码。** 注释怎么写不该影响测试。
+    """
     import cycling_coach.core.coaching.recommendations as mod
-    src = _executable_source(mod.__file__)
 
-    # 1) ACWR 无数据 -> 默认 1.0 -> 满分
-    assert 'today.get("acwr", 1.0)' not in src
-    assert "if today else 1.0" not in src
-    # 2) TSB 无数据 -> 默认 0 -> 满分 20/20
-    assert 'tsb = pmc.get("tsb", 0)' not in src
-    # 3) RPE 无数据 -> 5/10 中性分
-    assert "rpe_score = 5  # 无数据" not in src
-    # 4) HRV insufficient_data -> 20/30
-    assert "hrv_score = 20  # insufficient_data" not in src
+    seen: list[int] = []
+    real = mod.get_acwr
+
+    def spy(db, days=90):
+        seen.append(days)
+        return real(db, days=days)
+
+    monkeypatch.setattr(mod, "get_acwr", spy)
+    mod.compute_readiness(fresh, short_history_athlete)
+
+    assert seen, "compute_readiness 根本没调 get_acwr"
+    for d in seen:
+        assert d >= 28, f"传给 get_acwr 的 days={d} < 28, ACWR 会恒定算不出来"
+
+
+def test_acwr_excluded_when_history_is_padded_zeros(fresh, short_history_athlete):
+    """训练史太短时 ACWR 必须**不计入**, 而不是拿补零序列算出一个数
+
+    `compute_daily_tss()` 会把没有活动的日期补成 TSS=0, 所以序列长度恒等于
+    days+1 —— `compute_acwr()` 那个 `len < 28` 的守卫**从来没真正检验过训练史**。
+
+    我第一版守卫写成"最近 28 天至少骑过 7 天", 结果 8 天连续训练的新用户照样
+    放行: chronic = 8 天 TSS / 28, acute = 7 天 / 7, 比值能到 3.5 落进 danger 区,
+    等于对一个刚入门的人说"你严重过载了"。比例没错, 错的是分母里有 20 天
+    是"还没开始骑"。现在要求**整个慢性窗口都被真实历史覆盖**。
+    """
+    from cycling_coach.core.coaching.recommendations import (
+        compute_readiness, readiness_coverage)
+
+    _score, bd = compute_readiness(fresh, short_history_athlete)
+    cov = readiness_coverage(bd)
+    # 8 天训练史 -> 必须排除 ACWR
+    assert "acwr" in cov["missing"], (
+        "训练史只有 8 天, ACWR 却算出来了 —— 那是拿补零序列算的"
+    )
+    assert "acwr" not in bd
+
+
+def test_acwr_included_for_long_history(fresh):
+    """反过来: 训练史够长时 ACWR 必须真的算出来 (上一轮只验了"不编造", 没验"能算")"""
+    import asyncio
+    import tempfile
+    from pathlib import Path
+    from datetime import datetime, timedelta, timezone
+    from cycling_coach.core.services.activity import ActivityService
+    from cycling_coach.core.coaching.recommendations import compute_readiness
+    from tests.fit_fixtures import build_fit
+
+    use_temp_db("v090_acwr_long_history")
+    from cycling_coach.data.sqlite.database import SessionLocal
+    from cycling_coach.core.profile import store as profile_store
+    db = SessionLocal()
+    ath = profile_store.get_or_create_athlete(db)
+    ath.ftp = 250
+    db.commit()
+
+    # 40 天训练史 —— 覆盖 28 天慢性窗口
+    tmp = Path(tempfile.mkdtemp(prefix="cc_acwr_"))
+    svc = ActivityService(db)
+    loop = asyncio.new_event_loop()
+    base = datetime.now(timezone.utc) - timedelta(days=45)
+    try:
+        for w in range(6):
+            for d in (0, 2, 4):
+                p = tmp / f"a{w}_{d}.fit"
+                build_fit(p, duration_s=3600, avg_power=180, avg_hr=145,
+                          speed_mps=8.0, start=base + timedelta(days=w * 7 + d))
+                loop.run_until_complete(
+                    svc.upload(filename=p.name, file_bytes=p.read_bytes()))
+    finally:
+        loop.close()
+
+    _score, bd = compute_readiness(db, ath.id)
+    assert "acwr" in bd, (
+        "18 次训练 / 40 天历史, ACWR 仍算不出来 —— 参数或守卫又出问题了"
+    )
+# ---------------------------------------------------------------- ACWR 参数 P0
+
+# 起因: 8 周 / 45 次活动的 demo 用户, ACWR 维度居然还是 missing。
+# 一开始以为"数据还不够", 查下去发现不是数据问题:
+#
+#     compute_acwr() 开头: `if len(daily_tss) < chronic_window: return []`
+#     chronic_window = 28
+#     而 compute_readiness 传的是 `get_acwr(db, days=7)`
+#     → 最多取到 8 条 → **恒为真** → series 恒空 → today 恒 None
+#
+# ACWR 在 readiness 这条路径上**从来没算出来过, 对所有用户都一样**。
+# 之所以长期没暴露, 恰恰因为 `get("acwr", 1.0)` 把"算不出来"
+# 伪装成了"负荷平衡完美 25/25" —— 一个坏掉的功能被假数据盖住了。
+#
+# **假数据不只是撒谎, 它还会掩盖真 bug**: 只要默认值填得"合理",
+# 没人会去查那个值到底是不是真的。
+
+
+def test_acwr_window_param_is_actually_computable():
+    """ACWR 的取数天数必须 >= 库的 chronic_window, 且不该靠人记这个数"""
+    import inspect
+    import cycling_coach.core.metrics.acwr as acwr_mod
+    from cycling_coach.core.coaching.recommendations import (
+        ACWR_CHRONIC_WINDOW_DAYS, MIN_TRAINING_HISTORY_DAYS_FOR_ACWR)
+
+    chronic = inspect.signature(acwr_mod.compute_acwr).parameters["chronic_window"].default
+    assert ACWR_CHRONIC_WINDOW_DAYS == chronic
+    # 训练史守卫也要 >= 同一个窗口, 否则等于没守
+    assert MIN_TRAINING_HISTORY_DAYS_FOR_ACWR >= chronic
+
+
+def test_acwr_called_with_sufficient_window(fresh, monkeypatch, short_history_athlete):
+    """行为测试: readiness 调 get_acwr 时传的 days 必须够 chronic 窗口
+
+    这条早先写成了 `assert "days=7" not in 源码`, **失败**, 两个原因:
+
+    1. 我为了解释这个 bug 在注释里写了 `days=7 最多只能取到 8 条` ——
+       断言分不清代码和说明。后来改用 tokenize 剥注释, 但行列换算写反了,
+       结果 `"days=7" not in src` **恒为真**。做变异测试把 days 退回 7 时,
+       13 条测试照样全绿 —— 断言从来没生效过。
+    2. 就算剥注释做对了, 它测的也是"源码长什么样", 不是"行为对不对"。
+
+    教训: **参数传递要用行为测试盯, 不要 grep 源码。** 注释怎么写不该影响测试。
+    """
+    import cycling_coach.core.coaching.recommendations as mod
+
+    seen: list[int] = []
+    real = mod.get_acwr
+
+    def spy(db, days=90):
+        seen.append(days)
+        return real(db, days=days)
+
+    monkeypatch.setattr(mod, "get_acwr", spy)
+    mod.compute_readiness(fresh, short_history_athlete)
+
+    assert seen, "compute_readiness 根本没调 get_acwr"
+    for d in seen:
+        assert d >= 28, f"传给 get_acwr 的 days={d} < 28, ACWR 会恒定算不出来"
+
+
+def test_acwr_excluded_when_history_is_padded_zeros(fresh, short_history_athlete):
+    """训练史太短时 ACWR 必须**不计入**, 而不是拿补零序列算出一个数
+
+    `compute_daily_tss()` 会把没有活动的日期补成 TSS=0, 所以序列长度恒等于
+    days+1 —— `compute_acwr()` 那个 `len < 28` 的守卫**从来没真正检验过训练史**。
+
+    我第一版守卫写成"最近 28 天至少骑过 7 天", 结果 8 天连续训练的新用户照样
+    放行: chronic = 8 天 TSS / 28, acute = 7 天 / 7, 比值能到 3.5 落进 danger 区,
+    等于对一个刚入门的人说"你严重过载了"。比例没错, 错的是分母里有 20 天
+    是"还没开始骑"。现在要求**整个慢性窗口都被真实历史覆盖**。
+    """
+    from cycling_coach.core.coaching.recommendations import (
+        compute_readiness, readiness_coverage)
+
+    _score, bd = compute_readiness(fresh, short_history_athlete)
+    cov = readiness_coverage(bd)
+    # 8 天训练史 -> 必须排除 ACWR
+    assert "acwr" in cov["missing"], (
+        "训练史只有 8 天, ACWR 却算出来了 —— 那是拿补零序列算的"
+    )
+    assert "acwr" not in bd
+
+
+def test_acwr_included_for_long_history(fresh):
+    """反过来: 训练史够长时 ACWR 必须真的算出来 (上一轮只验了"不编造", 没验"能算")"""
+    import asyncio
+    import tempfile
+    from pathlib import Path
+    from datetime import datetime, timedelta, timezone
+    from cycling_coach.core.services.activity import ActivityService
+    from cycling_coach.core.coaching.recommendations import compute_readiness
+    from tests.fit_fixtures import build_fit
+
+    use_temp_db("v090_acwr_long_history")
+    from cycling_coach.data.sqlite.database import SessionLocal
+    from cycling_coach.core.profile import store as profile_store
+    db = SessionLocal()
+    ath = profile_store.get_or_create_athlete(db)
+    ath.ftp = 250
+    db.commit()
+
+    # 40 天训练史 —— 覆盖 28 天慢性窗口
+    tmp = Path(tempfile.mkdtemp(prefix="cc_acwr_"))
+    svc = ActivityService(db)
+    loop = asyncio.new_event_loop()
+    base = datetime.now(timezone.utc) - timedelta(days=45)
+    try:
+        for w in range(6):
+            for d in (0, 2, 4):
+                p = tmp / f"a{w}_{d}.fit"
+                build_fit(p, duration_s=3600, avg_power=180, avg_hr=145,
+                          speed_mps=8.0, start=base + timedelta(days=w * 7 + d))
+                loop.run_until_complete(
+                    svc.upload(filename=p.name, file_bytes=p.read_bytes()))
+    finally:
+        loop.close()
+
+    _score, bd = compute_readiness(db, ath.id)
+    assert "acwr" in bd, (
+        "18 次训练 / 40 天历史, ACWR 仍算不出来 —— 参数或守卫又出问题了"
+    )
