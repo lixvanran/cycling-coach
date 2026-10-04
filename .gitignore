@@ -107,3 +107,9 @@ screenshots/
 *.tsbuildinfo
 apps/web/vite.config.js
 apps/web/vite.config.d.ts
+
+# V0.9.0: 给用户本地 Agent 用的对接文件 — 只走 IM 发送, 不进仓库。
+# 这类文件描述的是"我这台沙箱的环境问题"(比如 TLS 中间人代理的 CA 路径),
+# 对仓库的其他协作者没有意义, 留在历史里只会误导人。
+WINDOWS_VERIFY_HANDOFF.md
+_review/WINDOWS_VERIFY_HANDOFF.md
