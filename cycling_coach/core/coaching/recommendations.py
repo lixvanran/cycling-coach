@@ -28,7 +28,9 @@ from cycling_coach.core.metrics.periodization import (
     detect_phase_signals,
     derive_phase,
 )
-from cycling_coach.data.sqlite.models import Activity, DailyMetric, Athlete
+from cycling_coach.data.sqlite.models import (
+    Activity, Athlete, DailyMetric, TrainingPhase,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -333,20 +335,42 @@ def compute_readiness(
     # 原来: tsb = pmc.get("tsb", 0) —— 无数据时 0 落在 -10~20, **满分 20/20**。
 
     # 4. Phase (15 分) — 周期化阶段适配
-    phase = derive_phase(db, athlete_id)
-    if phase.suggested_type in ("build", "peak"):
-        phase_score = 15  # 强化期 / 巅峰期
-    elif phase.suggested_type == "base":
-        phase_score = 12  # 基础期
-    elif phase.suggested_type == "taper":
-        phase_score = 10  # 减量
-    elif phase.suggested_type == "recovery":
-        phase_score = 5
-    elif phase.suggested_type == "race":
-        phase_score = 8
+    #
+    # V0.9.0: 原来这里**无条件**写入 breakdown, 于是 phase 成为唯一一个
+    # "永远算得出"的维度。后果有两个:
+    #   1. 零数据用户只靠 `derive_phase` 返回的 base(低 CTL) 就拿到 12/15,
+    #      归一化后是 **80 分** —— 而"低 CTL"的原因是**根本没数据**。
+    #   2. `len(breakdown) < MIN_DIMENSIONS` 这个检查形同虚设:
+    #      tsb 在的时候 len 恒 >= 2, 分支不可达 (Verifier 抓到的 M6 死代码)。
+    #
+    # 现在要求: 真的有训练负荷数据, 或真的设了比赛, 才算这个维度。
+    # 阶段是从"负荷 + 赛程"推出来的, 两者都没有时它只是在猜。
+    has_race_plan = (
+        db.query(TrainingPhase)
+        .filter(TrainingPhase.athlete_id == athlete_id)
+        .count() > 0
+    )
+    if pmc.get("has_load_data") or has_race_plan:
+        phase = derive_phase(db, athlete_id)
     else:
+        phase = None
+    if phase is not None and phase.suggested_type in ("build", "peak"):
+        phase_score = 15  # 强化期 / 巅峰期
+    elif phase is not None and phase.suggested_type == "base":
+        phase_score = 12  # 基础期
+    elif phase is not None and phase.suggested_type == "taper":
+        phase_score = 10  # 减量
+    elif phase is not None and phase.suggested_type == "recovery":
+        phase_score = 5
+    elif phase is not None and phase.suggested_type == "race":
+        phase_score = 8
+    elif phase is not None:
         phase_score = 10
-    breakdown["phase"] = phase_score
+    else:
+        # 没有负荷数据也没有赛程 -> 阶段无从判断, 整维不计入
+        phase_score = None
+    if phase_score is not None:
+        breakdown["phase"] = phase_score
 
     # 5. RPE 7d (10 分) — 主观疲劳。没有记录就是没有, 不给中性分
     today_d = datetime.utcnow().date()
@@ -371,6 +395,19 @@ def compute_readiness(
     # 原来: 无 RPE 记录时给 5/10 中性分。
 
     # 数据够不够给一个分?
+    #
+    # ⚠️ 这段守卫在 V0.9.0 第二轮里曾经**整段丢失**, 而且丢了很久都没人发现:
+    # 零数据用户只靠一个凭空来的 `phase: 12` 就能拿到 **80 分**。
+    # 更糟的是它让变异测试给出**假信号** —— 我注入 M6(删掉这段守卫)时,
+    # 守卫本来就不在, 于是那次变异是空操作, "测试变红"是别的断言造成的。
+    # **变异测试的前提是 baseline 是好的**; baseline 坏了, 变异结果就没有意义。
+
+    # 训练负荷是地基: 不知道最近骑了多少, 就没有资格说今天该上什么强度。
+    if REQUIRED_READINESS_DIMENSION not in breakdown:
+        return None, breakdown
+    # 维度太少时, 归一化出来的 0-100 看着和五维齐全的一样权威。
+    if len(breakdown) < MIN_DIMENSIONS_FOR_READINESS:
+        return None, breakdown
 
     # 按**可用维度**的满分归一化。
     # 五个维度齐全时 max_total == 100, 与旧算法逐位一致 —— 不会给老用户改分。

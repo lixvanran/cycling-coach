@@ -655,6 +655,15 @@ def test_returns_none_when_load_dimension_missing_even_if_two_others_present():
         )
         if row is not None:
             row.hrv_ms = 60          # 让 hrv 维度可用
+    # 造一个赛程, 让 phase 维度可用 (它现在要求"有负荷数据**或**有赛程")
+    # —— 没有它的话这个场景只有 hrv 一个可用维度, MIN_DIMENSIONS 会先挡下来,
+    # 哨兵删不删结果都一样, 测试就抓不住哨兵了。
+    from cycling_coach.data.sqlite.models import TrainingPhase
+    db.add(TrainingPhase(athlete_id=ath.id, phase_type="base", name="基础期",
+                        start_date=today - timedelta(days=30),
+                        end_date=today + timedelta(days=60)))
+    db.commit()
+
     # 删掉今天那一行 → get_pmc_today 返回"无数据" → 训练负荷维度不可用
     db.query(DailyMetric).filter(
         DailyMetric.athlete_id == ath.id,
@@ -1153,3 +1162,76 @@ def test_min_dimensions_is_three(fresh, short_history_athlete):
     # phase 无条件写入, 所以 3 维 = tsb + phase + 任意一项真实信号
     _score, bd = mod.compute_readiness(fresh, short_history_athlete)
     assert len(bd) < 3 or "tsb" in bd
+
+
+@pytest.fixture(scope="module")
+def empty_db():
+    """一个**真的什么都没有**的库。
+
+    注意不能用模块级的 `fresh` —— 里面已经被 short_history_athlete 导了 8 次训练,
+    拿它测"零数据用户"会得到误导性的结果 (我第一版就踩了, 断言报的是
+    "{'tsb': 5, 'phase': 12}" 而不是我以为的空库)。
+    """
+    use_temp_db("v090_readiness_empty")
+    from cycling_coach.data.sqlite.database import SessionLocal
+    from cycling_coach.core.profile import store as profile_store
+    db = SessionLocal()
+    ath = profile_store.get_or_create_athlete(db)
+    ath.ftp = 250
+    db.commit()
+    return db
+
+
+def test_zero_data_user_gets_no_score_at_all(empty_db):
+    """零数据用户: breakdown 必须完全为空, 连 phase 都不能有
+
+    Verifier 抓到的 M6 死代码根源: `phase` 原来**无条件**写入 breakdown,
+    于是它成了唯一"永远算得出"的维度。零数据用户只靠 `derive_phase`
+    返回的 base(低 CTL) 就拿到 12/15, 归一化后 **80 分** ——
+    而"低 CTL"的原因是**根本没数据**。
+
+    同时它让 `len(breakdown) < MIN_DIMENSIONS` 形同虚设:
+    tsb 在的时候 len 恒 >= 2, 分支不可达。
+    """
+    from cycling_coach.core.coaching.recommendations import compute_readiness
+
+    from cycling_coach.core.profile import store as profile_store
+    aid = profile_store.get_or_create_athlete(empty_db).id
+    score, bd = compute_readiness(empty_db, aid)
+    assert score is None, f"零数据用户拿到 {score} 分"
+    assert bd == {}, f"零数据用户却有 breakdown: {bd}"
+
+
+def test_the_none_guards_actually_exist():
+    """源码级: 两个 None 守卫必须真的在归一化**之前**
+
+    这条是被一次假信号变异测试逼出来的 —— 我注入 M6(删守卫)时,
+    守卫在 baseline 里**本来就不在**, 那次变异是空操作,
+    "测试变红"是别的断言造成的。**变异测试的前提是 baseline 是好的。**
+    """
+    import inspect
+    from cycling_coach.core.coaching import recommendations as mod
+
+    src = inspect.getsource(mod.compute_readiness)
+    # 守卫必须在归一化之前
+    i_guard = src.find("REQUIRED_READINESS_DIMENSION not in breakdown")
+    i_guard2 = src.find("len(breakdown) < MIN_DIMENSIONS_FOR_READINESS")
+    i_norm = src.find("max_total = sum(")
+    assert i_guard != -1, "训练负荷维度的守卫丢了"
+    assert i_guard2 != -1, "维度数守卫丢了"
+    assert i_norm != -1, "归一化那行不见了"
+    assert i_guard < i_norm and i_guard2 < i_norm, (
+        "守卫必须在归一化之前, 否则它们形同虚设"
+    )
+
+
+def test_phase_not_counted_without_load_or_race(empty_db):
+    """没有负荷数据也没有赛程时, phase 维度必须不计入"""
+    from cycling_coach.core.profile import store as profile_store
+    from cycling_coach.core.coaching.recommendations import compute_readiness
+    aid = profile_store.get_or_create_athlete(empty_db).id
+    _score, bd = compute_readiness(empty_db, aid)
+    assert "phase" not in bd, (
+        "零数据零赛程却把 '基础期(低 CTL)' 当成真实阶段计入了 —— "
+        "低 CTL 的原因是没数据, 不是真的低"
+    )
