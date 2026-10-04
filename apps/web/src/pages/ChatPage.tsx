@@ -10,6 +10,7 @@ import { useConfirm } from "../components/common";
 import { ChatMessage, extractWorkoutFromContent } from "../components/ChatMessage";
 import { ThinkingTreeView, makeNode } from "../components/ThinkingTreeView";
 import { useChatStore, type ChatMode } from "../store/chat";
+import { splitThinkingAnswer } from "../lib/splitThinking";
 import type { ChatMsg } from "../store/useAppStore";
 import type { ThinkingNode } from "../lib/types";
 import type { Block } from "../lib/builderBlocks";
@@ -162,10 +163,9 @@ export function ChatPage() {
     abortRef.current = ctrl;
 
     let fullText = "";
+    // [THINK] SSE 独立通道的累积 (后端 reasoning 走这条, 走上面的标签切分)
     let fullThink = "";
     // V0.8.2 U-12: 改用 markdown 标题切分 (## Thinking / ## Answer)
-    // 比 [THINK]xxx[/THINK] 健壮, LLM 半路切也不会乱
-    let inThink = false;
     let phase: "pre" | "thinking" | "answer" = "pre";
     // workflow 模式下的思维树节点缓冲
     const nodeMap = new Map<string, ThinkingNode>();
@@ -173,34 +173,17 @@ export function ChatPage() {
     try {
       for await (const evt of api.chatStreamV2(chatMode, history.slice(0, -1), content, ctrl.signal)) {
         if (evt.type === "text") {
-          const chunk = evt.data;
-          // 流式拼到 raw buffer, 按"## Thinking" / "## Answer" 切分
-          fullText += chunk;
-          const lower = fullText.toLowerCase();
-          const thinkIdx = lower.indexOf("## thinking");
-          const answerIdx = lower.indexOf("## answer");
-          if (thinkIdx >= 0 && answerIdx > thinkIdx) {
-            // 完整拿到两个标题了
-            const thinkContent = fullText.slice(thinkIdx + "## thinking".length, answerIdx).trim();
-            const answerContent = fullText.slice(answerIdx + "## answer".length).trim();
-            updateLastMessage(chatMode, {
-              content: answerContent,
-              thinking: thinkContent,
-            } as any);
-          } else if (thinkIdx >= 0) {
-            // 只看到 Thinking, 还在流式
-            const thinkContent = fullText.slice(thinkIdx + "## thinking".length).trim();
-            updateLastMessage(chatMode, {
-              content: "",
-              thinking: thinkContent,
-            } as any);
-          } else {
-            // pre 阶段 (LLM 还没切到 Thinking), 全当 answer 显示
-            updateLastMessage(chatMode, {
-              content: fullText,
-              thinking: fullThink,
-            } as any);
-          }
+          // 切分逻辑抽到 lib/splitThinking.ts 纯函数, 带 7 个实测用例。
+          // 抽取原因: 这段逻辑决定用户第一屏看到"答案"还是"内部分析",
+          // 是 AI 体验里用户感知最强的一处, 却原本没有任何测试护栏。
+          // 对**累积全文**重新切分, 所以 delta 边界把标记切开也无所谓。
+          fullText += evt.data;
+          const split = splitThinkingAnswer(fullText);
+          phase = split.phase;
+          updateLastMessage(chatMode, {
+            content: split.content,
+            thinking: split.thinking,
+          } as any);
         } else if (evt.type === "node") {
           // workflow: 思维树节点事件
           const d = evt.data;

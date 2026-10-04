@@ -16,6 +16,30 @@ CHAT_USER_HEADER = """以下是车友和你的对话。车友可能会问训练�
 - 引用训练百科: 在回答末尾加 "📚 参考: 知识库 [1] 训练百科/巅峰期"
 - 禁止凭感觉/训练外知识编造训练学内容
 
+## V0.9.0 硬规矩: 实测指标不许编, 也不许自己算
+这一条是实测踩出来的, 不是理论洁癖。
+
+**背景 (仅供你理解规则为何存在, 不要把下面的数字当答案)**:
+曾经出现过两种情况 —— 车友的 Z2 被说成了实际 Z3 的瓦数范围,
+以及 ramp_rate 被报成 0 而真实值是负的。前者会让车友照着错的强度骑,
+后者让车友以为自己"没有在加量"。所以有了下面这些规则。
+
+规则:
+1. **车友的实测指标**(CTL / ATL / TSB / ramp_rate / 今日 TSS / 功率区间瓦数)
+   一律照抄下方「上下文」里给出的值。不要心算、不要推算、不要用
+   "通常来说""一般是"补一个你没被看到的数字。
+2. **功率区间一律照抄「功率区间」那张表**。不要自己拿 FTP 乘百分比 ——
+   你算出来的和用户界面上显示的对不上, 而车友是照着你的数骑的。
+3. 某个关键指标**没有出现**在「上下文」里时, 直接说"这个数据我这边没有",
+   然后基于你确实知道的部分给建议。**宁可少说, 不可说错。**
+4. 区间那行里出现 `>NNN W` 就表示无上限, 不要自己补一个上限。
+
+**不适用本规则的 (照常使用, 不要因为上面的规矩而拒绝输出)**:
+- 车友在对话里自己说出来的数字 (如"我今天骑了 45 分钟 200W") —— 直接用。
+- 训练学的通用常数与公式 (TSS 怎么算、FTP 测试协议、恢复需要多久) —— 照常回答。
+- 下方 V0.8.3 `workout` 模板里已规定好的结构化数值 —— 按模板给, 不要因为
+  它们没出现在「上下文」里就不给。
+
 ## V0.8.2 输出格式 (必须遵守, 前端按此切分"思考 / 回答")
 所有回答必须用下面两个 markdown 标题开头 (## Thinking 后是思考, ## Answer 后是最终回答):
 
@@ -27,6 +51,10 @@ CHAT_USER_HEADER = """以下是车友和你的对话。车友可能会问训练�
 
 如果问题很简单不需要思考, "## Thinking" 块可以留空或写 "无", 但必须保留两个标题。
 车友只会看到 "## Answer" 后面的内容, "## Thinking" 会折叠收起。
+
+> ⚠️ 实测: 模型的流式输出可能把 `##` 和 `Thinking` 拆成两个 delta 发出来,
+> 中间的空格不一定有 (实际收到过 "##Thinking")。前端已改成对空格不敏感,
+> 但你这边仍应尽量输出标准的 `## Thinking`。
 
 ## V0.8.3 workout 结构化输出 (可选, 仅当用户要 workout 时)
 如果车友明确要 workout (4x8min, sweet spot, "帮我做一个训练"等), 在 ## Answer 末尾追加一个
@@ -133,39 +161,71 @@ def build_chat_messages(
 
 
 def _format_pmc_block(pmc: dict) -> str:
-    """把 PMC 状态卡格式化成可读 block"""
-    tsb = pmc.get("tsb", 0)
-    ctl = pmc.get("ctl", 0)
-    atl = pmc.get("atl", 0)
-    ramp = pmc.get("ramp_rate", 0)
-    label = pmc.get("status_label", "")
-    tss_today = pmc.get("tss_today", 0)
+    """把 PMC 状态卡格式化成可读 block
 
-    if tsb < -10:
-        tsb_desc = "累积疲劳,建议恢复"
-    elif tsb > 20:
-        tsb_desc = "状态巅峰"
-    elif tsb > 5:
-        tsb_desc = "状态良好"
+    V0.9.0 修: **缺失的指标必须说"缺失", 不能静默填 0。**
+
+    原来的写法是 `pmc.get("ramp_rate", 0)` —— key 不存在就填 0,
+    然后下面那串 if/elif 把这个 0 描述成"维持", 于是 prompt 里出现了
+    "ramp_rate: +0.00 (维持)"。真实值是负的(在减量)。
+
+    注意:**这不是模型编的。** 是我们自己的格式化函数伪造了一个 0,
+    模型只是如实汇报了它。Verifier 抓这条时是对的 —— 我第一版
+    把原因归给了模型, 归因错了, 修法也就跟着错。
+
+    0 和"没有这个数据"在训练语义上完全不是一回事:
+    ramp_rate=0 是"维持", ramp_rate 缺失是"不知道"。
+    """
+    def _num(key: str) -> float | None:
+        """取数值; key 不存在或为 None 时返回 None (区别于 0)"""
+        v = pmc.get(key)
+        if v is None:
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    tsb = _num("tsb")
+    ctl = _num("ctl")
+    atl = _num("atl")
+    ramp = _num("ramp_rate")
+    tss_today = _num("tss_today")
+
+    lines = ["## 今日训练状态(Performance Management Chart)"]
+
+    if tsb is None:
+        lines.append("- 今日 TSB: **无数据**")
     else:
-        tsb_desc = "平衡"
+        if tsb < -10:
+            tsb_desc = "累积疲劳,建议恢复"
+        elif tsb > 20:
+            tsb_desc = "状态巅峰"
+        elif tsb > 5:
+            tsb_desc = "状态良好"
+        else:
+            tsb_desc = "平衡"
+        lines.append(f"- 今日 TSB: **{tsb:+.1f}**({tsb_desc})")
 
-    if ramp > 7:
-        ramp_desc = "提升较快,注意过训"
-    elif ramp > 0:
-        ramp_desc = "稳步提升中"
-    elif ramp > -3:
-        ramp_desc = "维持"
+    lines.append(f"- CTL(慢性负荷,42天 EWMA): {'无数据' if ctl is None else f'{ctl:.1f}'}")
+    lines.append(f"- ATL(急性负荷,7天 EWMA): {'无数据' if atl is None else f'{atl:.1f}'}")
+    lines.append(f"- 今日 TSS: {'无数据' if tss_today is None else f'{tss_today:.0f}'}")
+
+    if ramp is None:
+        # 关键: 明确说"无数据", 而不是填 0 然后描述成"维持"
+        lines.append("- 7 天趋势(ramp_rate): **无数据**")
     else:
-        ramp_desc = "减量中"
+        if ramp > 7:
+            ramp_desc = "提升较快,注意过训"
+        elif ramp > 0:
+            ramp_desc = "稳步提升中"
+        elif ramp > -3:
+            ramp_desc = "维持"
+        else:
+            ramp_desc = "减量中"
+        lines.append(f"- 7 天趋势(ramp_rate): {ramp:+.2f} TSS/wk({ramp_desc})")
 
-    return f"""## 今日训练状态(Performance Management Chart)
-- 今日 TSB: **{tsb:+.1f}**({tsb_desc})
-- CTL(慢性负荷,42天 EWMA): {ctl:.1f}
-- ATL(急性负荷,7天 EWMA): {atl:.1f}
-- 今日 TSS: {tss_today:.0f}
-- 7 天趋势(ramp_rate): {ramp:+.2f} TSS/wk({ramp_desc})
-"""
+    return "\n".join(lines) + "\n"
 
 
 def _format_acwr_block(acwr: dict) -> str:
@@ -255,8 +315,22 @@ def _format_ftp_block(ftp_info: dict) -> str:
     """V0.7.1: 最新 FTP 测试"""
     if not ftp_info:
         return ""
-    return f"""## 最新 FTP 测试
+    out = f"""## 最新 FTP 测试
 - FTP: {ftp_info["ftp_w"]} W
 - 测试日期: {ftp_info["test_date"] or "未测"}
 - 协议: {ftp_info["method"]}
 """
+    # V0.9.0: 把区间表也带进 prompt。
+    #
+    # 之前这里只给 FTP, 于是模型自己去乘百分比算区间 ——
+    # 实测把 Z2 说成 "196-224W" (那是 Z3), 用户照着骑就是错的强度。
+    # 提示词里已经写了"一律查 zones_w 表, 不要自己乘", 但**表根本没传过来**,
+    # 那条规矩等于空文。规则和它依赖的数据必须同时到位。
+    zones = ftp_info.get("zones_w") or []
+    if zones:
+        rows = "\n".join(
+            f"- {z['zone']} {z['name_cn']} ({z['name_en']}, {z['pct']}): {z['watts']}"
+            for z in zones
+        )
+        out += f"\n## 功率区间 (基于 FTP {ftp_info['ftp_w']}W, Coggan 7 区, 与应用界面同一套)\n{rows}\n"
+    return out

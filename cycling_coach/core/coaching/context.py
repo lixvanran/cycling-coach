@@ -85,6 +85,13 @@ def _build_pmc_context(db: Session, athlete_id: int) -> Optional[dict]:
         "tsb": _pick(pmc, "tsb"),
         "tss_today": _pick(pmc, "tss_today"),
         "status": _pick(pmc, "status"),
+        # V0.9.0: 补 ramp_rate 和状态中文标签。
+        # 之前这两个没给, 模型就自己编了一个:
+        #   "ramp_rate+0.00: 维持期, 没有在加量也没有掉量"
+        # 而接口返回的是 -3.46 (负荷在下降, 减量周)。
+        # **上下文缺一个字段, 模型就会用听起来合理的话补上。**
+        "ramp_rate": _pick(pmc, "ramp_rate"),
+        "status_label": _pick(pmc, "status_label"),
     }
 
 
@@ -166,11 +173,68 @@ def _build_ftp_context(db: Session, athlete_id: int) -> Optional[dict]:
     )
     if not latest and not athlete.ftp:
         return None
-    return {
-        "ftp_w": latest.ftp_w if latest else athlete.ftp,
+    ftp_w = latest.ftp_w if latest else athlete.ftp
+    out = {
+        "ftp_w": ftp_w,
         "test_date": latest.test_date.date().isoformat() if latest else None,
         "method": latest.method if latest else "默认",
     }
+    # V0.9.0: 把功率区间表直接算好给模型。
+    #
+    # 实测: 上下文里只有 ftp_w=280 时, 模型自己算区间, 把
+    # Z2 说成 "196-224W" (实际是 70%-80% FTP, 那是 Z3 节奏区;
+    # 正确的 Z2 是 154-210W)。用户照着这个数骑, 以为是轻松恢复骑,
+    # 实际一直在踩节奏区 —— **自信地给错训练强度, 比不给更伤**。
+    #
+    # 区间不该让模型心算: 应用这边本来就有权威实现
+    # (core/metrics/power.py 的 Coggan 7 区), 直接喂进去。
+    if ftp_w:
+        out["zones_w"] = power_zone_ranges_w(ftp_w)
+    return out
+
+
+# Coggan 7 区的中文名。边界**不在这里定义** —— 从 core/metrics/power.py
+# 的 COGGAN_7_ZONES 取, 保证 AI 上下文和用户界面永远同一套。
+#
+# V0.9.0 教训: 我第一版在这里自己写了一份 _COGGAN_BOUNDS,
+# 而 core/metrics/power.py 里已经有一份。两份常量一定会漂移 ——
+# 哪天有人调了 power.py 的边界, AI 还在按旧的给建议, 而且两边都"看着对"。
+# 界面显示 Z2 154-210W 而 AI 说 196-224W, 用户会以为软件有 bug。
+_COGGAN_ZH = {
+    "Z1": "主动恢复", "Z2": "耐力", "Z3": "节奏", "Z4": "阈值",
+    "Z5": "无氧氧", "Z6": "无氧", "Z7": "神经肌肉",
+}
+
+
+def power_zone_ranges_w(ftp: int) -> list[dict]:
+    """把 Coggan 7 区换算成瓦数, 供 AI 上下文直接使用。
+
+    边界来自 core/metrics/power.py 的 COGGAN_7_ZONES —— **不另立一份**。
+    这里的任务只做"比例 -> 瓦数"的换算和中文命名。
+    """
+    from cycling_coach.core.metrics.power import COGGAN_7_ZONES
+
+    out: list[dict] = []
+    for z in COGGAN_7_ZONES:
+        code = z["code"]
+        lo = int(round(ftp * z["lo"]))
+        # 无上限判定**跟着数据走**, 不硬编码区号。
+        # COGGAN_7_ZONES 里 Z7 的 hi 是 9.99 这个哨兵值; 之前写 code=="Z7",
+        # 一旦加 Z8 或改了哨兵, 那行会静默翻出 2797W 的假上限 ——
+        # 正是这里要避免的事。
+        unbounded = z["hi"] >= 9.99
+        hi = None if unbounded else int(round(ftp * z["hi"]))
+        out.append({
+            "zone": code,
+            "name_en": z["name"],
+            "name_cn": _COGGAN_ZH.get(code, z["name"]),
+            "pct": (f">{int(z['lo']*100)}%" if unbounded
+                    else f"{int(z['lo']*100)}-{int(z['hi']*100)}%"),
+            "watts_from": lo,
+            "watts_to": hi,
+            "watts": f">{lo}W" if hi is None else f"{lo}-{hi}W",
+        })
+    return out
 
 
 def build_chat_context(db: Session, athlete_id: int) -> dict:
