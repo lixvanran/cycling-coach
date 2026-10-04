@@ -110,9 +110,17 @@ MIN_DAYS_SPAN_FOR_READINESS = 7
 # 所以覆盖度不完整时: 最高档封在 TIER_BY_COVERAGE, 且**不许出现"极佳"**。
 READINESS_WEIGHTS = {"hrv": 30, "acwr": 25, "tsb": 20, "phase": 15, "rpe": 10}
 
-# 至少要有几个真实维度才敢给一个分。3 = 训练负荷 + 周期阶段 + 任意一项
-# 真实生理/主观信号, 避免"只有 TSB 和 phase"这种最单薄的组合。
-MIN_DIMENSIONS_FOR_READINESS = 3
+# 至少要有几个真实维度才敢给一个分。2 = 训练负荷 + 任意一项真实信号。
+#
+# 这里曾一度设成 3, 因为担心"只有 TSB + phase"太单薄。实测发现代价太大:
+# 一个**20 次训练 / 4 周**的用户(只有 TSB 和 phase 可算)会拿到"数据不足",
+# 而他数据其实很充足, 缺的只是 HRV/RPE 这类补充测量 —— 这么说是在骗他。
+#
+# 两类"不够"必须分开:
+#   - **训练量不够** (<7 次 / 跨度 <7 天) → `_data_sufficiency` 拦, 说"数据不足"
+#   - **测量维度不够** → 不拦, 但 `MAX_TIER_BY_COVERAGE` 把强度封到保守档
+# 后者给的是"你状态低迷, 建议恢复骑"这种**有用且不越界**的指导。
+MIN_DIMENSIONS_FOR_READINESS = 2
 
 # 覆盖度不完整时的档位封顶。缺 HRV 不该被派去做 VO2max 间歇。
 _TIER_ORDER = ["rest", "recovery", "endurance", "threshold", "vo2"]
@@ -123,13 +131,18 @@ _TIER_CN = {
     "threshold": "阈值间歇", "vo2": "VO2max 间歇",
 }
 
-# 3/5 维: 知道负荷和阶段, 缺生理信号 -> 最高给 endurance
-# 4/5 维: 只缺一个 -> 最高给 threshold(仍不给 vo2)
-# 5/5 维: 完整 -> 不封顶
-MAX_TIER_BY_COVERAGE = {3: "endurance", 4: "threshold", 5: None}
+# 覆盖度 -> 强度封顶。单调阶梯: 知道得越少, 能给的强度越保守。
+#   2/5: 只有负荷 + 一项 -> 最高 recovery (缺 HRV 时不该安排任何偏硬的课)
+#   3/5: 多数用户落在这里 -> 最高 endurance
+#   4/5: 只缺一个   -> 最高 threshold (仍不给 vo2)
+#   5/5: 完整      -> 不封顶
+# vo2(最大强度间歇) 只在"五维齐全"时才可能出现 —— HRV 恰恰是抓
+# "看着还行其实已经过载"的那个维度, 缺它时最不该上最大强度。
+MAX_TIER_BY_COVERAGE = {2: "recovery", 3: "endurance", 4: "threshold", 5: None}
 
 # 封顶时回退到的具体内容 (label / intensity / target_tss)
 _TIER_DETAIL = {
+    "recovery": ("低迷", "恢复骑: Z1-Z2 30-45min @ < 65% FTP, 主动恢复", 30),
     "endurance": ("中等", "轻松骑: Z2 长骑 60-90min @ 65-75% FTP", 60),
     "threshold": ("良好", "阈值日: Threshold 间歇 (2×20min @ 88-92% FTP, 间歇 5min Z1)", 90),
 }
@@ -554,7 +567,8 @@ def generate_recommendations(
     capped_from = None
     if tier_cap is not None and _TIER_ORDER.index(rec_type) > _TIER_ORDER.index(tier_cap):
         capped_from = rec_type
-        rec_type, readiness_label, intensity, target = _TIER_DETAIL[tier_cap]
+        readiness_label, intensity, target = _TIER_DETAIL[tier_cap]
+        rec_type = tier_cap
         readiness_label = f"{readiness_label}（数据有限）"
 
     # 生成建议列表

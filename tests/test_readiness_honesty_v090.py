@@ -195,8 +195,11 @@ def test_returns_none_without_load_dimension():
         compute_readiness, MIN_DIMENSIONS_FOR_READINESS,
         REQUIRED_READINESS_DIMENSION)
     assert REQUIRED_READINESS_DIMENSION == "tsb"
-    # V0.9.0 第二轮: 2 -> 3。2 会放行"只有 TSB + phase"这种最单薄的组合。
-    assert MIN_DIMENSIONS_FOR_READINESS == 3
+    # V0.9.0: 曾一度设成 3, 但实测代价太大 —— 一个 20 次训练 / 4 周的用户
+    # (只有 TSB + phase 可算) 会拿到"数据不足", 而他数据其实很充足,
+    # 缺的只是 HRV/RPE 这类补充测量。两类"不够"必须分开:
+    # 训练量不够 -> _data_sufficiency 拦; 测量维度不够 -> 封顶强度, 照给建议。
+    assert MIN_DIMENSIONS_FOR_READINESS == 2
 
 
 def test_coverage_reports_what_is_missing():
@@ -768,7 +771,8 @@ def test_tier_is_capped_when_coverage_incomplete(fresh):
     assert "MAX_TIER_BY_COVERAGE" in src, "档位没有对覆盖度封顶"
     assert "tier_cap" in src
 
-    # 封顶表本身: 3 维封 endurance, 4 维封 threshold, 5 维不封顶
+    # 封顶表本身: 单调阶梯, 知道得越少强度越保守
+    assert mod.MAX_TIER_BY_COVERAGE[2] == "recovery"
     assert mod.MAX_TIER_BY_COVERAGE[3] == "endurance"
     assert mod.MAX_TIER_BY_COVERAGE[4] == "threshold"
     assert mod.MAX_TIER_BY_COVERAGE[5] is None
@@ -837,13 +841,21 @@ def test_coverage_rec_present_even_at_minimum_dimensions(fresh, short_history_at
     )
 
 
-def test_min_dimensions_is_three(fresh, short_history_athlete):
-    """门槛必须是 3。2 会放行"只有 TSB + phase"这种最单薄的组合"""
+def test_min_dimensions_is_two_with_aggressive_tier_cap():
+    """门槛是 2, 但 2 维的用户被封在 recovery —— 不能靠"不给分"来回避
+
+    曾经试过 MIN=3, 想"宁可不给分"。实测下来代价太大: 4 周 20 次训练的用户
+    会被判"数据不足", 而他缺的只是 HRV/RPE, 训练量完全够。
+    正确做法是给建议但封住强度, 而不是闭嘴。
+    """
     from cycling_coach.core.coaching import recommendations as mod
-    assert mod.MIN_DIMENSIONS_FOR_READINESS == 3
-    # phase 无条件写入, 所以 3 维 = tsb + phase + 任意一项真实信号
-    _score, bd = mod.compute_readiness(fresh, short_history_athlete)
-    assert len(bd) < 3 or "tsb" in bd
+    assert mod.MIN_DIMENSIONS_FOR_READINESS == 2
+    assert mod.MAX_TIER_BY_COVERAGE[2] == "recovery"
+    # 封顶表必须是单调的: 知道得越少, 封顶越低
+    order = mod._TIER_ORDER
+    caps = [mod.MAX_TIER_BY_COVERAGE[n] for n in (2, 3, 4)]
+    idx = [order.index(c) for c in caps]
+    assert idx == sorted(idx), f"封顶阶梯不是单调的: {caps}"
 
 
 # ================================================================ 第二轮 Verifier
@@ -927,7 +939,8 @@ def test_tier_is_capped_when_coverage_incomplete(fresh):
     assert "MAX_TIER_BY_COVERAGE" in src, "档位没有对覆盖度封顶"
     assert "tier_cap" in src
 
-    # 封顶表本身: 3 维封 endurance, 4 维封 threshold, 5 维不封顶
+    # 封顶表本身: 单调阶梯, 知道得越少强度越保守
+    assert mod.MAX_TIER_BY_COVERAGE[2] == "recovery"
     assert mod.MAX_TIER_BY_COVERAGE[3] == "endurance"
     assert mod.MAX_TIER_BY_COVERAGE[4] == "threshold"
     assert mod.MAX_TIER_BY_COVERAGE[5] is None
@@ -996,13 +1009,21 @@ def test_coverage_rec_present_even_at_minimum_dimensions(fresh, short_history_at
     )
 
 
-def test_min_dimensions_is_three(fresh, short_history_athlete):
-    """门槛必须是 3。2 会放行"只有 TSB + phase"这种最单薄的组合"""
+def test_min_dimensions_is_two_with_aggressive_tier_cap():
+    """门槛是 2, 但 2 维的用户被封在 recovery —— 不能靠"不给分"来回避
+
+    曾经试过 MIN=3, 想"宁可不给分"。实测下来代价太大: 4 周 20 次训练的用户
+    会被判"数据不足", 而他缺的只是 HRV/RPE, 训练量完全够。
+    正确做法是给建议但封住强度, 而不是闭嘴。
+    """
     from cycling_coach.core.coaching import recommendations as mod
-    assert mod.MIN_DIMENSIONS_FOR_READINESS == 3
-    # phase 无条件写入, 所以 3 维 = tsb + phase + 任意一项真实信号
-    _score, bd = mod.compute_readiness(fresh, short_history_athlete)
-    assert len(bd) < 3 or "tsb" in bd
+    assert mod.MIN_DIMENSIONS_FOR_READINESS == 2
+    assert mod.MAX_TIER_BY_COVERAGE[2] == "recovery"
+    # 封顶表必须是单调的: 知道得越少, 封顶越低
+    order = mod._TIER_ORDER
+    caps = [mod.MAX_TIER_BY_COVERAGE[n] for n in (2, 3, 4)]
+    idx = [order.index(c) for c in caps]
+    assert idx == sorted(idx), f"封顶阶梯不是单调的: {caps}"
 
 
 # ================================================================ 第二轮 Verifier
@@ -1086,7 +1107,8 @@ def test_tier_is_capped_when_coverage_incomplete(fresh):
     assert "MAX_TIER_BY_COVERAGE" in src, "档位没有对覆盖度封顶"
     assert "tier_cap" in src
 
-    # 封顶表本身: 3 维封 endurance, 4 维封 threshold, 5 维不封顶
+    # 封顶表本身: 单调阶梯, 知道得越少强度越保守
+    assert mod.MAX_TIER_BY_COVERAGE[2] == "recovery"
     assert mod.MAX_TIER_BY_COVERAGE[3] == "endurance"
     assert mod.MAX_TIER_BY_COVERAGE[4] == "threshold"
     assert mod.MAX_TIER_BY_COVERAGE[5] is None
@@ -1155,13 +1177,21 @@ def test_coverage_rec_present_even_at_minimum_dimensions(fresh, short_history_at
     )
 
 
-def test_min_dimensions_is_three(fresh, short_history_athlete):
-    """门槛必须是 3。2 会放行"只有 TSB + phase"这种最单薄的组合"""
+def test_min_dimensions_is_two_with_aggressive_tier_cap():
+    """门槛是 2, 但 2 维的用户被封在 recovery —— 不能靠"不给分"来回避
+
+    曾经试过 MIN=3, 想"宁可不给分"。实测下来代价太大: 4 周 20 次训练的用户
+    会被判"数据不足", 而他缺的只是 HRV/RPE, 训练量完全够。
+    正确做法是给建议但封住强度, 而不是闭嘴。
+    """
     from cycling_coach.core.coaching import recommendations as mod
-    assert mod.MIN_DIMENSIONS_FOR_READINESS == 3
-    # phase 无条件写入, 所以 3 维 = tsb + phase + 任意一项真实信号
-    _score, bd = mod.compute_readiness(fresh, short_history_athlete)
-    assert len(bd) < 3 or "tsb" in bd
+    assert mod.MIN_DIMENSIONS_FOR_READINESS == 2
+    assert mod.MAX_TIER_BY_COVERAGE[2] == "recovery"
+    # 封顶表必须是单调的: 知道得越少, 封顶越低
+    order = mod._TIER_ORDER
+    caps = [mod.MAX_TIER_BY_COVERAGE[n] for n in (2, 3, 4)]
+    idx = [order.index(c) for c in caps]
+    assert idx == sorted(idx), f"封顶阶梯不是单调的: {caps}"
 
 
 @pytest.fixture(scope="module")
