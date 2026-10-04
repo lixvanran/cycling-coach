@@ -15,6 +15,7 @@ import {
   Coffee,
   ChevronRight,
 } from "lucide-react";
+import { renderDimension, READINESS_DIMENSIONS } from "../lib/readinessDisplay";
 import clsx from "clsx";
 
 interface Recommendation {
@@ -196,33 +197,23 @@ export function DailyRecommendationCard() {
       {hasScore && (
       <div className="bg-white/60 rounded p-2 mb-3">
         <div className="grid grid-cols-5 gap-1 text-[10px]">
-          {BREAKDOWN_META.map((m) => {
-            const raw = data.signals_summary.readiness_breakdown?.[m.key];
-            // V0.9.0: 缺失维度是 **undefined**, 不是 0。
-            // `|| 0` 会把它渲染成"这一项得了 0 分" —— 而真相是"这一项没数据"。
-            // 0 分和没数据在训练决策上是两件完全不同的事: 0 分意味着"很差",
-            // 没数据意味着"不知道"。混为一谈就是在骗人。
-            const has = raw !== undefined && raw !== null;
-            const v = has ? raw : 0;
-            const pct = has ? (v / m.max) * 100 : 0;
-            const color = !has
-              ? "bg-border"
-              : pct >= 70 ? "bg-status-success" : pct >= 40 ? "bg-accent-warning" : "bg-status-danger";
+          {READINESS_DIMENSIONS.map((d) => {
+            const r = renderDimension(d.key, data.signals_summary.readiness_breakdown, d.max);
             return (
               <div
-                key={m.key}
+                key={d.key}
                 className="text-center"
-                title={has
-                  ? `${m.label}: ${v}/${m.max} - ${m.desc}`
-                  : `${m.label}: 无数据 — 参与不了本次评分（不是 0 分）`}
+                title={r.has ? `${r.label}: ${r.scoreText} - ${r.pct.toFixed(0)}%` : `${r.label}: 无数据 — 参与不了本次评分（不是 0 分）。${r.missingHint}`}
               >
-                <div className={`font-medium ${has ? "text-text-secondary" : "text-text-muted"}`}>
-                  {m.label}
-                  {!has && <div className="text-[9px] font-normal">无数据</div>}
+                <div className={`font-medium ${r.has ? "text-text-secondary" : "text-text-muted"}`}>
+                  {r.label}
+                  {!r.has && <div className="text-[9px] font-normal">无数据</div>}
                 </div>
-                <div className="font-mono text-text-secondary">{v}/{m.max}</div>
+                <div className={`font-mono ${r.has ? "text-text-secondary" : "text-text-muted"}`}>
+                  {r.scoreText}
+                </div>
                 <div className="w-full bg-slate-200 rounded-full h-1 mt-0.5">
-                  <div className={`${color} h-1 rounded-full transition-all`} style={{ width: `${pct}%` }} />
+                  <div className={`${r.barClass} h-1 rounded-full transition-all`} style={{ width: `${r.pct}%` }} />
                 </div>
               </div>
             );

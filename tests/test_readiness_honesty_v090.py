@@ -590,3 +590,88 @@ def test_acwr_included_for_long_history(fresh):
     assert "acwr" in bd, (
         "18 次训练 / 40 天历史, ACWR 仍算不出来 —— 参数或守卫又出问题了"
     )
+
+
+# ---------------------------------------------------------------- Verifier 抓到的缺口
+
+def test_returns_none_when_load_dimension_missing_even_if_two_others_present():
+    """有 2 个维度但缺训练负荷维度时, 必须返回 None
+
+    Verifier 独立做变异测试时发现: 把"缺训练负荷维度就返回 None"这个哨兵删掉,
+    **我 12 条测试全绿**。原因很直接 —— 我原先那条
+    `test_returns_none_without_load_dimension` 只断言了两个常量存在,
+    **根本没测行为**。这是典型的"看起来有测试, 其实没测到东西"。
+
+    这个场景必须专门构造: 要同时满足
+      - 训练负荷维度**不可用** (今天没有 DailyMetric 行)
+      - 可用维度数 **>= 2** (否则 MIN_DIMENSIONS 那个检查会先挡下来,
+        哨兵删不删结果都一样, 测试就抓不住)
+    所以需要 HRV 可用 + phase 总是可用 → 2 个维度, 但没有 tsb。
+    此时只有哨兵能让结果变成 None。
+    """
+    import asyncio
+    import tempfile
+    from pathlib import Path
+    from datetime import datetime, timedelta, timezone
+    from cycling_coach.core.services.activity import ActivityService
+    from cycling_coach.core.coaching.recommendations import (
+        compute_readiness, readiness_coverage)
+    from tests.fit_fixtures import build_fit
+
+    use_temp_db("v090_no_load_dim")
+    from cycling_coach.data.sqlite.database import SessionLocal
+    from cycling_coach.core.profile import store as profile_store
+    db = SessionLocal()
+    ath = profile_store.get_or_create_athlete(db)
+    ath.ftp = 250
+    db.commit()
+
+    tmp = Path(tempfile.mkdtemp(prefix="cc_noload_"))
+    svc = ActivityService(db)
+    loop = asyncio.new_event_loop()
+    base = datetime.now(timezone.utc) - timedelta(days=7)
+    try:
+        for i in range(8):
+            p = tmp / f"a{i}.fit"
+            build_fit(p, duration_s=3600, avg_power=180, avg_hr=145,
+                      speed_mps=8.0, start=base + timedelta(days=i))
+            loop.run_until_complete(
+                svc.upload(filename=p.name, file_bytes=p.read_bytes()))
+    finally:
+        loop.close()
+
+    # 造 HRV 数据, 让 hrv 维度可用
+    from cycling_coach.data.sqlite.models import DailyMetric
+    today = datetime.utcnow().date()
+    # 导入 FIT 已经建好了 DailyMetric 行(unique(athlete_id, date)),
+    # 所以这里是**更新**而不是插入 —— 插入会撞 UNIQUE 约束。
+    for i in range(10):
+        row = (
+            db.query(DailyMetric)
+            .filter(DailyMetric.athlete_id == ath.id,
+                    DailyMetric.date == today - timedelta(days=i))
+            .first()
+        )
+        if row is not None:
+            row.hrv_ms = 60          # 让 hrv 维度可用
+    # 删掉今天那一行 → get_pmc_today 返回"无数据" → 训练负荷维度不可用
+    db.query(DailyMetric).filter(
+        DailyMetric.athlete_id == ath.id,
+        DailyMetric.date == today,
+    ).delete()
+    db.commit()
+
+    score, bd = compute_readiness(db, ath.id)
+    cov = readiness_coverage(bd)
+
+    # 前提检查: 确实有 >=2 个可用维度, 否则这个测试测不到哨兵
+    assert cov["n_available"] >= 2, (
+        f"实验前提失效: 只有 {cov['n_available']} 个可用维度, "
+        "MIN_DIMENSIONS 检查会先挡下来, 哨兵删不删都一样"
+    )
+    assert "tsb" not in bd, "实验前提失效: 训练负荷维度还在"
+    # 核心断言: 缺训练负荷维度 -> 不给分
+    assert score is None, (
+        f"缺训练负荷维度却给了 {score} 分 —— "
+        "不知道最近骑了多少, 就没有资格说今天该上什么强度"
+    )
