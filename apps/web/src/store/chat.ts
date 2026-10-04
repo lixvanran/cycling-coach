@@ -57,7 +57,20 @@ export const useChatStore = create<ChatState>()(
     chatMessagesRag: [],
     chatMessagesWorkflow: [],
     chatMessagesChat: [],
-    activeMode: "chat",
+    // V0.9.0: 默认落在「训练答疑」(rag), 不是「随便聊聊」(chat)。
+    //
+    // 原来这里是 "chat" —— 而三个 tab 分别是:
+    //   rag      → 训练答疑 (RAG 知识库 + 你的训练数据)  ← 招牌功能
+    //   workflow → 战术规划
+    //   chat     → 随便聊聊                              ← 最没差异化
+    // 这个 store 没有 persist, 所以**默认值每次打开都生效**: 用户打开 AI 页
+    // 看到的第一个界面是"随便聊聊"。对一个公路车教练产品来说, 落地在一个
+    // 通用闲聊上, 等于把最核心的差异化能力藏在第三个 tab 后面。
+    //
+    // 这条 bug 之所以长期没人发现: 曾经有个测试断言过"默认 tab 是训练答疑",
+    // 但它 import 了没装的 @testing-library, 从来没真正跑过 ——
+    // 测试写的是对的意图, 产品却一直是错的。
+    activeMode: "rag",
 
     // 旧字段 — 默认指向 chat mode
     chatMessages: [],
