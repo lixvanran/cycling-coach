@@ -207,3 +207,15 @@ tools\start.bat         # 重启后端 (新功能自动可用)
 ```
 
 老用户不需要迁移 (新功能不影响现有数据)。
+
+## git clone 用户必读 ⚠️
+
+`cycling_coach/static/`（前端 build 产物）在 `.gitignore` 里——它是构建输出，
+不进版本库。所以 **git clone 出来的源码第一次没有前端产物**。
+
+V0.9.0 起，`tools\start.bat` 会**自动检测并 build 一次**（需要 Node + pnpm，
+约 1-2 分钟），之后每次启动都命中缓存、不再需要。
+
+- **正式用户请用官方 zip 包**：它自带前端产物，**完全不需要 Node**。
+- **开发者 git clone**：直接双击 `tools\start.bat` 即可，脚本会提示并自动 build。
+  如果没装 Node/pnpm，它会明确告诉你，并建议改用 zip 包。

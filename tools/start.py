@@ -886,6 +886,39 @@ def start_backend(py_bin: Path) -> subprocess.Popen:
     return proc
 
 
+def build_frontend(pnpm: str) -> bool:
+    """跑一次前端 build, 产物落在 cycling_coach/static/
+
+    V0.9.0 新增。原因: `cycling_coach/static/` 在 .gitignore 里,
+    所以 **git clone 出来的源码一定没有前端产物**。Windows 真机验证
+    在这条路上直接撞死 —— 文档说"双击 .bat 就能用", 实际必须先手动
+    跑 pnpm build。
+
+    走 `pnpm build` 而不是 `pnpm exec vite build`, 因为
+    package.json 里的 build = `tsc && vite build` —— 顺带跑类型检查。
+    这就是 V0.9.0 修通的那条命令(V0.9.0 之前它是坏的, 一直失败)。
+    """
+    env = os.environ.copy()
+    env["npm_config_registry"] = "https://registry.npmmirror.com"
+    log("前端: 正在 build (tsc 类型检查 + vite, 首次约 1-2 分钟)", "info")
+    try:
+        r = subprocess.run(
+            [pnpm, "--filter", "cycling-coach-frontend", "build"],
+            cwd=ROOT, env=env, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=900,
+        )
+    except subprocess.TimeoutExpired:
+        error("前端 build 超时 (15 分钟)")
+        return False
+    if r.returncode != 0:
+        error("前端 build 失败:")
+        for ln in ((r.stdout or "") + (r.stderr or "")).splitlines()[-25:]:
+            print(f"    {ln}", flush=True)
+        return False
+    success("前端 build 完成")
+    return True
+
+
 def start_frontend(pnpm: str) -> subprocess.Popen | None:
     """启动 Vite(直接调 node_modules/.bin/vite,避免 pnpm + 中文路径的兼容问题)"""
     # 找 node_modules/.bin/vite
@@ -1040,19 +1073,50 @@ def main() -> int:
     elif args.desktop:
         # 桌面模式不需要前端 dev 依赖, 只要 build 产物在
         # 注意: 我们不调用 pnpm/vite (需要联网), 直接要求 build 产物已存在
-        success("桌面模式: 跳过前端 dev 依赖安装 (只需 build 产物)")
         frontend_dist = find_frontend_dist()
         if frontend_dist is None:
-            error("桌面模式需要前端 build 产物, 但没找到")
-            info("查找的位置:")
-            for c in _STATIC_CANDIDATES:
-                info(f"  - {c}")
-            info("解决办法:")
-            info("  1) 在开发机器上跑: cd apps/web && pnpm install && pnpm exec vite build")
-            info("     (产物会落在 cycling_coach/static/)")
-            info("  2) 用 dev 模式: python tools/start.py (不用 --desktop)")
-            return 1
-        success(f"前端 build 产物: {frontend_dist}")
+            # V0.9.0: Windows 真机验证发现的死路。
+            #
+            # `cycling_coach/static/` 在 .gitignore 里(Vite build 产物),
+            # 所以 **git clone 出来的源码一定没有它**。原来这里直接
+            # `return 1` 报错, 让人自己去跑 pnpm —— 但对接说明里写的是
+            # "双击 .bat 就能用", 而对接说明是给 git clone 出来的
+            # 本地 Agent 用的。等于文档和实际行为对不上。
+            #
+            # 现在改成: 缺产物时**自动 build 一次**。
+            #   - 正式用户拿 zip → zip 自带 static, 根本不会走到这里,
+            #     依然完全不需要 Node
+            #   - git clone 用户 → 首次自动 build, 之后每次启动都命中
+            #     缓存, 不再需要 Node/pnpm
+            warn("没找到前端 build 产物 —— 这是 git clone 源码的常见情况")
+            info(f"  查找过: {', '.join(str(c.relative_to(ROOT)) for c in _STATIC_CANDIDATES)}")
+            info("首次会自动 build 一次 (需要 Node + pnpm, 仅此一次)")
+            npm = check_node()
+            if npm is None:
+                error("自动 build 需要 Node, 但装不上")
+                info("解决办法:")
+                info("  1) 装 Node.js LTS, 然后重跑 tools\\start.bat")
+                info("  2) 或者用**官方 zip 包** —— 它自带前端产物, 不需要 Node")
+                info("  3) 或者用 dev 模式: python tools/start.py (不加 --desktop)")
+                return 1
+            pnpm = ensure_pnpm(npm)
+            if pnpm is None:
+                error("自动 build 需要 pnpm, 但装不上")
+                info("  手动装: npm i -g pnpm@8  (然后重跑)")
+                info("  或者用官方 zip 包 —— 它自带前端产物, 不需要 Node")
+                return 1
+            install_frontend(pnpm)
+            if not build_frontend(pnpm):
+                error("前端 build 失败, 详见上面的错误")
+                return 1
+            frontend_dist = find_frontend_dist()
+            if frontend_dist is None:
+                error("build 跑完了但仍然找不到产物, 可能是 outDir 配置变了")
+                return 1
+            success(f"前端已就绪: {frontend_dist}")
+        else:
+            success(f"前端 build 产物: {frontend_dist}")
+            success("桌面模式: 跳过前端 dev 依赖安装 (已有 build 产物, 不需要 Node)")
 
     if args.install:
         success("依赖安装完成")
