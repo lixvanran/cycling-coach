@@ -430,10 +430,20 @@ export interface InsightsToday {
     alert: number;
     warning: number;
     info: number;
-    health_score: number;
+    // V0.9.0: null = 无真实数据 (不是 0)。前端不能拿它做数值比较:
+    // JS 里 `null < 85` 是 true, 会渲染出 "健康分 null"。
+    health_score: number | null;
     health_label: string;
   };
-  pcm: { ctl: number; atl: number; tsb: number; ramp_rate: number };
+  pcm: {
+    ctl: number;
+    atl: number;
+    tsb: number;
+    ramp_rate: number;
+    // V0.9.0: 上面三个在无数据时都是 0。没有这个标志的话,
+    // 前端只能照着 0 显示, 用户会读成 "我的 CTL 是 0"。
+    has_load_data?: boolean;
+  };
   insights: Insight[];
 }
 

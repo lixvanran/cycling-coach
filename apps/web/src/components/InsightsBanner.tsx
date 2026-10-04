@@ -73,7 +73,11 @@ export function InsightsBanner() {
               {topConfig.label}
             </span>
             <span className="text-xs text-text-muted">{CATEGORY_LABEL[top.category]}</span>
-            {data.summary.health_score < 85 && (
+            {/* V0.9.0: 后端零数据时返回 health_score: null。
+                JS 里 `null < 85` 是 **true**, 会把 "健康分 null" 渲染出来。
+                跟 readiness 那个 `|| 0` 是同一类问题: 缺失值被当成数值用了。 */}
+            {data.summary.health_score !== null &&
+              data.summary.health_score < 85 && (
               <span className="text-xs text-text-muted">
                 健康分 {data.summary.health_score} ({data.summary.health_label})
               </span>
@@ -157,7 +161,14 @@ export function InsightsHealthCard() {
 
   if (!data) return null;
   const score = data.summary.health_score;
-  const color = score >= 85 ? "emerald" : score >= 60 ? "amber" : "rose";
+  // V0.9.0: score 可能是 null (无真实数据)。null >= 85 是 false, 会掉到
+  // amber, 渲染成 "null/100 · 数据不足" —— 数字位置显示 null 本身就是 bug。
+  const hasScore = typeof score === "number";
+  // PMC 那三个数在无数据时后端给 0, 判据同样看 has_load_data
+  const hasLoadData = Boolean(data.pcm?.has_load_data);
+  const color = !hasScore
+    ? "muted"
+    : score >= 85 ? "emerald" : score >= 60 ? "amber" : "rose";
 
   return (
     <div className={clsx(
@@ -175,7 +186,7 @@ export function InsightsHealthCard() {
         color === "amber" ? "text-accent-warning" :
         "text-accent-danger"
       )}>
-        {score}
+        {hasScore ? score : "--"}
         <span className="text-sm text-text-muted ml-1">/ 100</span>
       </div>
       <div className="text-xs text-text-muted mt-1">
@@ -183,9 +194,14 @@ export function InsightsHealthCard() {
         {data.summary.alert > 0 && ` · ${data.summary.alert} 严重`}
         {data.summary.warning > 0 && ` · ${data.summary.warning} 注意`}
       </div>
-      <div className="text-[10px] text-text-muted mt-1">
-        CTL {data.pcm.ctl} · TSB {data.pcm.tsb} · ramp {data.pcm.ramp_rate}
-      </div>
+      {/* V0.9.0: 零数据时后端给 ctl/atl/tsb 都是 0。直接印出来的话,
+          用户读到的是"我的 CTL 是 0"(听起来像坏了), 而不是"没有数据"。
+          这个组件里这是第三处把缺失值当数值用的地方。 */}
+      {hasLoadData && (
+        <div className="text-[10px] text-text-muted mt-1">
+          CTL {data.pcm.ctl} · TSB {data.pcm.tsb} · ramp {data.pcm.ramp_rate}
+        </div>
+      )}
     </div>
   );
 }

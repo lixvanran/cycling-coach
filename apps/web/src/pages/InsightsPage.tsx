@@ -36,6 +36,12 @@ const ZONE_COLORS = [
 export function InsightsPage() {
   const [weekly, setWeekly] = useState<WeeklyReview | null>(null);
   const [today, setToday] = useState<InsightsToday | null>(null);
+  // V0.9.0: 无真实数据时后端给 null 而不是 0。
+  // 用局部变量而不是 `hasHealthScore` 布尔: TypeScript 的别名收窄
+  // 对 `typeof x === "number"` 这种检查不生效, 后面直接比 health_score
+  // 仍会报 TS18047。
+  const healthScore = today?.summary.health_score ?? null;
+  const hasHealthScore = healthScore !== null;
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -89,18 +95,24 @@ export function InsightsPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className={clsx(
           "panel p-4 border-l-4",
-          today.summary.health_score >= 85 ? "border-border" :
-          today.summary.health_score >= 60 ? "border-border" :
+          // V0.9.0: health_score 可能是 null (无真实数据)。
+          // `null >= 85` 是 false -> 掉进 border-accent-danger,
+          // 于是"没数据"被渲染成**红色警戒**。这是 tsc 在我把类型
+          // 改成 number | null 之后自动抓出来的漏网之处。
+          !hasHealthScore ? "border-border" :
+          healthScore >= 85 ? "border-border" :
+          healthScore >= 60 ? "border-border" :
           "border-accent-danger"
         )}>
           <div className="text-xs text-text-muted">训练健康分</div>
           <div className={clsx(
             "text-4xl font-bold font-mono mt-1",
-            today.summary.health_score >= 85 ? "text-accent-success" :
-            today.summary.health_score >= 60 ? "text-accent-warning" :
+            !hasHealthScore ? "text-text-muted" :
+            healthScore >= 85 ? "text-accent-success" :
+            healthScore >= 60 ? "text-accent-warning" :
             "text-accent-danger"
           )}>
-            {today.summary.health_score}
+            {hasHealthScore ? healthScore : "--"}
             <span className="text-base text-text-muted ml-1">/ 100</span>
           </div>
           <div className="text-xs text-text-muted mt-1">

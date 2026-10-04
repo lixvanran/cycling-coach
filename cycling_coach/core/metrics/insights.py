@@ -61,6 +61,50 @@ class InsightsBundle:
 
 # ---------- 主入口: 今日洞察 ----------
 
+def compute_health_score(
+    counts: dict, has_load_data: bool
+) -> Optional[int]:
+    """健康分 (0-100): alert -20, warning -5, info +0
+
+    V0.9.0 单独抽成纯函数, 因为原来这行内联在 `compute_today_insights` 深处,
+    既不好测也不好复用。
+
+    ## 这里曾经是本项目 honesty 体系里最后一个洞
+
+    原来是 `100 - alert*20 - warning*5`, **基数写死 100**。后果和 readiness
+    那三个 P0 是同一株病, 只是长在另一个模块:
+
+        越没有数据 -> 警告越少 -> 扣分越少 -> 分数越高
+
+    Windows 真机验证实测(零数据用户打 /api/insights/today):
+        health_score = 95, health_label = "良好", insights = []
+    而前端会把它渲染成 "训练健康分 95/100 良好", 下面还跟着一行
+    "CTL 0 · TSB 0 · ramp 0"。这是给零数据用户最直白的虚假肯定 ——
+    比 readiness 那个更刺眼, 因为那个至少还显示"数据不足"。
+
+    现在: 没有真实数据就返回 None, 前端显示 "--/ 数据不足"。
+    """
+    if not has_load_data:
+        return None
+    return max(0, min(100, 100 - counts.get("alert", 0) * 20 - counts.get("warning", 0) * 5))
+
+
+def _health_label(score: Optional[int]) -> str:
+    """健康分 -> 档位。集中一处, 免得阈值在两个地方各写一遍然后分叉。
+
+    V0.9.0: 原来这个三元表达式是**内联**在返回 dict 里的, 而"有没有数据"
+    的分支又在自己算一遍 label —— 两处阈值一致纯属侥幸, 而且内联那处
+    在 health_score 为 None 时会 `None < 60` 直接抛 TypeError。
+    """
+    if score is None:
+        return "数据不足"
+    if score < 60:
+        return "需要关注"
+    if score < 85:
+        return "一般"
+    return "良好"
+
+
 def compute_today_insights(db: Session, athlete_id: Optional[int] = None) -> InsightsBundle:
     """今日所有训练洞察, 按严重度排序
 
@@ -369,8 +413,23 @@ def compute_today_insights(db: Session, athlete_id: Optional[int] = None) -> Ins
         counts[i.severity] = counts.get(i.severity, 0) + 1
 
     # 健康分 (0-100): alert -20, warning -5, info +0
-    health_score = 100 - counts["alert"] * 20 - counts["warning"] * 5
-    health_score = max(0, min(100, health_score))
+    #
+    # V0.9.0: 原来这里是 `100 - alert*20 - warning*5`, 起点写死 100。
+    # 后果和 readiness 那三个 P0 **是同一株病**: 越没有数据, 扣分项越少,
+    # 分反而越高。实测零数据用户:
+    #
+    #     health_score = 95, health_label = "良好"
+    #     insights = []          ← 连一条警告都没有
+    #
+    # 而前端会把它渲染成 "训练健康分 95/100 良好", 下面还跟着
+    # "CTL 0 · TSB 0 · ramp 0"。这是给零数据用户**最直白的虚假肯定**。
+    #
+    # 修: 没有真实数据时**不给分**, 而不是给一个看起来不错的分数。
+    # 判据复用 get_pmc_today 的 has_load_data —— 和 readiness 用同一套,
+    # 免得两个模块对"什么算有数据"的理解分叉。
+    has_load_data = bool(pcm.get("has_load_data"))
+    health_score = compute_health_score(counts, has_load_data)
+    health_label = _health_label(health_score)
 
     return InsightsBundle(
         generated_at=now.isoformat(),
@@ -382,13 +441,16 @@ def compute_today_insights(db: Session, athlete_id: Optional[int] = None) -> Ins
             "warning": counts["warning"],
             "info": counts["info"],
             "health_score": health_score,
-            "health_label": "需要关注" if health_score < 60 else "一般" if health_score < 85 else "良好",
+            "health_label": health_label,
         },
         pcm={
             "ctl": round(ctl, 1),
             "atl": round(atl, 1),
             "tsb": round(tsb, 1),
             "ramp_rate": round(ramp_rate, 2),
+            # V0.9.0: 前端需要知道"这三个 0 是真的 0 还是没数据"。
+            # 不给这个标志的话它只能照着 0 显示, 用户会读成"CTL 是 0"。
+            "has_load_data": has_load_data,
         },
         acwr=get_acwr_overview(db),
     )
