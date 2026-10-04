@@ -195,7 +195,8 @@ def test_returns_none_without_load_dimension():
         compute_readiness, MIN_DIMENSIONS_FOR_READINESS,
         REQUIRED_READINESS_DIMENSION)
     assert REQUIRED_READINESS_DIMENSION == "tsb"
-    assert MIN_DIMENSIONS_FOR_READINESS == 2
+    # V0.9.0 第二轮: 2 -> 3。2 会放行"只有 TSB + phase"这种最单薄的组合。
+    assert MIN_DIMENSIONS_FOR_READINESS == 3
 
 
 def test_coverage_reports_what_is_missing():
@@ -675,3 +676,480 @@ def test_returns_none_when_load_dimension_missing_even_if_two_others_present():
         f"缺训练负荷维度却给了 {score} 分 —— "
         "不知道最近骑了多少, 就没有资格说今天该上什么强度"
     )
+
+
+# ================================================================ 第二轮 Verifier
+
+def test_pure_load_row_with_rpe_only_does_not_earn_tsb_points():
+    """🔴 P0-3: 休息日填了 RPE, 于是有 DailyMetric 行, 但零负荷数据
+    旧代码 `status_label != "无数据"` 放行 → `float(row.tsb or 0)` = 0.0 →
+    classify_status(0,0) → "平衡" → **满分 20/20** → 87 分"极佳"。
+    路径普通用户走得到: 骑满一周、今天休息、填一次 RPE。
+
+    注意 `models.py` 里 ctl/atl/tsb 都是 `default=0.0`, 所以 NULL 不会出现 ——
+    **"没测"和"测出来是 0"在 schema 层就被抹平了**, 不能靠 IS NULL 区分。
+    改用语义判据: CTL/ATL 是 TSS 的 EWMA, 有任何训练史就必然 > 0。
+    """
+    from datetime import datetime as _dt, timedelta as _td
+    from cycling_coach.data.sqlite.models import DailyMetric
+    from cycling_coach.core.pmc import get_pmc_today
+    from cycling_coach.core.coaching.recommendations import compute_readiness
+
+    use_temp_db("v090_rpe_only_today")
+    from cycling_coach.data.sqlite.database import SessionLocal
+    from cycling_coach.core.profile import store as profile_store
+    db = SessionLocal()
+    ath = profile_store.get_or_create_athlete(db)
+    ath.ftp = 250
+    db.commit()
+    today = _dt.utcnow().date()
+    for i in range(10):
+        row = DailyMetric(athlete_id=ath.id, date=today - _td(days=i), tss=50)
+        if i == 0:
+            row.rpe = 5          # 今天休息, 只填了 RPE
+        else:
+            row.ctl, row.atl, row.tsb, row.rpe = 40, 42, -2, 5
+        db.add(row)
+    db.commit()
+
+    pmc = get_pmc_today(db, ath.id)
+    # 旧哨兵会放行的地方
+    assert pmc["status_label"] == "平衡"
+    # 新判据必须说不
+    assert pmc["has_load_data"] is False, (
+        "只有 RPE 没有负荷的行, has_load_data 不该是 True"
+    )
+
+    _score, bd = compute_readiness(db, ath.id)
+    assert "tsb" not in bd, "零负荷数据拿到了训练负荷分 (P0-3 没修好)"
+
+
+def test_load_row_with_real_data_still_counts():
+    """反向: 真的有 ctl/atl/tsb 时, has_load_data 必须为 True (别把正常用户也排除)"""
+    from datetime import datetime as _dt, timedelta as _td
+    from cycling_coach.data.sqlite.models import DailyMetric
+    from cycling_coach.core.pmc import get_pmc_today
+
+    use_temp_db("v090_real_load")
+    from cycling_coach.data.sqlite.database import SessionLocal
+    from cycling_coach.core.profile import store as profile_store
+    db = SessionLocal()
+    ath = profile_store.get_or_create_athlete(db)
+    ath.ftp = 250
+    db.commit()
+    db.add(DailyMetric(athlete_id=ath.id, date=_dt.utcnow().date(),
+                       tss=50, ctl=40, atl=42, tsb=-2, rpe=5))
+    db.commit()
+    assert get_pmc_today(db, ath.id)["has_load_data"] is True
+
+
+def test_tier_is_capped_when_coverage_incomplete(fresh):
+    """🔴 P0-1: 归一化能凑出 100 分, 而 100 分会一路走到 vo2 档
+
+    零 HRV / 零 ACWR 的用户被派去做 4-6x3min @ 110-120% FTP ——
+    而 HRV 恰恰是抓"看着还行其实已经过载"的那个维度。
+
+    注意把 MIN_DIMENSIONS 从 2 提到 3 **修不掉这个**:
+    tsb 20 + phase 15 + rpe 10 = 45/45 同样是 100。病根是归一化本身。
+    """
+    import inspect
+    from cycling_coach.core.coaching import recommendations as mod
+
+    src = inspect.getsource(mod.generate_recommendations)
+    assert "MAX_TIER_BY_COVERAGE" in src, "档位没有对覆盖度封顶"
+    assert "tier_cap" in src
+
+    # 封顶表本身: 3 维封 endurance, 4 维封 threshold, 5 维不封顶
+    assert mod.MAX_TIER_BY_COVERAGE[3] == "endurance"
+    assert mod.MAX_TIER_BY_COVERAGE[4] == "threshold"
+    assert mod.MAX_TIER_BY_COVERAGE[5] is None
+    # vo2 只能出现在"不封顶"那一档
+    assert "vo2" not in mod.MAX_TIER_BY_COVERAGE.values()
+
+
+def test_tier_cap_cannot_be_bypassed(fresh, short_history_athlete):
+    """封顶必须真的生效, 不能只是源码里有那么一行"""
+    from cycling_coach.core.coaching.recommendations import (
+        generate_recommendations, readiness_coverage, compute_readiness,
+        MAX_TIER_BY_COVERAGE, _TIER_ORDER)
+
+    score, bd = compute_readiness(fresh, short_history_athlete)
+    cov = readiness_coverage(bd)
+    if score is None or cov["complete"]:
+        return  # 该场景拿不到分数, 封顶无从谈起, 跳过
+
+    rec = generate_recommendations(fresh, short_history_athlete)
+    cap = MAX_TIER_BY_COVERAGE.get(cov["n_available"])
+    if cap is not None:
+        assert _TIER_ORDER.index(rec.recommended_workout_type) <= _TIER_ORDER.index(cap), (
+            f"{cov['n_available']}/5 维却给出了 {rec.recommended_workout_type}"
+        )
+        # 覆盖度不完整时绝不允许出现"极佳"
+        assert "极佳" not in rec.readiness_label, (
+            f"覆盖度 {cov['n_available']}/5 却给了「极佳」"
+        )
+
+
+def test_cap_is_explained_to_user(fresh, short_history_athlete):
+    """被封顶时必须告诉用户为什么, 否则看起来像系统在乱推荐 (Verifier: M9)"""
+    from cycling_coach.core.coaching.recommendations import (
+        generate_recommendations, compute_readiness, readiness_coverage,
+        MAX_TIER_BY_COVERAGE, _TIER_ORDER)
+
+    _s, bd = compute_readiness(fresh, short_history_athlete)
+    cov = readiness_coverage(bd)
+    rec = generate_recommendations(fresh, short_history_athlete)
+    if rec.readiness_score is None:
+        # 拿不到分数时, "数据不足" 那条本身就是解释, 不该要求覆盖度提示
+        assert rec.recommendations, "数据不足时至少要告诉用户为什么"
+        return
+    cap = MAX_TIER_BY_COVERAGE.get(cov["n_available"])
+    should_be_capped = (
+        cap is not None
+        and _TIER_ORDER.index(rec.recommended_workout_type) == _TIER_ORDER.index(cap)
+        and not cov["complete"]
+    )
+    texts = [r.title + r.detail for r in rec.recommendations]
+    if should_be_capped:
+        assert any("下调" in t for t in texts), "被封顶却没告诉用户"
+    # 无论封没封顶, 覆盖度不完整时都必须有覆盖度说明
+    if not cov["complete"] and rec.recommendations:
+        assert any("个维度" in t for t in texts), "覆盖度不完整却没有说明"
+
+
+def test_coverage_rec_present_even_at_minimum_dimensions(fresh, short_history_athlete):
+    """变异 M9: 删掉覆盖度提示 Recommendation 时必须红"""
+    from cycling_coach.core.coaching.recommendations import generate_recommendations
+    rec = generate_recommendations(fresh, short_history_athlete)
+    if rec.readiness_score is None:
+        return
+    assert any("个维度" in r.title for r in rec.recommendations), (
+        "覆盖度提示不见了 —— 用户会看到一个来路不明的分数"
+    )
+
+
+def test_min_dimensions_is_three(fresh, short_history_athlete):
+    """门槛必须是 3。2 会放行"只有 TSB + phase"这种最单薄的组合"""
+    from cycling_coach.core.coaching import recommendations as mod
+    assert mod.MIN_DIMENSIONS_FOR_READINESS == 3
+    # phase 无条件写入, 所以 3 维 = tsb + phase + 任意一项真实信号
+    _score, bd = mod.compute_readiness(fresh, short_history_athlete)
+    assert len(bd) < 3 or "tsb" in bd
+
+
+# ================================================================ 第二轮 Verifier
+
+def test_pure_load_row_with_rpe_only_does_not_earn_tsb_points():
+    """🔴 P0-3: 休息日填了 RPE, 于是有 DailyMetric 行, 但零负荷数据
+    旧代码 `status_label != "无数据"` 放行 → `float(row.tsb or 0)` = 0.0 →
+    classify_status(0,0) → "平衡" → **满分 20/20** → 87 分"极佳"。
+    路径普通用户走得到: 骑满一周、今天休息、填一次 RPE。
+
+    注意 `models.py` 里 ctl/atl/tsb 都是 `default=0.0`, 所以 NULL 不会出现 ——
+    **"没测"和"测出来是 0"在 schema 层就被抹平了**, 不能靠 IS NULL 区分。
+    改用语义判据: CTL/ATL 是 TSS 的 EWMA, 有任何训练史就必然 > 0。
+    """
+    from datetime import datetime as _dt, timedelta as _td
+    from cycling_coach.data.sqlite.models import DailyMetric
+    from cycling_coach.core.pmc import get_pmc_today
+    from cycling_coach.core.coaching.recommendations import compute_readiness
+
+    use_temp_db("v090_rpe_only_today")
+    from cycling_coach.data.sqlite.database import SessionLocal
+    from cycling_coach.core.profile import store as profile_store
+    db = SessionLocal()
+    ath = profile_store.get_or_create_athlete(db)
+    ath.ftp = 250
+    db.commit()
+    today = _dt.utcnow().date()
+    for i in range(10):
+        row = DailyMetric(athlete_id=ath.id, date=today - _td(days=i), tss=50)
+        if i == 0:
+            row.rpe = 5          # 今天休息, 只填了 RPE
+        else:
+            row.ctl, row.atl, row.tsb, row.rpe = 40, 42, -2, 5
+        db.add(row)
+    db.commit()
+
+    pmc = get_pmc_today(db, ath.id)
+    # 旧哨兵会放行的地方
+    assert pmc["status_label"] == "平衡"
+    # 新判据必须说不
+    assert pmc["has_load_data"] is False, (
+        "只有 RPE 没有负荷的行, has_load_data 不该是 True"
+    )
+
+    _score, bd = compute_readiness(db, ath.id)
+    assert "tsb" not in bd, "零负荷数据拿到了训练负荷分 (P0-3 没修好)"
+
+
+def test_load_row_with_real_data_still_counts():
+    """反向: 真的有 ctl/atl/tsb 时, has_load_data 必须为 True (别把正常用户也排除)"""
+    from datetime import datetime as _dt, timedelta as _td
+    from cycling_coach.data.sqlite.models import DailyMetric
+    from cycling_coach.core.pmc import get_pmc_today
+
+    use_temp_db("v090_real_load")
+    from cycling_coach.data.sqlite.database import SessionLocal
+    from cycling_coach.core.profile import store as profile_store
+    db = SessionLocal()
+    ath = profile_store.get_or_create_athlete(db)
+    ath.ftp = 250
+    db.commit()
+    db.add(DailyMetric(athlete_id=ath.id, date=_dt.utcnow().date(),
+                       tss=50, ctl=40, atl=42, tsb=-2, rpe=5))
+    db.commit()
+    assert get_pmc_today(db, ath.id)["has_load_data"] is True
+
+
+def test_tier_is_capped_when_coverage_incomplete(fresh):
+    """🔴 P0-1: 归一化能凑出 100 分, 而 100 分会一路走到 vo2 档
+
+    零 HRV / 零 ACWR 的用户被派去做 4-6x3min @ 110-120% FTP ——
+    而 HRV 恰恰是抓"看着还行其实已经过载"的那个维度。
+
+    注意把 MIN_DIMENSIONS 从 2 提到 3 **修不掉这个**:
+    tsb 20 + phase 15 + rpe 10 = 45/45 同样是 100。病根是归一化本身。
+    """
+    import inspect
+    from cycling_coach.core.coaching import recommendations as mod
+
+    src = inspect.getsource(mod.generate_recommendations)
+    assert "MAX_TIER_BY_COVERAGE" in src, "档位没有对覆盖度封顶"
+    assert "tier_cap" in src
+
+    # 封顶表本身: 3 维封 endurance, 4 维封 threshold, 5 维不封顶
+    assert mod.MAX_TIER_BY_COVERAGE[3] == "endurance"
+    assert mod.MAX_TIER_BY_COVERAGE[4] == "threshold"
+    assert mod.MAX_TIER_BY_COVERAGE[5] is None
+    # vo2 只能出现在"不封顶"那一档
+    assert "vo2" not in mod.MAX_TIER_BY_COVERAGE.values()
+
+
+def test_tier_cap_cannot_be_bypassed(fresh, short_history_athlete):
+    """封顶必须真的生效, 不能只是源码里有那么一行"""
+    from cycling_coach.core.coaching.recommendations import (
+        generate_recommendations, readiness_coverage, compute_readiness,
+        MAX_TIER_BY_COVERAGE, _TIER_ORDER)
+
+    score, bd = compute_readiness(fresh, short_history_athlete)
+    cov = readiness_coverage(bd)
+    if score is None or cov["complete"]:
+        return  # 该场景拿不到分数, 封顶无从谈起, 跳过
+
+    rec = generate_recommendations(fresh, short_history_athlete)
+    cap = MAX_TIER_BY_COVERAGE.get(cov["n_available"])
+    if cap is not None:
+        assert _TIER_ORDER.index(rec.recommended_workout_type) <= _TIER_ORDER.index(cap), (
+            f"{cov['n_available']}/5 维却给出了 {rec.recommended_workout_type}"
+        )
+        # 覆盖度不完整时绝不允许出现"极佳"
+        assert "极佳" not in rec.readiness_label, (
+            f"覆盖度 {cov['n_available']}/5 却给了「极佳」"
+        )
+
+
+def test_cap_is_explained_to_user(fresh, short_history_athlete):
+    """被封顶时必须告诉用户为什么, 否则看起来像系统在乱推荐 (Verifier: M9)"""
+    from cycling_coach.core.coaching.recommendations import (
+        generate_recommendations, compute_readiness, readiness_coverage,
+        MAX_TIER_BY_COVERAGE, _TIER_ORDER)
+
+    _s, bd = compute_readiness(fresh, short_history_athlete)
+    cov = readiness_coverage(bd)
+    rec = generate_recommendations(fresh, short_history_athlete)
+    if rec.readiness_score is None:
+        # 拿不到分数时, "数据不足" 那条本身就是解释, 不该要求覆盖度提示
+        assert rec.recommendations, "数据不足时至少要告诉用户为什么"
+        return
+    cap = MAX_TIER_BY_COVERAGE.get(cov["n_available"])
+    should_be_capped = (
+        cap is not None
+        and _TIER_ORDER.index(rec.recommended_workout_type) == _TIER_ORDER.index(cap)
+        and not cov["complete"]
+    )
+    texts = [r.title + r.detail for r in rec.recommendations]
+    if should_be_capped:
+        assert any("下调" in t for t in texts), "被封顶却没告诉用户"
+    # 无论封没封顶, 覆盖度不完整时都必须有覆盖度说明
+    if not cov["complete"] and rec.recommendations:
+        assert any("个维度" in t for t in texts), "覆盖度不完整却没有说明"
+
+
+def test_coverage_rec_present_even_at_minimum_dimensions(fresh, short_history_athlete):
+    """变异 M9: 删掉覆盖度提示 Recommendation 时必须红"""
+    from cycling_coach.core.coaching.recommendations import generate_recommendations
+    rec = generate_recommendations(fresh, short_history_athlete)
+    if rec.readiness_score is None:
+        return
+    assert any("个维度" in r.title for r in rec.recommendations), (
+        "覆盖度提示不见了 —— 用户会看到一个来路不明的分数"
+    )
+
+
+def test_min_dimensions_is_three(fresh, short_history_athlete):
+    """门槛必须是 3。2 会放行"只有 TSB + phase"这种最单薄的组合"""
+    from cycling_coach.core.coaching import recommendations as mod
+    assert mod.MIN_DIMENSIONS_FOR_READINESS == 3
+    # phase 无条件写入, 所以 3 维 = tsb + phase + 任意一项真实信号
+    _score, bd = mod.compute_readiness(fresh, short_history_athlete)
+    assert len(bd) < 3 or "tsb" in bd
+
+
+# ================================================================ 第二轮 Verifier
+
+def test_pure_load_row_with_rpe_only_does_not_earn_tsb_points():
+    """🔴 P0-3: 休息日填了 RPE, 于是有 DailyMetric 行, 但零负荷数据
+    旧代码 `status_label != "无数据"` 放行 → `float(row.tsb or 0)` = 0.0 →
+    classify_status(0,0) → "平衡" → **满分 20/20** → 87 分"极佳"。
+    路径普通用户走得到: 骑满一周、今天休息、填一次 RPE。
+
+    注意 `models.py` 里 ctl/atl/tsb 都是 `default=0.0`, 所以 NULL 不会出现 ——
+    **"没测"和"测出来是 0"在 schema 层就被抹平了**, 不能靠 IS NULL 区分。
+    改用语义判据: CTL/ATL 是 TSS 的 EWMA, 有任何训练史就必然 > 0。
+    """
+    from datetime import datetime as _dt, timedelta as _td
+    from cycling_coach.data.sqlite.models import DailyMetric
+    from cycling_coach.core.pmc import get_pmc_today
+    from cycling_coach.core.coaching.recommendations import compute_readiness
+
+    use_temp_db("v090_rpe_only_today")
+    from cycling_coach.data.sqlite.database import SessionLocal
+    from cycling_coach.core.profile import store as profile_store
+    db = SessionLocal()
+    ath = profile_store.get_or_create_athlete(db)
+    ath.ftp = 250
+    db.commit()
+    today = _dt.utcnow().date()
+    for i in range(10):
+        row = DailyMetric(athlete_id=ath.id, date=today - _td(days=i), tss=50)
+        if i == 0:
+            row.rpe = 5          # 今天休息, 只填了 RPE
+        else:
+            row.ctl, row.atl, row.tsb, row.rpe = 40, 42, -2, 5
+        db.add(row)
+    db.commit()
+
+    pmc = get_pmc_today(db, ath.id)
+    # 旧哨兵会放行的地方
+    assert pmc["status_label"] == "平衡"
+    # 新判据必须说不
+    assert pmc["has_load_data"] is False, (
+        "只有 RPE 没有负荷的行, has_load_data 不该是 True"
+    )
+
+    _score, bd = compute_readiness(db, ath.id)
+    assert "tsb" not in bd, "零负荷数据拿到了训练负荷分 (P0-3 没修好)"
+
+
+def test_load_row_with_real_data_still_counts():
+    """反向: 真的有 ctl/atl/tsb 时, has_load_data 必须为 True (别把正常用户也排除)"""
+    from datetime import datetime as _dt, timedelta as _td
+    from cycling_coach.data.sqlite.models import DailyMetric
+    from cycling_coach.core.pmc import get_pmc_today
+
+    use_temp_db("v090_real_load")
+    from cycling_coach.data.sqlite.database import SessionLocal
+    from cycling_coach.core.profile import store as profile_store
+    db = SessionLocal()
+    ath = profile_store.get_or_create_athlete(db)
+    ath.ftp = 250
+    db.commit()
+    db.add(DailyMetric(athlete_id=ath.id, date=_dt.utcnow().date(),
+                       tss=50, ctl=40, atl=42, tsb=-2, rpe=5))
+    db.commit()
+    assert get_pmc_today(db, ath.id)["has_load_data"] is True
+
+
+def test_tier_is_capped_when_coverage_incomplete(fresh):
+    """🔴 P0-1: 归一化能凑出 100 分, 而 100 分会一路走到 vo2 档
+
+    零 HRV / 零 ACWR 的用户被派去做 4-6x3min @ 110-120% FTP ——
+    而 HRV 恰恰是抓"看着还行其实已经过载"的那个维度。
+
+    注意把 MIN_DIMENSIONS 从 2 提到 3 **修不掉这个**:
+    tsb 20 + phase 15 + rpe 10 = 45/45 同样是 100。病根是归一化本身。
+    """
+    import inspect
+    from cycling_coach.core.coaching import recommendations as mod
+
+    src = inspect.getsource(mod.generate_recommendations)
+    assert "MAX_TIER_BY_COVERAGE" in src, "档位没有对覆盖度封顶"
+    assert "tier_cap" in src
+
+    # 封顶表本身: 3 维封 endurance, 4 维封 threshold, 5 维不封顶
+    assert mod.MAX_TIER_BY_COVERAGE[3] == "endurance"
+    assert mod.MAX_TIER_BY_COVERAGE[4] == "threshold"
+    assert mod.MAX_TIER_BY_COVERAGE[5] is None
+    # vo2 只能出现在"不封顶"那一档
+    assert "vo2" not in mod.MAX_TIER_BY_COVERAGE.values()
+
+
+def test_tier_cap_cannot_be_bypassed(fresh, short_history_athlete):
+    """封顶必须真的生效, 不能只是源码里有那么一行"""
+    from cycling_coach.core.coaching.recommendations import (
+        generate_recommendations, readiness_coverage, compute_readiness,
+        MAX_TIER_BY_COVERAGE, _TIER_ORDER)
+
+    score, bd = compute_readiness(fresh, short_history_athlete)
+    cov = readiness_coverage(bd)
+    if score is None or cov["complete"]:
+        return  # 该场景拿不到分数, 封顶无从谈起, 跳过
+
+    rec = generate_recommendations(fresh, short_history_athlete)
+    cap = MAX_TIER_BY_COVERAGE.get(cov["n_available"])
+    if cap is not None:
+        assert _TIER_ORDER.index(rec.recommended_workout_type) <= _TIER_ORDER.index(cap), (
+            f"{cov['n_available']}/5 维却给出了 {rec.recommended_workout_type}"
+        )
+        # 覆盖度不完整时绝不允许出现"极佳"
+        assert "极佳" not in rec.readiness_label, (
+            f"覆盖度 {cov['n_available']}/5 却给了「极佳」"
+        )
+
+
+def test_cap_is_explained_to_user(fresh, short_history_athlete):
+    """被封顶时必须告诉用户为什么, 否则看起来像系统在乱推荐 (Verifier: M9)"""
+    from cycling_coach.core.coaching.recommendations import (
+        generate_recommendations, compute_readiness, readiness_coverage,
+        MAX_TIER_BY_COVERAGE, _TIER_ORDER)
+
+    _s, bd = compute_readiness(fresh, short_history_athlete)
+    cov = readiness_coverage(bd)
+    rec = generate_recommendations(fresh, short_history_athlete)
+    if rec.readiness_score is None:
+        # 拿不到分数时, "数据不足" 那条本身就是解释, 不该要求覆盖度提示
+        assert rec.recommendations, "数据不足时至少要告诉用户为什么"
+        return
+    cap = MAX_TIER_BY_COVERAGE.get(cov["n_available"])
+    should_be_capped = (
+        cap is not None
+        and _TIER_ORDER.index(rec.recommended_workout_type) == _TIER_ORDER.index(cap)
+        and not cov["complete"]
+    )
+    texts = [r.title + r.detail for r in rec.recommendations]
+    if should_be_capped:
+        assert any("下调" in t for t in texts), "被封顶却没告诉用户"
+    # 无论封没封顶, 覆盖度不完整时都必须有覆盖度说明
+    if not cov["complete"] and rec.recommendations:
+        assert any("个维度" in t for t in texts), "覆盖度不完整却没有说明"
+
+
+def test_coverage_rec_present_even_at_minimum_dimensions(fresh, short_history_athlete):
+    """变异 M9: 删掉覆盖度提示 Recommendation 时必须红"""
+    from cycling_coach.core.coaching.recommendations import generate_recommendations
+    rec = generate_recommendations(fresh, short_history_athlete)
+    if rec.readiness_score is None:
+        return
+    assert any("个维度" in r.title for r in rec.recommendations), (
+        "覆盖度提示不见了 —— 用户会看到一个来路不明的分数"
+    )
+
+
+def test_min_dimensions_is_three(fresh, short_history_athlete):
+    """门槛必须是 3。2 会放行"只有 TSB + phase"这种最单薄的组合"""
+    from cycling_coach.core.coaching import recommendations as mod
+    assert mod.MIN_DIMENSIONS_FOR_READINESS == 3
+    # phase 无条件写入, 所以 3 维 = tsb + phase + 任意一项真实信号
+    _score, bd = mod.compute_readiness(fresh, short_history_athlete)
+    assert len(bd) < 3 or "tsb" in bd

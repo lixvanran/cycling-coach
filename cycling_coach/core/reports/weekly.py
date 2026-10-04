@@ -148,8 +148,15 @@ def generate_weekly_report(
         ("rpe", "RPE", 10, "7d 主观疲劳 (Borg CR-10)"),
     ]
     for k, label, mx, desc in breakdown_meta:
-        v = breakdown.get(k, 0)
-        breakdown_data.append([f"{label} ({desc})", str(v), str(mx), f"{v/mx*100:.0f}%"])
+        # V0.9.0: 缺失维度必须印成"无数据", 不是 0。
+        # `breakdown.get(k, 0)` 会让 2/5 维用户的周报上写着 "HRV 0/30 0%" ——
+        # 这跟我在前端特意修掉的 `|| 0` 是**同一个 bug**, 只是 PDF 路径当时没动。
+        # 0 分意味着"很差", 没数据意味着"不知道", 印在周报上是在骗人。
+        raw = breakdown.get(k)
+        if raw is None:
+            breakdown_data.append([f"{label} ({desc})", "无数据", str(mx), "—"])
+        else:
+            breakdown_data.append([f"{label} ({desc})", str(raw), str(mx), f"{raw/mx*100:.0f}%"])
     t = Table(breakdown_data, colWidths=[6*cm, 2*cm, 2*cm, 2*cm])
     t.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f1f5f9")),

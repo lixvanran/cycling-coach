@@ -270,12 +270,29 @@ def get_pmc_today(db: Session, athlete_id: int) -> dict:
             "status": "neutral",
             "status_label": "无数据",
             "status_color": "yellow",
+            # V0.9.0: 调用方以前靠 `status_label != "无数据"` 判断"有没有负荷数据"。
+            # 那是**用中文字符串当契约** —— 只要有行、但 ctl/atl/tsb 全是 NULL,
+            # tsb 就会被 `float(row.tsb or 0)` 变成 0.0, classify_status(0,0)
+            # 返回"平衡", 哨兵放行, 于是**零训练负荷数据拿到满分 20/20**。
+            # 改成结构化判据, 别再让显示文案承担数据可用性的职责。
+            "has_load_data": False,
         }
     tsb = float(row.tsb or 0)
     ramp = float(row.ramp_rate or 0)
     code, label, color = classify_status(tsb, ramp)
     return {
         "date": today.isoformat(),
+        # V0.9.0: 结构化地回答"这一行到底有没有真实负荷数据"。
+        #
+        # 注意是**有行**不等于**有负荷**: 休息日也会因为填了 RPE 而建行。
+        # 而 models.py 里 ctl/atl/tsb 都是 `mapped_column(Float, default=0.0)`,
+        # 所以 NULL 根本不会出现 —— **"没测"和"测出来是 0"在 schema 层就被
+        # 抹平了**, 没法靠 IS NULL 区分。
+        #
+        # 因此这里用语义判据: CTL/ATL 是 TSS 的 EWMA, 只要有过任何训练史就必然 > 0;
+        # 两者同时恰好为 0 只可能意味着"从来没有算过负荷"。TSB = CTL - ATL,
+        # 所以单独查 tsb 没意义(它为 0 也可能是两者相等)。
+        "has_load_data": bool(row.ctl) or bool(row.atl),
         "tss_today": float(row.tss or 0),
         "ctl": round(float(row.ctl or 0), 1),
         "atl": round(float(row.atl or 0), 1),

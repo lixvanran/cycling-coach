@@ -16,6 +16,7 @@ from cycling_coach.core.profile import store as profile_store
 from cycling_coach.core.coaching.recommendations import (
     generate_recommendations,
     compute_readiness,
+    readiness_coverage,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,9 +68,13 @@ def get_readiness_only(db: Session = Depends(get_db)):
     athlete = profile_store.get_or_create_athlete(db)
     suff = _data_sufficiency(db, athlete.id)
     if not suff["sufficient"]:
+        # V0.9.0: 早退分支原本**没有** readiness_coverage, 而正常路径有 ——
+        # 同一个端点两种 key 集合, 消费方得同时处理"有"和"没有"两种形状。
+        # 早退时 breakdown 是空的, 覆盖度就是 0/5。
         return {
             "readiness_score": None,
             "readiness_label": "数据不足",
+            "readiness_coverage": readiness_coverage({}),
             "breakdown": {},
             "data_sufficiency": suff,
             "weights": {
@@ -77,7 +82,6 @@ def get_readiness_only(db: Session = Depends(get_db)):
             },
         }
     score, breakdown = compute_readiness(db, athlete.id)
-    from cycling_coach.core.coaching.recommendations import readiness_coverage
     coverage = readiness_coverage(breakdown)
     # V0.9.0: score 可能是 None (过了活动数门槛, 但 HRV/ACWR/负荷算不出来)。
     # 原来这里是 `score >= 80` —— Python 3 里 `None >= 80` 抛 TypeError,

@@ -83,8 +83,54 @@ MIN_DAYS_SPAN_FOR_READINESS = 7
 # 现在的规则:
 #   - 只有**真实有数据**的维度才进 breakdown
 #   - 分数按**可用维度的满分**归一化 (全 5 维时与旧算法完全一致, 无回归)
-#   - 可用维度 < 2, 或缺训练负荷维度(没有它就没法谈"今天该不该练") → 返回 None
+#   - 可用维度不足, 或缺训练负荷维度(没有它就没法谈"今天该不该练") → 返回 None
+#
+# ## 归一化不能直接驱动处方 (Verifier 抓到的 P0-1)
+#
+# 归一化有个**任何子集都会中招**的性质: 分子分母同时缩小, 比值不变。
+# 所以只要某几个维度拿满分, 归一化后照样是 100:
+#
+#     2/5 维 (tsb 20 + phase 15)              -> 35/35  = 100  极佳 -> vo2
+#     3/5 维 (tsb 20 + phase 15 + rpe 10)     -> 45/45  = 100  极佳 -> vo2
+#     4/5 维 (全但缺 acwr)                    -> 75/75  = 100  极佳 -> vo2
+#
+# 也就是说**零 HRV、零 ACWR 的用户会被派去做 4-6x3min @ 110-120% FTP**。
+# 把 MIN_DIMENSIONS 从 2 提到 3 **修不掉这个** —— 3/5 维同样能凑 100。
+# 门槛只是遮羞布, 病根是"归一化后的分数直接驱动最大强度处方"。
+#
+# ## 现在的设计: 分数和档位分开管
+#
+#   - **分数** = 已知信号有多好 → 归一化是对的。缺维度不等于表现差,
+#     也不该让"补齐传感器"的人分数凭空变高。
+#   - **档位** = 我们能有多确定 → 必须对覆盖度封顶。缺 HRV 时最该被拦住的
+#     恰恰是最大强度间歇: HRV(30 分) 正是用来抓"看着还行其实已经过载"的。
+#
+# 所以覆盖度不完整时: 最高档封在 TIER_BY_COVERAGE, 且**不许出现"极佳"**。
 READINESS_WEIGHTS = {"hrv": 30, "acwr": 25, "tsb": 20, "phase": 15, "rpe": 10}
+
+# 至少要有几个真实维度才敢给一个分。3 = 训练负荷 + 周期阶段 + 任意一项
+# 真实生理/主观信号, 避免"只有 TSB 和 phase"这种最单薄的组合。
+MIN_DIMENSIONS_FOR_READINESS = 3
+
+# 覆盖度不完整时的档位封顶。缺 HRV 不该被派去做 VO2max 间歇。
+_TIER_ORDER = ["rest", "recovery", "endurance", "threshold", "vo2"]
+
+# 封顶提示里用的中文档位名
+_TIER_CN = {
+    "rest": "完全休息", "recovery": "恢复骑", "endurance": "轻松骑",
+    "threshold": "阈值间歇", "vo2": "VO2max 间歇",
+}
+
+# 3/5 维: 知道负荷和阶段, 缺生理信号 -> 最高给 endurance
+# 4/5 维: 只缺一个 -> 最高给 threshold(仍不给 vo2)
+# 5/5 维: 完整 -> 不封顶
+MAX_TIER_BY_COVERAGE = {3: "endurance", 4: "threshold", 5: None}
+
+# 封顶时回退到的具体内容 (label / intensity / target_tss)
+_TIER_DETAIL = {
+    "endurance": ("中等", "轻松骑: Z2 长骑 60-90min @ 65-75% FTP", 60),
+    "threshold": ("良好", "阈值日: Threshold 间歇 (2×20min @ 88-92% FTP, 间歇 5min Z1)", 90),
+}
 
 # ACWR 的慢性窗口。取数天数必须 >= 它, 否则 compute_acwr() 直接返回空序列。
 ACWR_CHRONIC_WINDOW_DAYS = 28
@@ -131,8 +177,7 @@ def _acwr_history_is_real(db: Session, athlete_id: int) -> bool:
 # 训练负荷是 readiness 的地基: 不知道最近骑了多少, 就没资格说今天该上什么强度
 REQUIRED_READINESS_DIMENSION = "tsb"
 
-# 低于这个可用维度数就不给分 —— 单一维度归一化出来的 0-100 看着和五维的一样权威
-MIN_DIMENSIONS_FOR_READINESS = 2
+# (MIN_DIMENSIONS_FOR_READINESS 已随上面的覆盖度封顶一起移到 READINESS_WEIGHTS 旁边)
 
 
 def readiness_coverage(breakdown: dict) -> dict:
@@ -267,7 +312,12 @@ def compute_readiness(
 
     # 3. TSB (20 分) — 训练负荷, readiness 的地基
     pmc = get_pmc_today(db, athlete_id)
-    if pmc.get("status_label") != "无数据":
+    # V0.9.0: 用 `has_load_data` 而不是 `status_label != "无数据"`。
+    # 中文哨兵能被绕过: 有 DailyMetric 行但 ctl/atl/tsb 全 NULL 时,
+    # tsb 被 `float(row.tsb or 0)` 变成 0.0, classify_status(0,0) → "平衡",
+    # 哨兵放行 → **零负荷数据拿满分 20/20**。
+    # 这条路径普通用户走得到: 骑满一周、今天休息、填一次 RPE(于是有行)。
+    if pmc.get("has_load_data"):
         tsb = pmc.get("tsb", 0)
         if -10 <= tsb <= 20:
             tsb_score = 20  # 状态良好
@@ -321,10 +371,6 @@ def compute_readiness(
     # 原来: 无 RPE 记录时给 5/10 中性分。
 
     # 数据够不够给一个分?
-    if REQUIRED_READINESS_DIMENSION not in breakdown:
-        return None, breakdown
-    if len(breakdown) < MIN_DIMENSIONS_FOR_READINESS:
-        return None, breakdown
 
     # 按**可用维度**的满分归一化。
     # 五个维度齐全时 max_total == 100, 与旧算法逐位一致 —— 不会给老用户改分。
@@ -459,12 +505,44 @@ def generate_recommendations(
         intensity = "完全休息: 建议今天不骑车, 优先睡眠/营养"
         target = 0
 
+    # V0.9.0: 覆盖度封顶 —— 分数可以高, 但**不能**据此派最大强度训练。
+    #
+    # 归一化之后 2/5 维也能凑出 100 分, 而 100 分会一路走到 vo2 档,
+    # 把零 HRV 的用户派去做 4-6x3min @ 110-120% FTP。HRV 恰恰是抓
+    # "看着还行其实已经过载"的那个维度, 缺它时最不该上最大强度。
+    #
+    # 所以这里对**档位**封顶, 不动分数: 分数回答"已知信号有多好",
+    # 档位回答"我们能有多确定"。两者混为一谈就会出现"数据越少越该练猛"。
+    tier_cap = MAX_TIER_BY_COVERAGE.get(coverage["n_available"])
+    capped_from = None
+    if tier_cap is not None and _TIER_ORDER.index(rec_type) > _TIER_ORDER.index(tier_cap):
+        capped_from = rec_type
+        rec_type, readiness_label, intensity, target = _TIER_DETAIL[tier_cap]
+        readiness_label = f"{readiness_label}（数据有限）"
+
     # 生成建议列表
     recs = []
     warnings = []
 
     # V0.9.0: 分数即使是真的, 也只代表部分维度。必须让用户知道这个分怎么来的,
     # 否则"67 分"看起来和另一个数据齐全用户的 67 分毫无区别。
+    if capped_from is not None:
+        # 被封顶就必须说清楚为什么, 否则用户会以为系统在乱推荐
+        recs.append(Recommendation(
+            category="info", priority=1,
+            title="训练强度已按数据完整度下调",
+            detail=(
+                f"按 {readiness} 分本可以安排「{_TIER_CN.get(capped_from, capped_from)}」强度, "
+                f"但目前只有 {coverage['n_available']}/{coverage['n_total']} 个维度的数据 "
+                f"(缺 {'、'.join(coverage['missing_labels'])})"
+            ),
+            action=(
+                "缺 HRV 时无法判断恢复情况, 高强度容易在过载状态下硬扛。"
+                f"补上 {('、'.join(coverage['missing_labels']))} 后强度会放开。"
+            ),
+            icon="⚠️",
+        ))
+
     if readiness is not None and not coverage["complete"]:
         recs.append(Recommendation(
             category="info", priority=2,
