@@ -157,11 +157,32 @@ class Spinner:
             self._thread.join(timeout=0.5)
 
 
+def _read_version() -> str:
+    """从 pyproject.toml 读版本号 —— 单一来源
+
+    V0.9.0: 横幅里原来写死 `v0.5.0`, 而 pyproject 是 0.8.1, README 徽章
+    是 0.8.0, 分支叫 v0.8.3-b1, 文档全写 V0.9.0。**五处不一致**,
+    而用户双击 start.bat 第一眼看到的就是那个写死的 v0.5.0。
+
+    版本号只有一个来源: pyproject.toml。其他地方都引用它。
+    """
+    try:
+        import re as _re
+        txt = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        m = _re.search(r'^version\s*=\s*"([^"]+)"', txt, _re.M)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return "unknown"
+
+
 def banner() -> None:
     """启动横幅"""
-    art = r"""
+    ver = _read_version()
+    art = f"""
   ╔══════════════════════════════════════╗
-  ║     🚴  Cycling Coach  v0.5.0        ║
+  ║     🚴  Cycling Coach  v{ver:<11}║
   ║     AI 教练 · 训练管理 · 数据驱动    ║
   ╚══════════════════════════════════════╝
 """

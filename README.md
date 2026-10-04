@@ -2,7 +2,7 @@
 
 > 把公路车训练从"经验"升级为"数据 + 智能"。
 
-![Version](https://img.shields.io/badge/version-v0.8.0-blue.svg)
+![Version](https://img.shields.io/badge/version-v0.9.0-blue.svg)
 ![Status](https://img.shields.io/badge/status-Chat%20%2B%20ML%20%2B%20Architect-green.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![React](https://img.shields.io/badge/react-18-61dafb)
