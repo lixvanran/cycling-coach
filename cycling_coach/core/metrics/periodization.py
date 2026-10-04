@@ -262,6 +262,35 @@ def derive_phase(db: Session, athlete_id: int) -> PhaseDerivation:
     if current_phase:
         reasons.append(f"当前阶段: {current_phase.name} ({current_phase.phase_type})")
 
+    # V0.9.0: 没有真实负荷数据时, 下面那些 `ctl < 50` / `tsb < -30` 的
+    # 判断全部是在拿 0 当真实读数 —— 零 CTL 会被判成"基础期(低 CTL)",
+    # 零 TSB 会被判成"恢复期(TSB 极低)"。方向是反的:
+    # 用户需要的不是"你现在处于某个阶段", 而是"先去导入训练记录"。
+    #
+    # 这跟 race_prep 57.5 分、insights 95 分是同一株病。
+    # 之前只在 compute_readiness 里加了一层守卫挡它, 但 derive_phase
+    # **还有另外两个调用方** —— 其中一个是 AI 上下文(context.py),
+    # 也就是说零数据用户问 AI"我该练什么", 模型会拿到"低 CTL 基础期"
+    # 当真实信息。必须在源头修。
+    if not today_pmc.get("has_load_data"):
+        return PhaseDerivation(
+            suggested_type="unknown",
+            suggested_label="数据不足，无法判断阶段",
+            confidence=0.0,
+            reasons=[
+                "没有真实训练负荷数据(CTL/ATL 都是 0, 但那是因为没有记录, "
+                "不是真的低)"
+            ],
+            target_weekly_tss=0,
+            target_weekly_tss_range=(0, 0),
+            weeks_recommended=0,
+            weeks_to_race=weeks_to_race,
+            current_ctl=ctl,
+            current_atl=atl,
+            current_tsb=tsb,
+            ramp_rate=ramp_rate,
+        )
+
     return PhaseDerivation(
         suggested_type=suggested,
         suggested_label=label,

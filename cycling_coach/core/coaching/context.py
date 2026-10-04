@@ -152,9 +152,23 @@ def _build_phase_context(db: Session, athlete_id: int) -> Optional[dict]:
     info = derive_phase(db, athlete_id)
     if not info:
         return None
+    # V0.9.0: 字段名原来是 `phase_type` / `label`, 而 PhaseDerivation 上
+    # 实际叫 `suggested_type` / `suggested_label` —— **两个都取不到**。
+    # 后果: AI 拿到的 phase 上下文恒为 {'phase_type': None, 'label': None},
+    # 而这是**静默**的 —— 没有任何异常, 只是模型永远不知道用户在哪个阶段。
+    # (V0.9.0 修 AI 上下文时我只加了 _pick() 兼容 dict/object, 没核对字段名。)
+    if _pick(info, "suggested_type") == "unknown":
+        # V0.9.0: derive_phase 在无数据时返回 unknown, 不要把它当成
+        # 一个真实阶段喂给模型。
+        return {
+            "phase_type": None,
+            "label": None,
+            "data_insufficient": True,
+            "note": "没有真实训练负荷数据, 无法判断训练阶段",
+        }
     return {
-        "phase_type": _pick(info, "phase_type"),
-        "label": _pick(info, "label"),
+        "phase_type": _pick(info, "suggested_type"),
+        "label": _pick(info, "suggested_label"),
     }
 
 
