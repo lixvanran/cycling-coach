@@ -62,12 +62,15 @@ const WORKOUT_META: Record<string, { label: string; icon: any; color: string; ts
   rest: { label: "Rest", icon: Coffee, color: "text-text-secondary bg-bg-subtle border-border", tssHint: "完全休息" },
 };
 
-const READINESS_STYLE: Record<string, { bg: string; text: string; ring: string; label: string }> = {
-  "极佳": { bg: "bg-status-success", text: "text-accent-success", ring: "", label: "极佳" },
-  "良好": { bg: "bg-status-success", text: "text-accent-success", ring: "", label: "良好" },
-  "中等": { bg: "bg-status-warning", text: "text-accent-warning", ring: "", label: "中等" },
-  "低迷": { bg: "bg-status-warning", text: "text-accent-warning", ring: "", label: "低迷" },
-  "危险": { bg: "bg-status-danger", text: "text-accent-danger", ring: "", label: "危险" },
+// V0.9.0: 去掉 ring。5 个条目全都填 "", 而模板里 `${rStyle.ring}` 渲染出来
+// 只是个空串 —— 纯装饰。同一轮我在 CalendarPage 写过"编个假值不如删掉",
+// 这里就得一致, 不能一边删假值一边留假值。
+const READINESS_STYLE: Record<string, { bg: string; text: string; label: string }> = {
+  "极佳": { bg: "bg-status-success", text: "text-accent-success", label: "极佳" },
+  "良好": { bg: "bg-status-success", text: "text-accent-success", label: "良好" },
+  "中等": { bg: "bg-status-warning", text: "text-accent-warning", label: "中等" },
+  "低迷": { bg: "bg-status-warning", text: "text-accent-warning", label: "低迷" },
+  "危险": { bg: "bg-status-danger", text: "text-accent-danger", label: "危险" },
 };
 
 const BREAKDOWN_META: Array<{ key: string; label: string; max: number; desc: string }> = [
@@ -119,7 +122,7 @@ export function DailyRecommendationCard() {
   const suff = (data.signals_summary as any)?.data_sufficiency;
 
   return (
-    <div className={`rounded border ${rStyle.ring} ${rStyle.bg} p-4`}>
+    <div className={`rounded border ${rStyle.bg} p-4`}>
       {/* 顶部: 标题 + Readiness 大数字 */}
       <div className="flex items-start justify-between mb-3">
         <div>

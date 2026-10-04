@@ -111,9 +111,28 @@ def collect_tracked_files() -> list[Path]:
         raise SystemExit(
             "[build_release] 前端 build 产物缺失, 拒绝打包。\n"
             "  原因: 不带 cycling_coach/static/ 的包, Windows 用户双击 start.bat 会直接失败。\n"
-            "  先跑: cd apps/web && npx vite build\n"
+            # V0.9.0: 原来这里写的是 `npx vite build` —— 而那恰恰是**跳过类型检查**的
+            # 命令。verifier 指出: 这一轮的核心成果就是"把 tsc && vite build 修通",
+            # 但没有任何自动环节会跑它, 安全网装在了没插电的插座上。
+            # 这里只给"会跑 tsc"的那条命令。
+            "  先跑: cd apps/web && pnpm build   (= tsc && vite build, 含类型检查)\n"
             "  (或: python tools/start.py --desktop --install, 会自动 build)"
         )
+
+    # V0.9.0: 新鲜度断言 —— 防止把过期的 static/ 打进包。
+    # 这个缺口很隐蔽: 改了前端源码忘了重新 build, 包里带的是上一版产物,
+    # 而且**所有检查都会通过**(包是完整的, 静态资源都在, 页面也能打开),
+    # 只是内容是旧的。以前只有一个"存不存在"的检查, 查不出"是不是新的"。
+    if static_dir.exists():
+        _src = ROOT / "apps" / "web" / "src"
+        _newest_src = max((f.stat().st_mtime for f in _src.rglob("*") if f.is_file()), default=0)
+        _newest_out = max((f.stat().st_mtime for f in static_dir.rglob("*") if f.is_file()), default=0)
+        if _newest_src > _newest_out + 1:
+            raise SystemExit(
+                "[build_release] static/ 比 src/ 旧, 拒绝打包。\n"
+                "  改了前端但没重新 build —— 打进去的会是上一版界面, 而所有检查都会通过。\n"
+                "  先跑: cd apps/web && pnpm build"
+            )
 
     files = []
     for f in tracked + others:

@@ -17,6 +17,13 @@
     "noFallthroughCasesInSwitch": true,
     "types": ["vite/client"]
   },
+  // V0.9.0: 测试挪出生产构建的类型门禁。
+  // 起因: ChatPage.test.tsx 曾经 import 了项目根本没装的 @testing-library/jsdom,
+  // 而 tsc 的 include 是 ["src"] —— 那 3 个错误直接把 npm run build 卡死,
+  // 也就是说**一个测试文件能连带打挂生产构建**。这是结构性隐患, 不是巧合。
+  // 测试的类型检查改由 tsconfig.test.json 单独承担(见 package.json 的
+  // typecheck:test), 谁写测试 import 了不存在的包, 挂的是测试, 不是构建。
   "include": ["src"],
+  "exclude": ["src/**/__tests__/**"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
