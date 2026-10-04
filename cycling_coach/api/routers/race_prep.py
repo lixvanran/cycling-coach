@@ -92,6 +92,20 @@ def get_training_state(db: Session = Depends(get_db)):
     """
     athlete = profile_store.get_or_create_athlete(db)
     state = compute_training_state(db, athlete.id)
+    # V0.9.0: state 现在可能是 None。
+    #
+    # 改函数契约**必须同步改调用方** —— 这正是我今天在 readiness 上踩过的坑
+    # (`score >= 80` 遇到 None 直接 TypeError, 整个接口 500)。
+    # 零数据时五个维度会把 0 当成好指标, 拼出 57.5 分的假状态。
+    if state is None:
+        return {
+            "dimensions": None,
+            "overall": None,
+            "interpretation": None,
+            "source": None,
+            "data_sufficient": False,
+            "reason": "没有真实训练负荷数据, 算不出 5 维训练状态",
+        }
     return {
         "dimensions": {
             "fitness": state.fitness,
@@ -103,4 +117,5 @@ def get_training_state(db: Session = Depends(get_db)):
         "overall": state.overall,
         "interpretation": state.interpretation,
         "source": state.source,
+        "data_sufficient": True,
     }

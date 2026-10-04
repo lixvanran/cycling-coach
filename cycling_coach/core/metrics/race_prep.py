@@ -221,6 +221,13 @@ def compute_training_state(db: Session, athlete_id: int) -> TrainingState:
     atl = pcm.get("atl", 0) or 0
     tsb = pcm.get("tsb", 0) or 0
     ramp_rate = pcm.get("ramp_rate", 0) or 0
+    # V0.9.0: 这四个值在无数据时全是 0, 而下面五个维度会**把 0 当成好指标**:
+    #     atl=0  → fatigue  100 → "恢复优秀"
+    #     tsb=0  → form      90 → "状态优秀"
+    #     ramp=0 → rhythm    70 → "节奏良好"
+    # 零训练用户因此拿到 overall=57.5, 其中三项被读成了**优点**。
+    # 比 insights 那个 95 分更荒唐 —— 那个至少只是"良好", 这个是"恢复优秀"。
+    has_load_data = bool(pcm.get("has_load_data"))
 
     now = datetime.utcnow()
     cutoff_7d = now - timedelta(days=7)
@@ -323,6 +330,12 @@ def compute_training_state(db: Session, athlete_id: int) -> TrainingState:
             return f"{name}需注意"
         else:
             return f"{name}警告"
+
+    # V0.9.0: 没有真实负荷数据时, 整个 TrainingState 不成立。
+    # 五个维度里有四个的输入都来自 PMC, 零训练时全部退化成"看起来很好"的值。
+    # 宁可返回 None 让上层说"数据不足", 也不给一个 57.5 分的假状态。
+    if not has_load_data:
+        return None
 
     return TrainingState(
         fitness=round(fitness, 1),
