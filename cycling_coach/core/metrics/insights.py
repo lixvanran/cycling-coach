@@ -540,7 +540,13 @@ def compute_weekly_review(db: Session, athlete_id: Optional[int] = None) -> dict
     # 下周建议
     today_pcm = get_pmc_today(db, athlete_id)
     ctl = today_pcm.get("ctl", 0) or 0
-    if tss_change_pct and tss_change_pct > 20:
+    # V0.9.0: 零数据时 ctl=0 会掉进 `ctl < 30` 分支, 于是给一个
+    # **从未训练过**的人建议"重点是累积 Z2 耐力"。方向是反的 ——
+    # 他需要的不是"累积耐力", 而是"先去导入训练记录"。
+    # (和 race_prep / insights 健康分同一株病: 缺失值退化成了具体值)
+    if not today_pcm.get("has_load_data"):
+        next_week_advice = "还没有真实训练数据, 导入训练记录后这里会给出针对性建议。"
+    elif tss_change_pct and tss_change_pct > 20:
         next_week_advice = "本周训练量大幅增加, 下周建议保持当前水平, 给身体适应时间。"
     elif tss_change_pct and tss_change_pct < -20:
         next_week_advice = "本周训练量下降明显, 下周可考虑逐步回升到正常水平。"

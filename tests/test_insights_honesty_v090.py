@@ -142,3 +142,68 @@ def test_pcm_carries_has_load_data_flag(empty_athlete):
     db, aid = empty_athlete
     bundle = compute_today_insights(db, aid)
     assert "has_load_data" in bundle.pcm
+
+
+# ---------------------------------------------------------------- 周复盘
+
+def test_weekly_advice_direction_for_zero_data(empty_athlete):
+    """零训练用户的"下周建议"不能是"累积 Z2 耐力"
+
+    扫描器找到的第三处。`ctl=0` 会掉进 `elif ctl < 30` 分支, 于是对
+    一个**从未训练过**的人说"重点是累积 Z2 耐力"。
+
+    方向是反的: 他需要的不是"累积耐力", 而是"先去导入训练记录"。
+    和 race_prep 57.5 分、insights 95 分是同一株病 ——
+    缺失值退化成了具体值, 然后被当成真实信号。
+    """
+    from cycling_coach.core.metrics.insights import compute_weekly_review
+
+    db, aid = empty_athlete
+    advice = compute_weekly_review(db, aid)["next_week_advice"]
+    assert "Z2 耐力" not in advice, f"零数据却建议累积耐力: {advice!r}"
+    assert "CTL 偏低" not in advice, f"零数据却说 CTL 偏低: {advice!r}"
+    assert "训练数据" in advice
+
+
+def test_weekly_advice_unchanged_for_real_user():
+    """反向: 有数据的用户建议必须照常给 (不得修过头)"""
+    import asyncio
+    import tempfile
+    from pathlib import Path
+    from datetime import datetime, timedelta, timezone
+    from tests.conftest import use_temp_db
+    from cycling_coach.data.sqlite.database import SessionLocal
+    from cycling_coach.core.profile import store as profile_store
+    from cycling_coach.core.services.activity import ActivityService
+    from cycling_coach.core.metrics.insights import compute_weekly_review
+    from tests.fit_fixtures import build_fit
+
+    use_temp_db("v090_weekly_real")
+    db = SessionLocal()
+    ath = profile_store.get_or_create_athlete(db)
+    ath.ftp = 250
+    db.commit()
+    tmp = Path(tempfile.mkdtemp(prefix="cc_wk_"))
+    svc = ActivityService(db)
+    loop = asyncio.new_event_loop()
+    n = 0
+    try:
+        for w in range(3):
+            for d in (0, 2, 4):
+                p = tmp / f"a{n}.fit"
+                build_fit(p, duration_s=3600, avg_power=200, avg_hr=150,
+                          speed_mps=8.5,
+                          start=datetime.now(timezone.utc).replace(tzinfo=None)
+                          - timedelta(days=w * 7 + d))
+                loop.run_until_complete(
+                    svc.upload(filename=p.name, file_bytes=p.read_bytes()))
+                n += 1
+    finally:
+        loop.close()
+
+    advice = compute_weekly_review(db, ath.id)["next_week_advice"]
+    assert "还没有真实训练数据" not in advice, (
+        f"有 {n} 次训练却报无数据 —— 修过头了"
+    )
+    # 建议应该落在真实的 CTL 判断上
+    assert advice and advice not in ("", "None")
