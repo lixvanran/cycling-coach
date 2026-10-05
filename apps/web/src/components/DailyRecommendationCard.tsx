@@ -2,6 +2,8 @@
 // 借鉴 TrainingPeaks "Daily Workout" + WKO5 "Readiness"
 
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { api } from "../lib/api";
 import {
   Sparkles,
   AlertTriangle,
@@ -94,6 +96,116 @@ const BREAKDOWN_META: Array<{ key: string; label: string; max: number; desc: str
   { key: "rpe", label: "RPE", max: 10, desc: "主观疲劳 7d" },
 ];
 
+// V0.9.0: 数据不足时的提示块。
+//
+// ## 为什么单独抽出来重写
+//
+// 原来这里是三句话, 每一句都在**说问题**, 没有一句在说**怎么办**:
+//
+//     还没有任何训练数据                    <- 陈述问题
+//     只有 0 次训练记录 (需要至少 7 次)      <- 系统视角的数字
+//     先去「数据 → 导入」上传 FIT 文件        <- 唯一的行动指令, 但是一句纯文字
+//
+// 问题不在于"诚实"。诚实是对的。问题在于**用户第一屏看到的是一片空白 +
+// 三个坏消息**, 而"先去导入"是个不能点的字 —— 他得自己去找那个菜单。
+//
+// 位置决定生死: 这是零数据用户打开 App 看到的**第一个训练相关内容**。
+// 一个免费开源 App 如果装完第一屏就在说"我什么都算不出来",
+// 用户大概率直接关掉, 再也不打开 —— **他连我们后面的优点都碰不到**。
+//
+// 所以这里的规则是: 诚实的前提下, **每一句话都要能指向一个动作**。
+interface DataSufficiency {
+  sufficient?: boolean;
+  n_activities?: number;
+  span_days?: number;
+  reasons?: string[];
+}
+
+function InsufficientDataPrompt({ suff }: { suff?: DataSufficiency }) {
+  // V0.9.0: 用 useNavigate 而不是 window.location.hash ——
+  // 路由是双模式的(desktop file:// 用 HashRouter, web http:// 用 BrowserRouter),
+  // 手写 hash 跳转在 web 模式下会跳错。
+  const navigate = useNavigate();
+  const [loadingDemo, setLoadingDemo] = useState(false);
+  const [demoMsg, setDemoMsg] = useState<string | null>(null);
+  const n = suff?.n_activities ?? 0;
+
+  // V0.9.0: 载入示例数据。
+  // ⚠️ 载入后**必须明确告诉用户这是示例**, 否则 45 条活动混进他的库里,
+  // 他会以为那些是自己骑的 —— 这正是我们这周一直在消灭的那类"骗人"。
+  async function loadDemo() {
+    setLoadingDemo(true);
+    setDemoMsg(null);
+    try {
+      const r = await api.demoLoad(8, true);
+      setDemoMsg(
+        `已载入 ${r.n_activities} 次「${r.athlete_name}」的示例数据。` +
+        `这是示例, 不是你的骑行记录 —— 导入你自己的 .fit 就会替换掉它。`
+      );
+      setTimeout(() => window.location.reload(), 1800);
+    } catch (e) {
+      setDemoMsg(`载入失败: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setLoadingDemo(false);
+    }
+  }
+  const span = suff?.span_days ?? 0;
+  // 差多少才够 —— 说具体的数字, 别说"数据不足"
+  const needActivities = Math.max(0, 7 - n);
+  const needDays = Math.max(0, 7 - span);
+
+  return (
+    <div className="bg-white/60 rounded p-4 mb-3">
+      <div className="flex items-start gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-text-primary text-sm mb-1">
+            {n === 0
+              ? "导入一次骑行，这里就能算出今日状态"
+              : `再记录 ${needActivities} 次就能算`}
+          </div>
+          <div className="text-xs text-text-secondary leading-relaxed">
+            {n === 0 ? (
+              <>
+                状态评估需要至少 7 次训练、跨 7 天以上的记录。
+                码表导出的 <code className="px-1 rounded bg-bg-subtle">.fit</code> 文件直接丢进来就行。
+              </>
+            ) : (
+              <>
+                你已有 {n} 次训练（跨 {span} 天）。
+                再有 {needActivities} 次、跨度到 {needDays + span} 天就能算。
+              </>
+            )}
+          </div>
+          <div className="mt-2 text-[11px] text-text-muted">
+            数据不够时我们不会猜你的状态 —— 但也不会让你干等着。
+          </div>
+        </div>
+        <div className="flex flex-col gap-2 flex-shrink-0">
+          <button
+            onClick={() => navigate("/data/import")}
+            className="px-3 py-1.5 rounded text-xs font-medium bg-accent-primary text-white hover:opacity-90 transition-opacity"
+          >
+            导入 FIT
+          </button>
+          <button
+            onClick={loadDemo}
+            disabled={loadingDemo}
+            className="px-3 py-1.5 rounded text-xs border border-border text-text-secondary hover:bg-bg-subtle transition-colors disabled:opacity-50"
+            title="载入一组示例数据先看看效果 —— 标注为「演示车手」，不会混进你自己的记录"
+          >
+            {loadingDemo ? "载入中…" : "先看示例"}
+          </button>
+        </div>
+      </div>
+      {demoMsg && (
+        <div className="mt-2 pt-2 border-t border-border text-[11px] text-text-secondary">
+          {demoMsg}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DailyRecommendationCard() {
   const [data, setData] = useState<DailyRecommendation | null>(null);
   const [loading, setLoading] = useState(true);
@@ -175,23 +287,7 @@ export function DailyRecommendationCard() {
         </div>
       </div>
 
-      {!hasScore && (
-        <div className="bg-white/60 rounded p-3 mb-3 text-xs text-text-secondary leading-relaxed">
-          <div className="font-medium text-text-primary mb-1">
-            {suff?.n_activities === 0
-              ? "还没有任何训练数据"
-              : "训练数据还不够算状态"}
-          </div>
-          <div>
-            {suff?.reasons?.length
-              ? suff.reasons.join("; ")
-              : "App 不会在数据不足时猜测你的状态"}
-          </div>
-          <div className="mt-1 text-text-muted">
-            先去「数据 → 导入」上传 FIT 文件
-          </div>
-        </div>
-      )}
+      {!hasScore && <InsufficientDataPrompt suff={suff} />}
 
       {/* 5 维 breakdown bar — 数据不足时不显示 (全 0 的条形图比不显示更误导) */}
       {hasScore && (

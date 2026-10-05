@@ -166,6 +166,14 @@ export const api = {
 
   // V0.6.1 — ACWR 急慢性负荷比
   // V0.7 自动训练洞察 (Friel + Gabbett)
+  // V0.9.0: 载入示例数据(空状态页的「先看示例」按钮)
+  // 只在本地模式可用; 生成的 athlete 叫「演示车手」, 与用户档案分开
+  demoLoad: (weeks = 8, force = false) =>
+    jsonFetch<{
+      ok: boolean; athlete_name: string;
+      n_activities: number; n_planned: number; message: string;
+    }>("/demo/load", { method: "POST", body: JSON.stringify({ weeks, force }) }),
+
   insightsToday: () => jsonFetch<import("./types").InsightsToday>("/insights/today"),
   insightsWeekly: () => jsonFetch<import("./types").WeeklyReview>("/insights/weekly"),
 

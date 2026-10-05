@@ -100,16 +100,22 @@ def build_week_rides(week_idx: int) -> list[tuple[str, str, list, float]]:
     return out
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description="装载 8 周演示训练数据")
-    ap.add_argument("--weeks", type=int, default=8)
-    ap.add_argument("--end", type=str, default=None, help="最后一天 YYYY-MM-DD, 默认今天")
-    ap.add_argument("--athlete", type=str, default="演示车手")
-    ap.add_argument("--workspace", type=str, default=None)
-    ap.add_argument("--no-plans", action="store_true", help="只造训练记录, 不造课表")
-    ap.add_argument("--force", action="store_true",
-                    help="先删掉已有的演示车手及其数据, 再重新生成 (不加就是复用现有数据)")
-    args = ap.parse_args()
+def load_demo_data(weeks: int = 8, end: str | None = None,
+                   athlete_name: str = "演示车手",
+                   force: bool = False, no_plans: bool = False,
+                   workspace: str | None = None) -> dict:
+    """装载 8 周演示训练数据, 返回统计信息
+
+    V0.9.0: 从 main() 抽成独立函数。原来逻辑整个埋在 main() 里,
+    耦合 argparse 和 print, 于是"零数据用户点『先看示例』"这个按钮
+    **无处可调** —— 前端要么写死 shell 命令, 要么只能做成死链。
+    现在 CLI 和 HTTP 端点共用这个函数, 行为不会分叉。
+    """
+    class _A:
+        pass
+    args = _A()
+    args.weeks, args.end, args.athlete = weeks, end, athlete_name
+    args.force, args.no_plans, args.workspace = force, no_plans, workspace
 
     if args.workspace:
         os.environ["WORKSPACE_DIR"] = args.workspace
@@ -155,6 +161,25 @@ def main() -> int:
             db.delete(old_a)
             db.commit()
             print(f"已清除旧的演示数据: {len(ids)} 条活动")
+
+        # V0.9.0: 同时清掉 ActivityService 自动建的占位 athlete。
+        #
+        # 背景: `ActivityService.__init__` 会调 get_or_create_athlete(),
+        # 它"返回第 1 个 athlete, 没有就建一个叫 Rider(ftp=250)"。
+        # 空库 + 点「先看示例」= 先建了 Rider(id=1), 再建 演示车手(id=2),
+        # 于是 ActivityService 绑到 #1 而计划课挂在 #2 ——
+        # 下面那道归属校验会直接抛 SystemExit, 用户看到"载入失败"。
+        #
+        # 原来的 --force 只删**同名**的演示车手, 清不掉这个占位。
+        # 但占位的意思是"没有任何活动", 删掉它不会丢用户数据。
+        # 保守起见只在那个 athlete 名下**一条活动都没有**时才删。
+        for placeholder in db.query(Athlete).filter(Athlete.name == "Rider").all():
+            _n = db.query(Activity).filter(
+                Activity.athlete_id == placeholder.id).count()
+            if _n == 0:
+                db.delete(placeholder)
+                db.commit()
+                print("已清除自动创建的占位车手 (Rider, 无任何训练记录)")
 
     a = db.query(Athlete).filter(Athlete.name == args.athlete).first()
     if a is None:
@@ -296,7 +321,16 @@ def main() -> int:
     print(f"数据目录: {os.environ['WORKSPACE_DIR']}")
 
     # 交付前自检: 活动和课表必须挂在同一个车手上
+    #
+    # ⚠️ 这里不能读 `a.id` —— ORM 对象在前面某次 commit() 之后已经 detached,
+    # 读属性会 DetachedInstanceError。**这个 bug 只有真跑才暴露**,
+    # 静态看完全正常(它原本就存在, 只是以前 return 0 用不到这些字段)。
+    # 所以重新查一次数据库拿值, 不碰已 detach 的对象。
     from cycling_coach.data.sqlite.models import Activity as _Act
+    _arow = db.query(Athlete).filter(Athlete.name == athlete_name).first()
+    _aid = _arow.id if _arow else None
+    _aname = _arow.name if _arow else athlete_name
+    _aftp = _arow.ftp if _arow else None
     from sqlalchemy import text as _sql_text
     acts_ath = {r[0] for r in db.execute(
         _sql_text("SELECT DISTINCT athlete_id FROM activities")).fetchall()}
@@ -309,6 +343,30 @@ def main() -> int:
         )
     print(f"归属校验: 活动与课表均在 athlete {acts_ath or plan_ath} ✅")
     print("=" * 56)
+    # ⚠️ commit() 之后 `a` 会 detach, 再读属性会 DetachedInstanceError。
+    # 这个 bug 只有真跑才暴露 —— 静态看完全正常。
+    # 所以在 commit 前就把值取出来, 提交后只用局部变量。
+    return {
+        "athlete_id": _aid,
+        "athlete_name": _aname,
+        "ftp": _aftp,
+        "n_activities": n_ride,
+        "n_planned": n_plan,
+    }
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="装载 8 周演示训练数据")
+    ap.add_argument("--weeks", type=int, default=8)
+    ap.add_argument("--end", type=str, default=None, help="最后一天 YYYY-MM-DD, 默认今天")
+    ap.add_argument("--athlete", type=str, default="演示车手")
+    ap.add_argument("--workspace", type=str, default=None)
+    ap.add_argument("--no-plans", action="store_true", help="只造训练记录, 不造课表")
+    ap.add_argument("--force", action="store_true",
+                    help="先删掉已有的演示车手及其数据, 再重新生成 (不加就是复用现有数据)")
+    a = ap.parse_args()
+    load_demo_data(weeks=a.weeks, end=a.end, athlete_name=a.athlete,
+                   force=a.force, no_plans=a.no_plans, workspace=a.workspace)
     return 0
 
 
