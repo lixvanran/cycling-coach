@@ -170,7 +170,12 @@ ACWR_CHRONIC_WINDOW_DAYS = 28
 MIN_TRAINING_HISTORY_DAYS_FOR_ACWR = 28
 
 
-def _acwr_history_is_real(db: Session, athlete_id: int) -> bool:
+# V0.9.0: 原名带下划线前缀(= 模块私有), 但 /api/trust/self-check 需要用它
+# 来告诉用户"为什么缺 ACWR"。**私有约定靠自觉维持, 跨模块用就会破**, 所以给正式名。
+acwr_history_is_real = None  # 占位, 下面立刻替换成真正的函数
+
+
+def _acwr_history_is_real_impl(db: Session, athlete_id: int) -> bool:
     """训练史是否够算 ACWR — 只看**真实存在过多少天**, 不信补零后的序列长度
 
     ACWR = 7 天平均 / 28 天平均。28 天那一半必须真的是"这 28 天里的训练"，
@@ -311,7 +316,7 @@ def compute_readiness(
     today = acwr.get("today", {}) if isinstance(acwr, dict) else {}
     acwr_val = today.get("acwr") if today else None
     # 训练史不够 → 这个 ACWR 是在补零序列上算出来的, 不能用
-    if acwr_val is not None and _acwr_history_is_real(db, athlete_id):
+    if acwr_val is not None and acwr_history_is_real(db, athlete_id):
         # 0.8-1.3 sweet spot
         if 0.8 <= acwr_val <= 1.3:
             acwr_score = 25
@@ -770,3 +775,7 @@ def generate_recommendations(
             "weeks_to_race": phase.weeks_to_race,
         },
     )
+
+
+# 对外公开名
+acwr_history_is_real = _acwr_history_is_real_impl
