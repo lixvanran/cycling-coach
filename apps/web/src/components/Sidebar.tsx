@@ -23,8 +23,7 @@ import {
   Layers,
   NotebookPen,
   Gauge,
-  type LucideIcon,
-} from "lucide-react";
+  type LucideIcon, ShieldCheck } from "lucide-react";
 import { api } from "../lib/api";
 import clsx from "clsx";
 
@@ -68,6 +67,7 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { to: "/data/import", label: "导入", icon: Upload },
       { to: "/data/knowledge", label: "知识库", icon: Library },
       { to: "/data/ftp-test", label: "FTP 校准", icon: Gauge },
+      { to: "/data/trust", label: "数据可信度", icon: ShieldCheck },
     ],
   },
   {

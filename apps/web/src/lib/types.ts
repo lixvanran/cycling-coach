@@ -583,3 +583,25 @@ export interface FTPPredictionResponse {
   prediction_id: number;
   inference_ms: number;
 }
+
+// V0.9.0: 数据可信度自检
+// 核心竞争点是"性能齐平 + 开源免费", 而"免费"天然引发"能靠谱吗"的怀疑。
+// 这个类型对应 /api/trust, 把每个指标的文献出处和当前缺失原因摊开给用户。
+export interface TrustMetric {
+  key: string;
+  name: string;
+  weight: number;
+  source?: string;   // /api/trust/metrics 才有
+  note?: string;
+  available?: boolean; // /api/trust/self-check 才有
+  why?: string;        // /api/trust/self-check 才有
+}
+
+export interface TrustSelfCheck {
+  version: string;
+  athlete: { name: string; ftp: number | null };
+  dimensions: TrustMetric[];
+  n_available: number;
+  n_total: number;
+  policies: string[];
+}

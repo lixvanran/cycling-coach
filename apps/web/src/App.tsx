@@ -36,6 +36,7 @@ const ImportPage = lazy(() => import("./pages/ImportPage").then(m => ({ default:
 const KnowledgeBasePage = lazy(() => import("./pages/KnowledgeBasePage").then(m => ({ default: m.KnowledgeBasePage })));
 const FTPTestPage = lazy(() => import("./pages/FTPTestPage").then(m => ({ default: m.FTPTestPage })));
 const Profile = lazy(() => import("./pages/Profile").then(m => ({ default: m.Profile })));
+const TrustPage = lazy(() => import("./pages/TrustPage").then(m => ({ default: m.TrustPage })));
 const ComparePage = lazy(() => import("./pages/ComparePage").then(m => ({ default: m.ComparePage })));
 
 // 桌面模式 (file://) 用 HashRouter, web 模式 (http://) 用 BrowserRouter
@@ -199,6 +200,15 @@ function AppRoutes() {
               element={
                 <ErrorBoundary>
                   <ImportPage />
+                </ErrorBoundary>
+              }
+            />
+            {/* V0.9.0: 数据可信度 — 让用户看得见我们不编数据 */}
+            <Route
+              path="trust"
+              element={
+                <ErrorBoundary>
+                  <TrustPage />
                 </ErrorBoundary>
               }
             />

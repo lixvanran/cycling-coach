@@ -166,6 +166,10 @@ export const api = {
 
   // V0.6.1 — ACWR 急慢性负荷比
   // V0.7 自动训练洞察 (Friel + Gabbett)
+  // V0.9.0: 数据可信度自检 —— 让用户看得见我们不编数据
+  trustSelfCheck: () => jsonFetch<import("./types").TrustSelfCheck>("/trust/self-check"),
+  trustMetrics: () => jsonFetch<{ metrics: import("./types").TrustMetric[] }>("/trust/metrics"),
+
   // V0.9.0: 载入示例数据(空状态页的「先看示例」按钮)
   // 只在本地模式可用; 生成的 athlete 叫「演示车手」, 与用户档案分开
   demoLoad: (weeks = 8, force = false) =>
