@@ -75,6 +75,15 @@ class PolarizedAnalysis:
     target_hard_pct: float = 0.20
 
 
+def _polarized_score(hard_pct: float) -> float:
+    """Seiler 极化评分 (0-1)
+
+    抽成独立函数是为了能直接测边界 —— 之前这个式子内联在
+    detect_phase_signals 里, 算出负数时只有界面能发现。
+    """
+    return round(min(1.0, max(0.0, 1.0 - abs(0.20 - hard_pct) * 2)), 2)
+
+
 @dataclass
 class RacePlan:
     """比赛日倒推计划"""
@@ -751,7 +760,17 @@ def detect_phase_signals(
         hard_pct = hard_days / active_total_days
         # Seiler 80/20: hard ≈ 20%
         # score: 1.0 = 完美 (hard=20%), 偏离越多越低
-        signals.polarized_score_28d = round(1.0 - abs(0.20 - hard_pct) * 2, 2)
+        #
+        # 🔴 必须 clamp 到 [0, 1]。原式子 1 - |0.2 - hard_pct|*2 在
+        # hard_pct > 0.7 时**会算出负数**:
+        #     hard_pct=0.8 → -0.20
+        #     hard_pct=1.0 → -0.60
+        # 于是界面上出现"28d 极化评分 -0.60, 偏离 Seiler 80/20"。
+        # 负数评分一眼就是 bug, 用户会怀疑整个 App 的可信度 ——
+        # 而这正是我们"诚实"要积累的信任。
+        #
+        # 0 分的语义是"完全没极化", 而不是"比完全没极化更糟"。
+        signals.polarized_score_28d = _polarized_score(hard_pct)
     
     # 6. 7d 负荷达成率
     # 用最近 7d 平均 daily_tss / 7d 目标 (目标 = 近期 CTL × 0.7 经验值)

@@ -207,3 +207,26 @@ def test_all_signal_comparisons_guard_none():
                 f"{mod.__name__}.py:{i} 这一行比较了 Optional 信号字段但没有 "
                 f"None 守卫, 算不出来时会 TypeError:\n  {stripped}"
             )
+
+
+def test_polarized_score_never_negative():
+    """🔴 极化评分必须落在 0-1, 不能出现负数
+
+    原式子 `1 - |0.2 - hard_pct| * 2` 在 hard_pct > 0.7 时算出负数:
+        hard_pct=0.8 → -0.20
+        hard_pct=1.0 → -0.60
+    于是界面出现 "28d 极化评分 -0.60, 偏离 Seiler 80/20"。
+
+    负数评分一眼就是 bug。而诚实是我们花了一整个 V0.9.0 积累的信任 ——
+    界面上一个负数会把这份信任一次性败光。
+    """
+    from cycling_coach.core.metrics.periodization import _polarized_score
+
+    for hard_pct in (0.0, 0.1, 0.2, 0.3, 0.5, 0.7, 0.8, 0.9, 1.0):
+        sc = _polarized_score(hard_pct)
+        assert 0.0 <= sc <= 1.0, f"hard_pct={hard_pct} → score={sc} 越界"
+    # 20% 是完美极化
+    assert _polarized_score(0.20) == 1.0
+    # 极端值应该贴边而不是溢出
+    assert _polarized_score(1.0) == 0.0
+    assert _polarized_score(0.0) == 0.6      # 公式值, 在合法区间内
