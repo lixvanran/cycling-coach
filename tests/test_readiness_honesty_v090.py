@@ -658,13 +658,24 @@ def test_returns_none_when_load_dimension_missing_even_if_two_others_present():
         )
         if row is not None:
             row.hrv_ms = 60          # 让 hrv 维度可用
-    # 造一个赛程, 让 phase 维度可用 (它现在要求"有负荷数据**或**有赛程")
-    # —— 没有它的话这个场景只有 hrv 一个可用维度, MIN_DIMENSIONS 会先挡下来,
-    # 哨兵删不删结果都一样, 测试就抓不住哨兵了。
-    from cycling_coach.data.sqlite.models import TrainingPhase
-    db.add(TrainingPhase(athlete_id=ath.id, phase_type="base", name="基础期",
-                        start_date=today - timedelta(days=30),
-                        end_date=today + timedelta(days=60)))
+    # 🔴 V0.9.0-06: 这里原来造的是 phase_type="base" 的阶段记录, 靠它凑第 2 维。
+    #
+    # 但我当天把 phase 维度改严了 —— 阶段分**必须**建立在真实负荷数据上
+    # (否则就是"零数据白拿 12 分"那个 bug)。所以这个场景现在只剩 hrv 一个
+    # 可用维度, MIN_DIMENSIONS 先挡下来, 哨兵删不删结果一样。
+    #
+    # 这条测试的**前提检查**把它救成了红的而不是假绿的 —— 很好。
+    # 现在改用 RPE 凑第 2 维: RPE 不依赖功率/负荷, 正好是"有主观反馈但
+    # 不知道骑了多少"的典型场景, 也正是哨兵要拦的那种。
+    for i in range(1, 8):
+        row = (
+            db.query(DailyMetric)
+            .filter(DailyMetric.athlete_id == ath.id,
+                    DailyMetric.date == today - timedelta(days=i))
+            .first()
+        )
+        if row is not None:
+            row.rpe = 6
     db.commit()
 
     # 删掉今天那一行 → get_pmc_today 返回"无数据" → 训练负荷维度不可用

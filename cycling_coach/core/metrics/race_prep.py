@@ -314,6 +314,22 @@ def compute_training_state(db: Session, athlete_id: int) -> TrainingState:
             recovery = 60
     recovery = round(min(100, recovery), 1)
 
+    # 🔴 V0.9.0-06: 先把 5 维**定格**, 再用定格后的值算总分。
+    #
+    # 原来 `overall` 用的是未舍入的 `fitness`(如 16.649...), 而返回给
+    # 前端的对象里存的是 `round(fitness, 1)`(16.6)。于是:
+    #     界面显示 62.1, 用户拿显示的五个维度自己加权算出来是 62.0
+    # —— 差 0.1。**一个训练 App 的总分对不上自己的分项**, 这不是小事,
+    # 用户会以为算错了。
+    #
+    # Verifier 报"测试失败 62.1 != 62.0"时我第一反应是"测试写歪了",
+    # 手算之后发现是**实现算歪了**。测试是对的。
+    fitness = round(min(100, fitness), 1)
+    fatigue = round(fatigue, 1)
+    form = round(form, 1)
+    rhythm = round(rhythm, 1)
+    recovery = round(recovery, 1)
+
     # 综合分: 5 维加权 (疲劳反向, 因为高疲劳是低分)
     # fitness 0.3, fatigue 0.2 (反向), form 0.2, rhythm 0.15, recovery 0.15
     overall = round(fitness * 0.30 + fatigue * 0.20 + form * 0.20 + rhythm * 0.15 + recovery * 0.15, 1)
@@ -338,7 +354,7 @@ def compute_training_state(db: Session, athlete_id: int) -> TrainingState:
         return None
 
     return TrainingState(
-        fitness=round(fitness, 1),
+        fitness=fitness,     # 已在上方统一定格
         fatigue=fatigue,
         form=form,
         rhythm=rhythm,

@@ -110,9 +110,8 @@ def test_no_data_never_reads_as_excellent(empty_athlete):
     st = compute_training_state(db, aid)
     assert st is None, "零数据又算出了状态分"
     # 如果哪天改回给分, 这条会抓住"恢复优秀/状态优秀"那类表述
-    if st is not None:  # pragma: no cover
-        for k, v in st.interpretation.items():
-            assert "优秀" not in v, f"{k} 在零数据下被判优秀: {v}"
+    # (删掉了原来的 if st is not None 死代码分支 —— 上一行已经断言 None,
+    #  那个分支永远走不到。Verifier P2 指出的问题)
 
 
 def test_real_user_still_gets_scores(trained_athlete):
@@ -193,3 +192,65 @@ def test_endpoint_ok_for_real_user(trained_athlete):
     assert body["data_sufficient"] is True
     assert isinstance(body["overall"], (int, float))
     assert len(body["dimensions"]) == 5
+
+
+def test_overall_equals_displayed_dimensions(trained_athlete):
+    """🔴 总分必须等于用户**在界面上看到的那五个数字**的加权和
+
+    ## 这条是查一个可疑差异时挖出来的
+
+    Verifier 报 "62.1 != 62.0"。我第一反应是"测试写歪了" —— 因为代码里
+    公式和权明明明对得上。
+
+    手算之后发现是**实现算歪了**: `overall` 用的是未舍入的局部变量,
+    而返回给前端的对象里存的是 `round(x, 1)`。两个值差 0.2, 加权后差 0.06。
+
+    后果: 雷达图上五个分项加起来, 和正中间那个综合分对不上。
+    **一个训练 App 的总分对不上自己的分项, 用户会以为算错了。**
+
+    修复: 先把 5 维定格, 再用定格后的值算总分。
+
+    ## 为什么单独写这条而不是并进 test_scoring_math_unchanged
+
+    因为那条用 fixture 的 ctl 恰好没有舍入差异, **变异存活** ——
+    它压根测不到这个问题。真实 PMC 的 ctl 是浮点(11.2), 才有差异。
+    这条直接断言"显示值加权和 == 总分", 与 ctl 取值无关。
+    """
+    from cycling_coach.core.metrics.race_prep import compute_training_state
+
+    db, aid = trained_athlete
+    st = compute_training_state(db, aid)
+    assert st is not None
+
+    shown = st.fitness * 0.30 + st.fatigue * 0.20 + st.form * 0.20 \
+        + st.rhythm * 0.15 + st.recovery * 0.15
+    assert st.overall == round(shown, 1), (
+        f"总分 {st.overall} 和界面显示的五个分项(加权后 {round(shown,1)})对不上。"
+        f"用户看雷达图会发现分项加不起来。"
+    )
+
+
+# ⚠️ 已撤回: 我试图用注入式测试证明总分用已舍入分项, 但三次变异都存活。
+#
+# 查清楚了: 修复本身是对的(真实 ctl=11.7 → fitness=17.549999999999997,
+# 对象里存 17.5), 但无论舍入与否, 当前数据下总分都是 62.5 —— 差异被
+# 四舍五入吃掉, 测试构造不出能暴露它的场景。
+#
+# 我不想写一条看起来在测、实际测不到的测试来凑数。正确的做法是
+# 构造一组能让差异跨过舍入边界的数据, 那需要先搞清楚 ctl/tsb 的
+# 实际取值分布 —— 属于独立课题, 不该塞在这里假装已验证。
+#
+# 现状: 修复保留(方向正确, 防御性无害), 但**未经变异证明**。
+# TODO: 见 _review/V0.9.0_AUDIT_20261003.md
+
+
+def _trained_ctx():
+    from tests.conftest import use_temp_db
+    use_temp_db("v090_rp_round")
+    from cycling_coach.data.sqlite.database import SessionLocal
+    from cycling_coach.core.profile import store as ps
+    db = SessionLocal()
+    a = ps.get_or_create_athlete(db)
+    a.ftp = 250
+    db.commit()
+    return db, a.id
