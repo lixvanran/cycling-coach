@@ -382,10 +382,19 @@ def compute_readiness(
         phase_score = 5
     elif phase is not None and phase.suggested_type == "race":
         phase_score = 8
-    elif phase is not None:
+    elif phase is not None and phase.suggested_type != "unknown":
+        # ⚠️ 这里原来只有 `elif phase is not None`, 于是 **unknown 被当成
+        # "有个阶段但我不认识"** → 白拿 10/15 分。
+        #
+        # 讽刺的是这行代码就是我这次专门加的诚实性守卫(V0.9.0 修了
+        # "零数据白拿 12 分"), 结果我自己漏了 unknown 这个新值 ——
+        # 我把 derive_phase 改诚实了, 忘了告诉调用方"诚实"长什么样。
         phase_score = 10
     else:
-        # 没有负荷数据也没有赛程 -> 阶段无从判断, 整维不计入
+        # 没有负荷数据 / 阶段 unknown -> 整维不计入
+        #
+        # 关键: **unknown 和"没有阶段"必须同等待遇。**
+        # 算不出来就是算不出来, 不因为"返回了个东西"就多拿分。
         phase_score = None
     if phase_score is not None:
         breakdown["phase"] = phase_score

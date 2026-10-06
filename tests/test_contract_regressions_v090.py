@@ -143,3 +143,64 @@ def test_empty_dimensions_does_not_reach_the_chart(db):
     assert body["data_sufficient"] is False
     assert body["dimensions"] is None, "零数据必须真的返回 null, 不能返回 {}"
     assert body["reason"], "数据不足必须说清为什么"
+
+
+# ─────────────────────────────────────────────────────────────
+# V0.9.0 P1-3: unknown 阶段不能白拿 10 分
+#
+# 讽刺点: 这行 `elif phase is not None` 就是我这次专门加的诚实性守卫
+# (修"零数据白拿 12 分"), 结果我自己漏了 unknown 这个**新值** ——
+# 我把 derive_phase 改诚实了, 却忘了告诉调用方"诚实"长什么样。
+# ─────────────────────────────────────────────────────────────
+
+
+def test_unknown_phase_earns_nothing(db_with_athlete):
+    """🔴 derive_phase 返回 unknown 时, 阶段维必须不计入
+
+    修复前: `elif phase is not None` 匹配上 → phase_score = 10/15
+    而 unknown 的意思是"算不出来", 不该拿任何分。
+    """
+    from datetime import datetime, timedelta
+    from cycling_coach.data.sqlite.models import TrainingPhase
+    from cycling_coach.core.coaching import recommendations as R
+    db, athlete = db_with_athlete
+    now = datetime.utcnow()
+    db.add(TrainingPhase(
+        athlete_id=athlete.id, name="基础期", phase_type="build",
+        start_date=now - timedelta(days=3), end_date=now + timedelta(days=25),
+        target_tss_week=300,
+    ))
+    db.commit()
+
+    from cycling_coach.core.metrics.periodization import derive_phase
+    assert derive_phase(db, athlete.id).suggested_type == "unknown", "前提不成立"
+
+    _score, breakdown = R.compute_readiness(db, athlete.id)
+    assert "phase" not in breakdown, (
+        f"unknown 阶段白拿了 {breakdown.get('phase')} 分"
+    )
+
+
+def test_unknown_is_treated_like_no_phase(db_with_athlete):
+    """unknown 和"根本没有阶段"必须同等待遇
+
+    不因为"函数返回了个东西"就多拿分 —— 算不出来就是算不出来。
+    """
+    from cycling_coach.core.coaching import recommendations as R
+    db, athlete = db_with_athlete
+    # 完全没有任何阶段记录
+    _s, breakdown = R.compute_readiness(db, athlete.id)
+    assert "phase" not in breakdown
+
+    from datetime import datetime, timedelta
+    from cycling_coach.data.sqlite.models import TrainingPhase
+    now = datetime.utcnow()
+    db.add(TrainingPhase(
+        athlete_id=athlete.id, name="基础期", phase_type="build",
+        start_date=now - timedelta(days=3), end_date=now + timedelta(days=25),
+    ))
+    db.commit()
+    _s2, bd2 = R.compute_readiness(db, athlete.id)
+    assert ("phase" in bd2) is ("phase" in breakdown), (
+        "有 unknown 阶段记录 vs 完全没有阶段记录, 处理方式不一样"
+    )
