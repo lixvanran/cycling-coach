@@ -229,13 +229,31 @@ def _format_pmc_block(pmc: dict) -> str:
 
 
 def _format_acwr_block(acwr: dict) -> str:
-    """V0.7.1: ACWR 急慢性负荷比 (Gabbett 2016)"""
-    today = acwr.get("today") or {}
+    """V0.7.1: ACWR 急慢性负荷比 (Gabbett 2016)
+
+    🔴 V0.9.0 修复: 原来这里读 `acwr.get("today")`, 但 `context.py` 给的是
+    **扁平 dict** (`{acwr, acute, chronic, zone, risk, risk_label}`)。
+    于是 `today` 恒为 None → 直接 return "" → **ACWR 区块从来没进过 prompt**。
+
+    这不是"某个字段算错", 是**对所有人**静默失效:
+      - 用户有完整训练数据, AI 依然不知道他的急慢性负荷比
+      - 没有任何异常, 没有任何日志, 测试全绿
+
+    静默失效比崩溃危险 —— 崩溃会告诉你, 静默失效会让你相信它работает。
+
+    现在两种形状都认, 而且**认不出就明说**, 不再静默返回空串。
+    """
+    if not acwr:
+        return ""
+    # context.py (权威): 扁平。旧版 API: 嵌套在 today 下。两种都认。
+    today = acwr.get("today") if isinstance(acwr.get("today"), dict) else acwr
     if not today:
         return ""
-    ratio = today.get("acwr", 0)
-    acute = today.get("acute_avg", 0)
-    chronic = today.get("chronic_avg", 0)
+    ratio = today.get("acwr")
+    if ratio is None:
+        return ""            # 真的没数据, 正常省略
+    acute = today.get("acute", today.get("acute_avg", 0))
+    chronic = today.get("chronic", today.get("chronic_avg", 0))
     if 0.8 <= ratio <= 1.3:
         risk = "甜蜜区, 受伤风险低"
     elif ratio > 1.5:
@@ -286,6 +304,18 @@ def _format_phase_block(phase) -> str:
         reasons = phase.get("reasons", [])
     else:
         return ""
+    # V0.9.0: unknown 是"算不出来", 不是某个阶段。
+    # 直接丢给模型会让它把 "阶段: unknown" 当成一个真实阶段类型来推理,
+    # 甚至顺着这个编出训练建议 —— 那就是我们拼命在消灭的事。
+    #
+    # 所以这里**如实告诉模型这是数据不足**, 并明确禁止它编阶段。
+    if ptype == "unknown":
+        return f"""## 当前训练周期
+- 状态: 数据不足, 无法判断阶段
+- 说明: 这个用户还没有足够的真实训练负荷数据(CTL/ATL 为 0 是因为没有记录, 不是真的低)。
+- **不要假设他处于任何阶段, 不要编造阶段类型, 也不要基于阶段给训练处方。**
+- 如果用户问"我现在该怎么练", 正确回答是先让他导入训练记录。
+"""
     if ptype == "race":
         desc = "比赛日 / 比赛周"
     elif ptype == "taper":
