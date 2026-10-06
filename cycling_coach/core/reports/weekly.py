@@ -174,13 +174,27 @@ def generate_weekly_report(
     
     # === 4. PMC 状态 ===
     story.append(Paragraph("训练负荷状态 (PMC)", h2))
-    pmc_data = [
-        ["指标", "当前值", "解读"],
-        ["CTL (长期)", f"{pmc.get('ctl', 0):.1f}", "42d EWMA · 形态/体能"],
-        ["ATL (短期)", f"{pmc.get('atl', 0):.1f}", "7d EWMA · 短期疲劳"],
-        ["TSB (状态)", f"{pmc.get('tsb', 0):.1f}", "CTL - ATL · 状态"],
-        ["ramp_rate", f"{pmc.get('ramp_rate', 0):.2f}", "7d CTL 斜率 (TSS/wk)"],
-    ]
+    # V0.9.0 P1-2: 紧挨着的 5 维表已经改成"无数据", 这张 PMC 表却还在
+    # 印 "CTL 0.0 / ATL 0.0 / TSB 0.0" —— **同一页上自相矛盾**:
+    # 上面说"没数据", 下面说"0.0"。
+    #
+    # 0.0 在 PDF 里比界面上更危险: 报告会被打印出来、存进档案、
+    # 也许发给教练。"CTL 0.0" 看起来像一个真实的测量结果, 不是缺失。
+    has_load = bool(pmc.get("has_load_data"))
+    if has_load:
+        pmc_data = [
+            ["指标", "当前值", "解读"],
+            ["CTL (长期)", f"{pmc.get('ctl', 0):.1f}", "42d EWMA · 形态/体能"],
+            ["ATL (短期)", f"{pmc.get('atl', 0):.1f}", "7d EWMA · 短期疲劳"],
+            ["TSB (状态)", f"{pmc.get('tsb', 0):.1f}", "CTL - ATL · 状态"],
+            ["ramp_rate", f"{pmc.get('ramp_rate', 0):.2f}", "7d CTL 斜率 (TSS/wk)"],
+        ]
+    else:
+        pmc_data = [
+            ["指标", "当前值", "解读"],
+            ["CTL / ATL / TSB", "无数据", "还没有真实训练记录 —— 这些 0 是'没有记录', 不是'值为零'"],
+            ["ramp_rate", "无数据", "导入训练记录后自动计算"],
+        ]
     t = Table(pmc_data, colWidths=[4*cm, 3*cm, 8*cm])
     t.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f1f5f9")),
