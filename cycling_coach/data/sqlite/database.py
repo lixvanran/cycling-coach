@@ -228,6 +228,25 @@ def rebind_engine(db_url: str, *, create: bool = True) -> None:
     event.listen(engine, "connect", _set_sqlite_pragma)
 
     # 3: 换 sessionmaker
+    #
+    # ⚠️ 光换模块全局的 SessionLocal 不够。测试里几乎都写的是:
+    #       from ...database import SessionLocal
+    #       ...  # 在函数体里用它
+    #    那是 by-value import, 会把对象绑成一个**局部名字**,
+    #    下面第 4 步的模块 patch 改不到它(那个名字不在任何模块 __dict__ 里)。
+    #
+    #    实测(2026-10-06): 第二个测试 use_temp_db("probe2") 之后,
+    #    engine 指向 probe2, 但那个测试拿到的 SessionLocal 仍绑着 probe1
+    #    → "no such table: athletes"。
+    #
+    #    所以额外**原地改写旧 sessionmaker 的 bind**, 让所有旧引用
+    #    (不管在哪个模块、哪个作用域) 都自动指向新 engine。
+    if old_session_local is not None and hasattr(old_session_local, "kw"):
+        try:
+            old_session_local.kw["bind"] = engine
+        except Exception:
+            pass
+
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
     # 4: 给 by-value import 的模块打补丁

@@ -149,6 +149,7 @@ class ActivityService:
         filename: str,
         file_bytes: bytes,
         background_tasks: Optional[Any] = None,
+        recompute_pmc_eagerly: bool = True,
     ) -> dict:
         """上传 + 解析 + 入库 + 异步生成报告
 
@@ -156,6 +157,20 @@ class ActivityService:
             filename: 原始文件名 (带扩展名)
             file_bytes: 文件字节内容
             background_tasks: FastAPI BackgroundTasks, 用于异步跑 AI 报告
+            recompute_pmc_eagerly:
+                V0.9.0 新增。批量导入时传 False, 全部入库后由调用方重算一次。
+
+                ## 为什么需要这个开关
+
+                每条训练入库后都会 `recompute_pmc()`, 而它**必须**全量重算
+                365 天 EWMA —— 因为 EWMA 是递推的, seed 错了后面全错
+                (这正是 V0.9.0 修掉的严重 bug, 不能为了快而只算增量)。
+
+                于是批量导入变成 O(n²):
+                    实测 32 条 FIT: 前 10 条 2.5s/条, 后 10 条 4.4-5.9s/条,
+                    总计 112 秒。单条导入感觉不到, 导入半年历史就是灾难。
+
+                关掉它不影响正确性 —— 只要调用方在**最后**重算一次。
         """
         if not filename:
             raise ValidationError("未提供文件名")
@@ -284,12 +299,16 @@ class ActivityService:
             )
 
         # 增量更新 PMC
-        try:
-            anchor = db_activity.start_time.date() if hasattr(db_activity.start_time, "date") else db_activity.start_time
-            updated = recompute_pmc(self.db, athlete.id, anchor_date=anchor)
-            logger.info(f"PMC 更新: {updated} 天")
-        except Exception as e:
-            logger.warning(f"PMC 更新失败(非致命): {e}")
+        #
+        # recompute_pmc_eagerly=False 时跳过, 由批量导入的调用方在最后统一算。
+        # 正确性不受影响: PMC 只需要在"全部活动都入库后"算一次就是对的。
+        if recompute_pmc_eagerly:
+            try:
+                anchor = db_activity.start_time.date() if hasattr(db_activity.start_time, "date") else db_activity.start_time
+                updated = recompute_pmc(self.db, athlete.id, anchor_date=anchor)
+                logger.info(f"PMC 更新: {updated} 天")
+            except Exception as e:
+                logger.warning(f"PMC 更新失败(非致命): {e}")
 
         # 异步生成报告
         if background_tasks is not None:
@@ -312,6 +331,73 @@ class ActivityService:
         }
 
     # ---------- 列表 / 详情 ----------
+
+    async def upload_batch(
+        self,
+        files: list[tuple[str, bytes]],
+        background_tasks: Optional[Any] = None,
+    ) -> dict:
+        """批量导入 —— **V0.9.0 新增, 修 O(n²)**
+
+        ## 为什么需要
+
+        `upload()` 每条都会 `recompute_pmc()`, 而它必须全量重算 365 天 EWMA
+        (EWMA 是递推的, 增量算会把 CTL 算错 —— 这是 V0.9.0 修掉的严重 bug)。
+
+        于是导入 n 条 = 每次都重算全部历史, 总代价 O(n²)。
+        实测 32 条 FIT: 前 10 条 2.5s/条, 后 10 条 4.4-5.9s/条, 总计 112 秒。
+
+        单条导入感觉不到, 但**导入半年历史**就是几分钟起步。
+
+        ## 做法
+
+        中途关掉 eager 重算, 全部入库后**统一算一次**。
+        正确性完全等价 —— PMC 只在"活动都入库了"这个时点需要算一次。
+
+        ## 失败处理
+
+        单条失败不中断整批(返回每条的 ok/failed)。
+        成功的照样入库, 最后照常重算 PMC。
+        """
+        from cycling_coach.core.pmc import recompute_pmc
+
+        results: list[dict] = []
+        athlete_id: int | None = None
+
+        for filename, data in files:
+            try:
+                r = await self.upload(
+                    filename, data,
+                    background_tasks=background_tasks,
+                    recompute_pmc_eagerly=False,
+                )
+                results.append({"filename": filename, "ok": True,
+                                "activity_id": r.get("activity_id"),
+                                "duplicate": r.get("duplicate", False)})
+                if athlete_id is None:
+                    from cycling_coach.core.profile import store as profile_store
+                    athlete_id = profile_store.get_or_create_athlete(self.db).id
+            except Exception as e:
+                # 单条失败不该毁掉整批 —— 用户导 200 条, 有一条格式不对
+                # 就全白搭, 那体验比慢更糟。
+                logger.warning(f"批量导入 {filename} 失败: {e}")
+                results.append({"filename": filename, "ok": False, "error": str(e)})
+
+        # 全部入库后, 统一重算一次 PMC。
+        if athlete_id is not None:
+            try:
+                updated = recompute_pmc(self.db, athlete_id)
+                logger.info(f"批量导入完成, PMC 重算 {updated} 天")
+            except Exception as e:
+                logger.warning(f"批量导入后 PMC 重算失败(非致命): {e}")
+
+        n_ok = sum(1 for r in results if r["ok"])
+        return {
+            "total": len(results),
+            "succeeded": n_ok,
+            "failed": len(results) - n_ok,
+            "results": results,
+        }
 
     def list_activities(self, f: ActivityFilters) -> dict:
         """活动列表(多维过滤 + 排序 + 分页 + 聚合)
