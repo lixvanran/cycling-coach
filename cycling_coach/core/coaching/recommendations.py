@@ -669,6 +669,25 @@ def generate_recommendations(
     # 修复 readiness 那一处时我漏了这一处, 变异测试也没覆盖到, 是自己核对时发现的。
     # 算不出来就是算不出来, 不该拿 1.0 当"正常"悄悄放过。
     acwr_val = today.get("acwr") if today else None
+
+    # 🔴 P1-A (2026-10-06, Verifier 复审抓出): 这里**少了历史守卫**。
+    #
+    # 上面 319 行的 readiness 有 `acwr_history_is_real(db, athlete_id)`,
+    # 这里没有 —— 于是 8 天训练史的用户同时看到:
+    #     自检页:  "ACWR: 需要 28 天真实训练史才会计算"
+    #     今日建议: "🚨 ACWR 危险区 急慢性负荷比 3.50 > 1.5 (Gabbett 2016),
+    #                伤病风险高 / 立即减量 30-50%"
+    #
+    # 8 天连续训练 → 7 日负荷挤在窗口里, 28 日分母还没攒起来 → 比值飙到 3.5。
+    # 这个数**不是测量结果**, 它是窗口还没填满的假象。
+    #
+    # 而这条带着行动指令("立即减量 30-50%")和文献引用, 用户会真的照做。
+    #
+    # 根因: 我修 `get("acwr", 1.0)` 那个编造默认值时, 只想到"别假装正常",
+    #       没想到"没历史"和"算出来是 3.5"是**两回事**, 后者更危险。
+    if not acwr_history_is_real(db, athlete_id):
+        acwr_val = None      # 训练史不够, 这个数不存在
+
     if acwr_val is not None and acwr_val > 1.5:
         recs.append(Recommendation(
             category="warning", priority=5,
@@ -678,7 +697,7 @@ def generate_recommendations(
             icon="🚨"
         ))
         warnings.append(f"ACWR {acwr_val:.2f} > 1.5")
-    elif acwr_val > 1.3:
+    elif acwr_val is not None and acwr_val > 1.3:
         recs.append(Recommendation(
             category="warning", priority=3,
             title="ACWR 偏高",
