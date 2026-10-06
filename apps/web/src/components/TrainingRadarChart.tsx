@@ -15,16 +15,26 @@ import {
 } from "recharts";
 
 interface TrainingState {
+  // 🔴 V0.9.0: 原来这几个字段都写成必填非空, 于是**类型层面就在说谎** ——
+  // 后端零数据时真的返回 null, 但 tsc 永远不会提醒我。
+  // 这就是 P0 能一路绿灯走到用户面前的原因: 类型不是注释, 是编译器契约。
+  //
+  // 现在老老实实标成 `| null`, 让"数据不足"成为**类型系统里的合法状态**,
+  // 而不是运行到一半才炸。
   dimensions: {
     fitness: number;
     fatigue: number;
     form: number;
     rhythm: number;
     recovery: number;
-  };
-  overall: number;
-  interpretation: Record<string, string>;
-  source: string;
+  } | null;
+  overall: number | null;
+  interpretation: Record<string, string> | null;
+  source: string | null;
+  /** 后端明确告诉我们数据够不够 —— 零数据时 false */
+  data_sufficient: boolean;
+  /** 数据不足时, 人话解释为什么 */
+  reason?: string;
 }
 
 const DIM_LABELS: Record<keyof TrainingState["dimensions"], string> = {
@@ -74,12 +84,45 @@ export function TrainingRadarChart() {
     );
   }
 
-  const chartData = (Object.keys(DIM_LABELS) as (keyof TrainingState["dimensions"])[]).map(
-    (k) => ({
-      dim: DIM_LABELS[k],
-      value: data.dimensions[k],
-    })
-  );
+  // V0.9.0 P0: 后端零数据时返回 dimensions: null (诚实地不编 5 维分数)。
+  // 我只修了后端调用方, 忘了真正的消费者是这个组件 —— 于是:
+  //   `data` 对象是 truthy, 过了上面的 !data 检查,
+  //   然后 `data.dimensions[k]` → TypeError: Cannot read properties of null
+  //   → App.tsx 的 ErrorBoundary 吞掉整个「周期化」页面。
+  //
+  // **零数据用户第一次打开就白屏 —— 而零数据用户就是新用户。**
+  //
+  // 教训: 改后端契约 = 后端调用方 + 前端消费者 + 类型, 三层一起改。
+  // 光改一层就会把 bug 推到下一层, 而且藏得比原来更深。
+  if (!data.data_sufficient || !data.dimensions) {
+    return (
+      <div className="rounded border border-border bg-white p-6">
+        <h3 className="text-base font-semibold text-text-primary">5 维训练状态</h3>
+        <p className="text-xs text-text-secondary mt-1">
+          {data.reason || "还没有足够的真实训练数据"}
+        </p>
+        <p className="text-xs text-text-muted mt-3">
+          这 5 个维度要靠真实训练数据推算, 缺数据时我们不会给一个猜的分数 ——
+          一个凭空来的"体能 72 分", 你没法照着它骑车。
+        </p>
+        <a
+          href="/data/import"
+          className="inline-block mt-4 px-3 py-1.5 text-xs rounded
+                     bg-accent-primary text-white hover:opacity-90"
+        >
+          导入 FIT
+        </a>
+      </div>
+    );
+  }
+
+  // 上面的空态已经把 null 挡掉了, 这里 dims 必然是对象 ——
+  // 显式收窄一次, 不靠 tsc 猜。
+  const dims = data.dimensions as NonNullable<TrainingState["dimensions"]>;
+  const chartData = (Object.keys(DIM_LABELS) as (keyof typeof DIM_LABELS)[]).map((k) => ({
+    dim: DIM_LABELS[k],
+    value: dims[k],
+  }));
 
   return (
     <div className="rounded border border-border bg-white p-5">
@@ -91,7 +134,7 @@ export function TrainingRadarChart() {
         <div className="text-right">
           <div
             className="text-2xl font-bold tabular-nums"
-            style={{ color: colorByScore(data.overall) }}
+            style={{ color: colorByScore(data.overall as number) }}
           >
             {data.overall}
           </div>
@@ -135,8 +178,8 @@ export function TrainingRadarChart() {
       </div>
 
       <div className="grid grid-cols-5 gap-1 mt-3 text-center text-[10px]">
-        {(Object.keys(DIM_LABELS) as (keyof TrainingState["dimensions"])[]).map((k) => {
-          const score = data.dimensions[k];
+        {(Object.keys(DIM_LABELS) as (keyof typeof DIM_LABELS)[]).map((k) => {
+          const score = dims[k];
           return (
             <div key={k}>
               <div
@@ -146,7 +189,7 @@ export function TrainingRadarChart() {
                 {score}
               </div>
               <div className="text-text-secondary mt-0.5 leading-tight">
-                {data.interpretation[k] || ""}
+                {(data.interpretation as Record<string, string>)[k] || ""}
               </div>
             </div>
           );

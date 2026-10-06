@@ -568,9 +568,15 @@ def generate_recommendations(
     #
     # 所以这里对**档位**封顶, 不动分数: 分数回答"已知信号有多好",
     # 档位回答"我们能有多确定"。两者混为一谈就会出现"数据越少越该练猛"。
+    # V0.9.0 P0 修复: `rec_type = "none"` 表示"不给强度建议", 不是某个强度档位。
+    # 但它被塞进了这个表示**训练强度档位**的字段, 于是走到
+    # `_TIER_ORDER.index("none")` → ValueError → /api/recommendations/today 整个 500。
+    #
+    # 根因不是漏了个 if, 是**语义污染**: 一列里混了"档位"和"没有档位"两种含义。
+    # 所以改成显式判断"有没有档位", 而不是往列表里塞一个假档位。
     tier_cap = MAX_TIER_BY_COVERAGE.get(coverage["n_available"])
     capped_from = None
-    if tier_cap is not None and _TIER_ORDER.index(rec_type) > _TIER_ORDER.index(tier_cap):
+    if rec_type != "none" and tier_cap is not None and _TIER_ORDER.index(rec_type) > _TIER_ORDER.index(tier_cap):
         capped_from = rec_type
         readiness_label, intensity, target = _TIER_DETAIL[tier_cap]
         rec_type = tier_cap
