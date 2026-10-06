@@ -5,12 +5,19 @@ import { useEffect, useState } from "react";
 import { Gauge, Calendar, Flame, Minus, TrendingUp, AlertTriangle, Lightbulb } from "lucide-react";
 
 interface PhaseSignals {
-  avg_if_28d: number;
-  freq_7d: number;
+  // 🔴 V0.9.0-06: 这几个字段算不出来时是 **null**, 不是 0。
+  // 0 看起来像真实测量值 —— 界面会拿 0.00 去对照"理想 0.70-0.85"
+  // 判成红色警告, 甚至生成"增加 Z1-Z2 比例"这种凭空来的训练处方。
+  //
+  // streak_days / weeks_since_taper 保持 number: 对零数据用户来说
+  // "0 天连续训练"是**真的**(他确实一天没练), 那个 0 是诚实的。
+  data_sufficient?: boolean;
+  avg_if_28d: number | null;
+  freq_7d: number | null;
   streak_days: number;
   weeks_since_taper: number;
-  polarized_score_28d: number;
-  load_achievement_7d: number;
+  polarized_score_28d: number | null;
+  load_achievement_7d: number | null;
   warnings: string[];
   hints: string[];
 }
@@ -114,13 +121,20 @@ export function PhaseSignalsCard() {
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
         {META.map((m) => {
-          const v = data[m.key] as number;
-          const ok = m.good(v);
+          const raw = data[m.key] as number | null;
+          // ⚠️ V0.9.0-06: 算不出来时不能判"好/坏"。
+          // 以前这里 raw 是 0, `good(0)` 返回 false → 黄色警告 + "0.00",
+          // 让零数据用户以为自己的极化/IF 不达标。
+          const v = raw as number;
+          const known = raw !== null && raw !== undefined;
+          const ok = known ? m.good(v) : null;
           const Icon = m.icon;
           return (
             <div
               key={m.key}
-              className={`rounded p-2 ${ok ? "bg-status-success border border-border" : "bg-status-warning border border-border"}`}
+              className={`rounded p-2 border border-border ${
+                ok === null ? "bg-white" : ok ? "bg-status-success" : "bg-status-warning"
+              }`}
               title={`理想: ${m.ideal}`}
             >
               <div className="flex items-center justify-between text-[10px] text-text-secondary">
@@ -128,10 +142,15 @@ export function PhaseSignalsCard() {
                   <Icon className="w-3 h-3" />
                   {m.label}
                 </span>
-                <span>{ok ? "✓" : "⚠"}</span>
+                {/* 缺失时不给 ✓/⚠ —— 那是对"没有数据"的评价, 不是对人的 */}
+                <span>{ok === null ? "—" : ok ? "✓" : "⚠"}</span>
               </div>
-              <div className={`text-lg font-mono font-bold ${ok ? "text-accent-success" : "text-accent-warning"}`}>
-                {m.format(v)}
+              <div
+                className={`text-lg font-mono font-bold ${
+                  ok === null ? "text-text-muted" : ok ? "text-accent-success" : "text-accent-warning"
+                }`}
+              >
+                {known ? m.format(v) : "无数据"}
               </div>
               <div className="text-[9px] text-text-secondary mt-0.5">{m.ideal}</div>
             </div>

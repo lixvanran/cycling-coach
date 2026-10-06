@@ -618,18 +618,33 @@ class PhaseSignals:
     - Jeukendrup 2018 (周期化营养)
     - Banister TRIMP 累计训练负荷
     """
-    # 28 天平均 Intensity Factor (训练强度比 FTP)
-    avg_if_28d: float = 0.0
+    # 🔴 V0.9.0-06: 这六个原来都是 float = 0.0, 于是**算不出来和真实的 0
+    # 完全分不开**。
+    #
+    # 实测零数据用户的输出:
+    #     avg_if_28d = 0.00        理想区间是 0.70-0.85 → 界面判"不好"
+    #     polarized_score_28d = 0.0
+    #     freq_7d = 0.0            → "0.0 天/周"
+    #
+    # 而 PhaseSignalsCard 会拿 0.00 去对照"理想 0.70-0.85"给出红色警告,
+    # 甚至生成"增加 Z1-Z2 比例, 减少灰色地带"这种**凭空来的训练处方**。
+    #
+    # 0.00 看起来像一个真实的测量结果(而不是缺失), 这是 V0.9.0 一直在
+    # 消灭的东西。改成 Optional: 算不出来就是 None。
+    #
+    # streak_days / weeks_since_taper 保持 int —— "0 天连续训练"对零数据
+    # 用户是**真的**(他确实一天都没练), 那个 0 是诚实的。
+    avg_if_28d: Optional[float] = None
     # 7 天训练频率 (0-1)
-    freq_7d: float = 0.0
-    # 当前训练连续天数 (streak)
+    freq_7d: Optional[float] = None
+    # 当前训练连续天数 (streak) —— 0 是诚实的
     streak_days: int = 0
-    # 距上次减量周数 (≥ 8 → 衰减风险)
+    # 距上次减量周数 (≥ 8 → 衰减风险) —— 0 是诚实的
     weeks_since_taper: int = 0
     # 28d 极化评分 (0-1, 1 = 完全极化)
-    polarized_score_28d: float = 0.0
+    polarized_score_28d: Optional[float] = None
     # 7d 实际 TSS / 7d 目标 TSS (负荷达成率)
-    load_achievement_7d: float = 0.0
+    load_achievement_7d: Optional[float] = None
     # 信号建议
     warnings: list = None  # type: ignore
     hints: list = None  # type: ignore
@@ -756,15 +771,23 @@ def detect_phase_signals(
         signals.warnings.append(
             f"⚠ 距上次减量 {signals.weeks_since_taper}+ 周, 训练学建议每 8-12 周减量一次"
         )
-    if signals.freq_7d < 0.4:
+    # ⚠️ V0.9.0-06: 下面三个字段现在是 Optional —— 算不出来是 None。
+    # `None < 0.4` / `None < 0.5` 在 Python 3 里是 TypeError。
+    #
+    # 这条是我自己写的反向测试抓到的: 12 次训练的用户跑 detect_phase_signals
+    # 直接崩了。因为 `if not daily_rows: return signals` 那条早退路径上
+    # 它们还是 None, 而下面这堆比较没跟上。
+    #
+    # **改字段类型 = 所有比较点都要跟着改**, 这跟改函数契约是同一类活。
+    if signals.freq_7d is not None and signals.freq_7d < 0.4:
         signals.hints.append(
             f"训练频率偏低 ({signals.freq_7d:.0%}, < 4 天/周), 建议增加 1-2 次轻松骑"
         )
-    if signals.polarized_score_28d < 0.5:
+    if signals.polarized_score_28d is not None and signals.polarized_score_28d < 0.5:
         signals.hints.append(
             f"极化评分 {signals.polarized_score_28d:.2f} 偏低, 目标 Seiler 80/20"
         )
-    if signals.avg_if_28d > 1.0:
+    if signals.avg_if_28d is not None and signals.avg_if_28d > 1.0:
         signals.warnings.append(
             f"⚠ 28d 平均 IF {signals.avg_if_28d:.2f} 偏高, 长期高强度风险"
         )

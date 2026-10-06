@@ -616,6 +616,9 @@ def phase_signals(db: Session = Depends(get_db)):
     athlete = profile_store.get_or_create_athlete(db)
     s = detect_phase_signals(db, athlete.id)
     return {
+        # V0.9.0-06: 算不出来的字段现在是 None, 不再是 0.0。
+        # 前端会拿 0.00 去对照"理想 0.70-0.85"判红色 —— 那是编造的结论。
+        "data_sufficient": s.avg_if_28d is not None,
         "avg_if_28d": s.avg_if_28d,
         "freq_7d": s.freq_7d,
         "streak_days": s.streak_days,

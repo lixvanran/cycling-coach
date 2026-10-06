@@ -744,7 +744,11 @@ def generate_recommendations(
         ))
     
     # 极化评分低
-    if signals.polarized_score_28d < 0.5:
+    # 🔴 V0.9.0-06: None 不能参与比较, 且算不出来时**不给处方**。
+    # 以前拿 0.0 对照 0.5 阈值, 零数据用户会收到:
+    #   "28d 极化评分 0.00, 偏离 Seiler 80/20" + "增加 Z1-Z2 比例"
+    # —— 凭空一份训练处方。
+    if signals.polarized_score_28d is not None and signals.polarized_score_28d < 0.5:
         recs.append(Recommendation(
             category="tip", priority=2,
             title="极化评分偏低",
@@ -754,7 +758,11 @@ def generate_recommendations(
         ))
     
     # IF 过高
-    if signals.avg_if_28d > 1.0:
+    #
+    # ⚠️ 这个 None 守卫我写过一次, 然后在一次 git checkout 里被冲掉了,
+    # 全量测试立刻抓出 TypeError(而不是自己发现)。
+    # None 不能参与比较 —— 算不出来就不该有任何建议。
+    if signals.avg_if_28d is not None and signals.avg_if_28d > 1.0:
         recs.append(Recommendation(
             category="warning", priority=3,
             title=f"28d 平均 IF 偏高 ({signals.avg_if_28d:.2f})",
