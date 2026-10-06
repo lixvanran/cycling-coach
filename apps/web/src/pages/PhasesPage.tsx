@@ -525,15 +525,33 @@ function SuggestionCard({ suggest, meta, onCreate }: any) {
       <div className="text-[10px] text-text-muted mt-2 grid grid-cols-2 gap-1">
         <div>CTL {suggest.current_ctl} · ATL {suggest.current_atl}</div>
         <div>TSB {suggest.current_tsb} · ramp {suggest.ramp_rate}/wk</div>
-        <div>目标 TSS/wk: {suggest.target_weekly_tss} ({suggest.target_weekly_tss_range?.join("-")})</div>
-        <div>建议 {suggest.weeks_recommended} 周</div>
+        {/* V0.9.0 P0-3: 数据不足时这些是 null。渲染成 "null" 或者
+            (null-null) 都不行 —— 前者像 bug, 后者像在推荐 0 TSS。
+            真实值和"没有值"必须长得不一样。 */}
+        {suggest.data_sufficient ? (
+          <>
+            <div>
+              目标 TSS/wk: {suggest.target_weekly_tss} (
+              {suggest.target_weekly_tss_range?.join("-")})
+            </div>
+            <div>建议 {suggest.weeks_recommended} 周</div>
+          </>
+        ) : (
+          <div className="col-span-2">
+            数据不足, 算不出建议训练量 —— 导入训练记录后这里会给出数字
+          </div>
+        )}
       </div>
+      {/* 算不出阶段类型时, "一键创建"必然失败(后端拒绝 unknown),
+          所以不给一个点了就报错的按钮。 */}
+      {suggest.data_sufficient && (
       <button
         onClick={() => onCreate(suggest.suggestion)}
         className="text-xs text-primary mt-2 flex items-center gap-1 hover:underline"
       >
         一键创建 <ChevronRight className="w-3 h-3" />
       </button>
+      )}
     </div>
   );
 }

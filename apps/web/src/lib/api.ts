@@ -216,9 +216,13 @@ export const api = {
     label: string;
     confidence: number;
     reasons: string[];
-    target_weekly_tss: number;
-    target_weekly_tss_range: number[];
-    weeks_recommended: number;
+    // V0.9.0 P0-3: 数据不足时是 null, 不是 0。
+    // 0 是个看起来合法的处方("目标 TSS 0"), 前端会照着渲染, 还会拿它
+    // 去调一键创建 → HTTP 400。类型标成 null, 编译器就会逼我们处理。
+    data_sufficient: boolean;
+    target_weekly_tss: number | null;
+    target_weekly_tss_range: number[] | null;
+    weeks_recommended: number | null;
     weeks_to_race: number | null;
     current_ctl: number;
     current_atl: number;

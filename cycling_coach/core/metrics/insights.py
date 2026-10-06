@@ -389,7 +389,14 @@ def compute_today_insights(db: Session, athlete_id: Optional[int] = None) -> Ins
         .first()
     )
 
-    if current_phase and current_phase.phase_type != suggested.suggested_type:
+    # V0.9.0 P0-3: derive_phase 有 4 个调用方, 我之前只修了 context.py。
+    # 这里漏了, 于是零数据用户会看到:
+    #   "考虑调整下一阶段类型为 unknown, 建议周目标 TSS = 0。"
+    # —— 把"算不出来"当成一条建议发给用户, 还附了个看起来很具体的数字。
+    #
+    # 阶段不一致这个洞察**依赖 derive_phase 的结果**, 没有结果就没有洞察。
+    if suggested.suggested_type != "unknown" and current_phase \
+            and current_phase.phase_type != suggested.suggested_type:
         insights.append(Insight(
             id="phase_mismatch",
             category="phase",

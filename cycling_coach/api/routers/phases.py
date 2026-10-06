@@ -449,13 +449,23 @@ def suggest_phase(db: Session = Depends(get_db)):
     from cycling_coach.core.metrics.periodization import derive_phase
     athlete = profile_store.get_or_create_athlete(db)
     d = derive_phase(db, athlete.id)
+    # V0.9.0 P0-3: 数据不足时那三个字段现在是 None (之前是 0)。
+    # 0 是个**看起来合法的训练学数值**: 前端会渲染成"目标 TSS 0 / 建议 0 周",
+    # 还会拿 0 去调"一键创建" → HTTP 400。
+    # 而且 `list(None)` 直接 TypeError → 整个接口 500。
+    #
+    # 所以显式告诉前端"这次算不出来", 别让它自己猜 0 是什么意思。
+    sufficient = d.suggested_type != "unknown"
     return {
+        "data_sufficient": sufficient,
         "suggestion": d.suggested_type,
         "label": d.suggested_label,
         "confidence": d.confidence,
         "reasons": d.reasons,
         "target_weekly_tss": d.target_weekly_tss,
-        "target_weekly_tss_range": list(d.target_weekly_tss_range),
+        "target_weekly_tss_range": (
+            list(d.target_weekly_tss_range) if d.target_weekly_tss_range else None
+        ),
         "weeks_recommended": d.weeks_recommended,
         "weeks_to_race": d.weeks_to_race,
         "current_ctl": round(d.current_ctl, 1),

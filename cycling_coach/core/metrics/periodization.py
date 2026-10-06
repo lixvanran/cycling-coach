@@ -37,9 +37,15 @@ class PhaseDerivation:
     suggested_label: str
     confidence: float             # 0-1
     reasons: list[str]            # 推导依据
-    target_weekly_tss: int        # 建议周目标 TSS
-    target_weekly_tss_range: tuple[int, int]  # 范围
-    weeks_recommended: int        # 建议持续周数
+    # 🔴 V0.9.0: 这三个字段原来是非空 int, 于是数据不足时只能填 0。
+    # 而 0 是个**看起来合法的训练学数值** —— 前端会老老实实渲染成
+    # "目标 TSS 0 / 建议 0 周", 还会拿 0 去调"一键创建"。
+    #
+    # 改成 Optional: 算不出来就是 None, 让类型系统帮我们说真话。
+    # 有了数据时永远是 int, 消费方用 `is not None` 守卫即可。
+    target_weekly_tss: Optional[int]        # 建议周目标 TSS (无数据时 None)
+    target_weekly_tss_range: Optional[tuple[int, int]]  # 范围 (无数据时 None)
+    weeks_recommended: Optional[int]       # 建议持续周数 (无数据时 None)
     weeks_to_race: Optional[int]  # 距比赛几周
     current_ctl: float
     current_atl: float
@@ -281,9 +287,11 @@ def derive_phase(db: Session, athlete_id: int) -> PhaseDerivation:
                 "没有真实训练负荷数据(CTL/ATL 都是 0, 但那是因为没有记录, "
                 "不是真的低)"
             ],
-            target_weekly_tss=0,
-            target_weekly_tss_range=(0, 0),
-            weeks_recommended=0,
+            # 不是 0 —— 0 是"建议一周都不练", 那是个**具体的训练处方**。
+            # 数据不足时我们**没有处方**, 所以是 None。
+            target_weekly_tss=None,
+            target_weekly_tss_range=None,
+            weeks_recommended=None,
             weeks_to_race=weeks_to_race,
             current_ctl=ctl,
             current_atl=atl,
