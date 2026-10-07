@@ -21,6 +21,20 @@
 from __future__ import annotations
 
 import pytest
+from datetime import date as _date
+# ⚠️ 关于"今天"的时间基准
+#
+# `get_pmc_today()` 用的是 `date.today()`(**本地时区**), 而这些测试原来用
+# `datetime.utcnow().date()`(UTC)。**两者跨 UTC 日界时会差一天** ——
+# 于是"今天的 DailyMetric"查不到, has_load_data 变 False, 测试在
+# 凌晨(本地)跑红、白天跑绿。
+#
+# 我为此白查了三轮: 以为是测试污染、以为是全量顺序、以为是自己引入的
+# 回归。真相比那都简单: **测试和生产代码对"今天"的定义不一致。**
+#
+# 教训: 断言涉及"今天"时, 必须用**被测代码同一个**日期来源,
+# 不能想当然用 utcnow —— 那个是常见的直觉, 但生产代码不是那么写的。
+
 from datetime import datetime, timedelta
 
 
@@ -100,7 +114,7 @@ def test_rpe_is_not_hardcoded_false(trust_client):
     from cycling_coach.data.sqlite.models import DailyMetric
     from cycling_coach.core.profile import store as profile_store
     athlete = profile_store.get_or_create_athlete(db)
-    today = datetime.utcnow().date()
+    today = _date.today()
 
     # 还没填
     d0 = c.get("/api/trust/self-check").json()
@@ -128,7 +142,8 @@ def test_load_data_makes_dimensions_available(trust_client):
 
     自检页不能只会说"缺" —— 那它就跟零数据时一样没信息量。
     """
-    import asyncio, tempfile
+    import asyncio
+    import tempfile
     from pathlib import Path
     c, db = trust_client
     from cycling_coach.core.profile import store as profile_store

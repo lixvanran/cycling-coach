@@ -31,6 +31,20 @@ Verifier 独立复审确认:
 """
 from __future__ import annotations
 
+# ⚠️ 关于"今天"的时间基准
+#
+# `get_pmc_today()` 用的是 `date.today()`(**本地时区**), 而这些测试原来用
+# `date.today()`(UTC)。**两者跨 UTC 日界时会差一天** ——
+# 于是"今天的 DailyMetric"查不到, has_load_data 变 False, 测试在
+# 凌晨(本地)跑红、白天跑绿。
+#
+# 我为此白查了三轮: 以为是测试污染、以为是全量顺序、以为是自己引入的
+# 回归。真相比那都简单: **测试和生产代码对"今天"的定义不一致。**
+#
+# 教训: 断言涉及"今天"时, 必须用**被测代码同一个**日期来源,
+# 不能想当然用 utcnow —— 那个是常见的直觉, 但生产代码不是那么写的。
+
+
 from datetime import datetime, timedelta
 
 
@@ -71,7 +85,7 @@ def _compute(ctl, atl, tsb, ramp, monkeypatch):
         "ctl": ctl, "atl": atl, "tsb": tsb, "ramp_rate": ramp,
         "has_load_data": True, "tss_today": 0,
         "status": "ok", "status_label": "", "status_color": "",
-        "date": datetime.utcnow().date(),
+        "date": date.today(),
     })
     return RP.compute_training_state(_fake_db_no_activities(), 1)
 

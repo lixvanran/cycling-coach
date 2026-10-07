@@ -440,7 +440,30 @@ def compute_readiness(
     # 五个维度齐全时 max_total == 100, 与旧算法逐位一致 —— 不会给老用户改分。
     total = sum(breakdown.values())
     max_total = sum(READINESS_WEIGHTS[k] for k in breakdown)
-    return round(total / max_total * 100), breakdown
+    score = round(total / max_total * 100)
+
+    # 🔴 V0.9.0-07: 按可用维度归一化的副作用是 —— **2/5 个维度全满分
+    # 会算出 100 分**。而这个 100 会被前端渲染成"极佳"。
+    #
+    # 实测: 只有 hrv + rpe 的用户拿到 100 分, 但标签是"中等（数据有限）"
+    # —— **分数和标签自相矛盾**, 而 100 分更让人以为"今天状态完美"。
+    #
+    # 这跟"零数据用户拿到 82 分极佳"是同一株病: 用**没测的维度缺位**
+    # 换来了一个看起来很权威的分数。
+    #
+    # 我之前的设计是"分数回答已知信号有多好, 档位回答我们能有多确定",
+    # 但那只在**档位**上封了顶, 分数没封 —— 于是 100 分照样出现在界面上。
+    #
+    # 封顶规则: 缺一半维度 → 最高 70 分; 缺四分之一 → 最高 80。
+    # **五维齐全时 cap = 100, 老用户的分数一个字节都不变。**
+    n_total = len(READINESS_WEIGHTS)
+    n_avail = len(breakdown)
+    if n_avail < n_total:
+        missing_ratio = (n_total - n_avail) / n_total
+        cap = round(100 - missing_ratio * 100 * 0.5)
+        score = min(score, cap)
+
+    return score, breakdown
 
 
 def _insufficient_data_recommendation(suff: dict) -> DailyRecommendation:

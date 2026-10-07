@@ -28,11 +28,26 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import date as _date
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+from datetime import date
+# ⚠️ 关于"今天"的时间基准
+#
+# `get_pmc_today()` 用的是 `date.today()`(**本地时区**), 而这些测试原来用
+# `date.today()`(UTC)。**两者跨 UTC 日界时会差一天** ——
+# 于是"今天的 DailyMetric"查不到, has_load_data 变 False, 测试在
+# 凌晨(本地)跑红、白天跑绿。
+#
+# 我为此白查了三轮: 以为是测试污染、以为是全量顺序、以为是自己引入的
+# 回归。真相比那都简单: **测试和生产代码对"今天"的定义不一致。**
+#
+# 教训: 断言涉及"今天"时, 必须用**被测代码同一个**日期来源,
+# 不能想当然用 utcnow —— 那个是常见的直觉, 但生产代码不是那么写的。
+
 
 from tests.conftest import use_temp_db
 from tests.fit_fixtures import build_fit
@@ -438,7 +453,7 @@ def test_returns_none_when_load_dimension_missing_even_if_two_others_present():
 
     # 造 HRV 数据, 让 hrv 维度可用
     from cycling_coach.data.sqlite.models import DailyMetric
-    today = datetime.utcnow().date()
+    today = date.today()
     # 导入 FIT 已经建好了 DailyMetric 行(unique(athlete_id, date)),
     # 所以这里是**更新**而不是插入 —— 插入会撞 UNIQUE 约束。
     for i in range(10):
@@ -521,7 +536,7 @@ def test_pure_load_row_with_rpe_only_does_not_earn_tsb_points():
     ath = profile_store.get_or_create_athlete(db)
     ath.ftp = 250
     db.commit()
-    today = _dt.utcnow().date()
+    today = _date.today()
     for i in range(10):
         row = DailyMetric(athlete_id=ath.id, date=today - _td(days=i), tss=50)
         if i == 0:
@@ -556,7 +571,7 @@ def test_load_row_with_real_data_still_counts():
     ath = profile_store.get_or_create_athlete(db)
     ath.ftp = 250
     db.commit()
-    db.add(DailyMetric(athlete_id=ath.id, date=_dt.utcnow().date(),
+    db.add(DailyMetric(athlete_id=ath.id, date=_date.today(),
                        tss=50, ctl=40, atl=42, tsb=-2, rpe=5))
     db.commit()
     assert get_pmc_today(db, ath.id)["has_load_data"] is True
