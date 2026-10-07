@@ -34,7 +34,7 @@ from __future__ import annotations
 # ⚠️ 关于"今天"的时间基准
 #
 # `get_pmc_today()` 用的是 `date.today()`(**本地时区**), 而这些测试原来用
-# `date.today()`(UTC)。**两者跨 UTC 日界时会差一天** ——
+# `datetime.utcnow().date()`(UTC)。**两者跨 UTC 日界时会差一天** ——
 # 于是"今天的 DailyMetric"查不到, has_load_data 变 False, 测试在
 # 凌晨(本地)跑红、白天跑绿。
 #
@@ -45,7 +45,7 @@ from __future__ import annotations
 # 不能想当然用 utcnow —— 那个是常见的直觉, 但生产代码不是那么写的。
 
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 
 def _fake_db_no_activities():
