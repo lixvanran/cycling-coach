@@ -107,9 +107,9 @@ def test_demo_load_is_repeatable():
     db = SessionLocal()
     rebind_engine(str(db.get_bind().url))
     c = TestClient(app)
-    r1 = c.post("/api/demo/load", json={"weeks": 4, "force": True})
+    r1 = c.post("/api/demo/load", json={"weeks": 8, "force": True})
     assert r1.status_code == 200, r1.text[:200]
-    r2 = c.post("/api/demo/load", json={"weeks": 4, "force": True})
+    r2 = c.post("/api/demo/load", json={"weeks": 8, "force": True})
     assert r2.status_code == 200, f"第二次挂了: {r2.text[:200]}"
     # 不该翻倍
     assert r2.json()["n_activities"] == r1.json()["n_activities"], (

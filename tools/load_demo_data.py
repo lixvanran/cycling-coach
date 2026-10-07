@@ -341,6 +341,8 @@ def load_demo_data(weeks: int = 8, end: str | None = None,
     out_dir.mkdir(parents=True, exist_ok=True)
 
     n_ride = n_plan = n_done = n_skip = n_miss = 0
+    n_fail = 0
+    _failures: list[str] = []
     tss_planned = tss_actual = 0
 
     from realistic_rides import build_profile_fit
@@ -415,8 +417,17 @@ def load_demo_data(weeks: int = 8, end: str | None = None,
             )
 
             try:
-                res = asyncio.run(svc.upload(path.name, path.read_bytes()))
+                # 批量导入: 关掉逐条 PMC 重算, 最后统一算一次。
+                # 既快(O(n^2) -> O(n)), 也避免 PMC 内部异常把事务搞脏。
+                res = asyncio.run(svc.upload(path.name, path.read_bytes(),
+                                            recompute_pmc_eagerly=False))
             except Exception as e:
+                # ⚠️ 失败原因必须留住。之前只 print 一行, 汇总时 n_ride 对不上
+                # 只能报"生成 45 条但库里 0 条" —— **不说哪条失败、为什么失败**,
+                # 排查时等于瞎猜。
+                n_fail += 1
+                _failures.append(f"第{w+1}周/{name}/{intent}: "
+                                 f"{type(e).__name__}: {str(e)[:150]}")
                 print(f"  ! 第{w+1}周 {name} 导入失败: {type(e).__name__}: {e}")
                 db.rollback()
                 continue
@@ -443,6 +454,16 @@ def load_demo_data(weeks: int = 8, end: str | None = None,
             print(f"  W{w+1} {d} {name:<12} {intent:<10} "
                   f"功率{gt['avg_power']:>3.0f}W  {gt['duration_s']//60:>3}min  "
                   f"TSS {act_tss:>5.0f}/{tss_target:<4} {status}")
+
+    # 关掉逐条 PMC 重算之后, 必须在收尾**统一算一次** ——
+    # 否则示例数据的 PMC / 体能曲线是空的, 用户看到 0/5 维度却以为 App 坏了。
+    if n_ride:
+        try:
+            from cycling_coach.core.pmc import recompute_pmc as _rpmc
+            _days = _rpmc(db, _aid)
+            print(f"  PMC 已重算 {_days} 天")
+        except Exception as _e:
+            print(f"  ⚠️ PMC 重算失败(不影响训练数据本身): {_e}")
 
     db.close()
     print()
@@ -494,10 +515,17 @@ def load_demo_data(weeks: int = 8, end: str | None = None,
         _sql_text("SELECT COUNT(*) FROM activities WHERE athlete_id = :aid"),
         {"aid": _aid}).scalar() or 0
     if _demo_acts != n_ride:
+        _why = (f"\n\n失败明细(前 5 条):\n    " + "\n    ".join(_failures[:5])
+                if _failures else
+                "\n\n⚠️ 没有任何一条报了失败, 但入库数对不上 —— "
+                "那就是 upload 内部静默吞掉了异常(比如 recompute_pmc 失败后 "
+                "session 进入 PendingRollback 状态, 后续 commit 全部作废)。")
         raise SystemExit(
             f"❌ 归属校验失败: 演示车手 #{_aid} 名下只有 {_demo_acts} 条活动, "
-            f"但我们生成了 {n_ride} 条 —— 说明活动挂到了别的车手上。"
+            f"但我们生成了 {n_ride} 条。{_why}"
         )
+    if _failures:
+        print(f"⚠️ 有 {n_fail} 条训练导入失败(已跳过), 其余 {n_ride} 条成功")
     print(f"归属校验: 活动与课表均在 athlete {acts_ath or plan_ath} ✅")
     print("=" * 56)
     # ⚠️ commit() 之后 `a` 会 detach, 再读属性会 DetachedInstanceError。
