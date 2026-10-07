@@ -85,8 +85,27 @@ def test_list_workouts_idempotent(client):
 
 # ========== FIT export ==========
 
+def _set_ftp(client, ftp: int = 250):
+    """给测试车手设一个明确 FTP。
+
+    V0.9.0-07: 占位车手不再带假 FTP(=250) 之后, 这些导出测试的前提变了 ——
+    它们原来隐含依赖那个假值。课程导出必须知道 FTP 才能算训练区间。
+
+    这里显式设置, 而不是让测试"碰巧"通过 —— 前提要写出来。
+    """
+    import sys
+    from cycling_coach.data.sqlite.database import SessionLocal
+    from cycling_coach.core.profile import store as profile_store
+    db = SessionLocal()
+    a = profile_store.get_or_create_athlete(db)
+    a.ftp = ftp
+    db.commit()
+    db.close()
+
+
 def test_export_fit_format_supported(client):
     """V0.9.0: format=fit 不能因为 fit_tool 缺失而 500"""
+    _set_ftp(client)
     # 拿 1 个 workout id
     r = client.get("/api/workouts?limit=1")
     assert r.status_code == 200
@@ -120,9 +139,39 @@ def test_export_nonexistent_workout(client):
 
 @pytest.mark.parametrize("fmt", ["zwo", "mrc", "erg", "json"])
 def test_export_other_formats_still_work(client, fmt):
+    _set_ftp(client)
     r = client.get("/api/workouts?limit=1")
     wid = r.json()["workouts"][0]["id"]
 
     r = client.get(f"/api/workouts/{wid}/export?format={fmt}")
     assert r.status_code == 200, r.text
     assert len(r.content) > 0
+
+def test_export_refuses_without_ftp_and_explains_why(client):
+    """🔴 没有 FTP 时不导出, 而且要说清为什么
+
+    V0.9.0-07 之前这里是 `athlete.ftp or 250` —— 用户没设 FTP 时,
+    导出的 .zwo 会按编造的 250W 算好训练区间写进文件,
+    然后**没有任何提示**让他照着骑(文件格式里没有"区间来源"这个字段)。
+
+    现在它拒绝, 并解释: 区间是按 FTP 算的, 拿默认数字等于让你骑错区间。
+    """
+    import sys
+    from cycling_coach.data.sqlite.database import SessionLocal
+    from cycling_coach.core.profile import store as profile_store
+    db = SessionLocal()
+    a = profile_store.get_or_create_athlete(db)
+    a.ftp = None
+    a.ftp_estimated = None
+    db.commit()
+    db.close()
+
+    wid = client.get("/api/workouts?limit=1").json()["workouts"][0]["id"]
+    r = client.get(f"/api/workouts/{wid}/export?format=zwo")
+    assert r.status_code == 422, f"没 FTP 却导出成功了: {r.text[:200]}"
+    msg = r.json()["message"]
+    # 错误信息必须说清"为什么需要"和"怎么解决", 而不只是"缺少参数"
+    assert "FTP" in msg
+    assert "FTP 校准" in msg or "导入" in msg, f"没说怎么解决: {msg}"
+    # 并且不能暗示自己知道用户的 FTP
+    assert "250" not in msg, f"错误信息里还带着那个假值: {msg}"

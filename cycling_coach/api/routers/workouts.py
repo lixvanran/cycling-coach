@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, or_, and_
 from sqlalchemy.orm import Session
 
+from cycling_coach.core.exceptions import ValidationError
 from cycling_coach.core.profile import store as profile_store
 from cycling_coach.core.time_utils import utcnow_naive
 from cycling_coach.data.sqlite import get_db
@@ -804,7 +805,16 @@ def export_workout(
     safe_title = re.sub(r"[\s]+", "_", unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode("ascii"))[:50] or "workout"
 
     athlete = profile_store.get_or_create_athlete(db)
-    ftp = athlete.ftp or 250
+    # 🔴 V0.9.0-07: 原来 `athlete.ftp or 250` —— 用户没设 FTP 时, 导出的课程
+    # 会按编造的 250W 算训练区间, 然后写进 .zwo 文件让他照着骑。
+    # 区间全错, 而且**没有任何提示**, 因为文件格式里没有"区间来源"这个字段。
+    ftp = athlete.ftp or athlete.ftp_estimated
+    if not ftp:
+        raise ValidationError(
+            "导出训练课需要先知道你的 FTP —— 课程里的训练区间是按 FTP 算的。"
+            "去「数据 → FTP 校准」测一次, 或导入几次带功率的训练让我们估算。"
+            "(我们不会拿一个默认数字替你算, 那等于让你按错的区间骑车)"
+        )
 
     if fmt == "zwo":
         from cycling_coach.core.exporters.zwo import export_zwo

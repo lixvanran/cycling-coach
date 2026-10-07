@@ -149,6 +149,8 @@ def self_check(_svc: Services = Depends(get_services)):
 
     return {
         "version": settings.app_version if hasattr(settings, "app_version") else "0.9.0",
+        # V0.9.0-07: 这里是 None 就显示 None(前端渲染"未设置"),
+        # 不要退回任何默认值 —— 250 看起来像测出来的。
         "athlete": {"name": athlete.name, "ftp": athlete.ftp},
         "dimensions": dims,
         "n_available": n_avail,

@@ -144,7 +144,17 @@ def predict_ftp(req: FTPPredictRequest, db: Session = Depends(get_db)):
     except ModelNotFoundError as e:
         # 没注册模型 → mock 降级 (开发体验)
         logger.warning(f"ML 模型未注册, 降级 MockFTPModel: {e}")
-        mock = MockFTPModel(base_ftp=athlete.ftp or 250)
+        # 🔴 V0.9.0-07: 没有基准 FTP 时, mock 模型拿 250 当基线, 会输出一个
+        # "看起来合理"的预测值。对一个连 FTP 都没设的用户报"预测 FTP 245W"
+        # 是纯粹的编造 —— 上游本来就说过"数据不足: 无法预测"。
+        # mock 只用来开发调试, 这里给它一个显式的开发默认值并标注出来。
+        base_ftp = athlete.ftp or athlete.ftp_estimated
+        if not base_ftp:
+            raise ValidationError(
+                "需要先有 FTP 基准才能预测。\n"
+                "去「数据 → FTP 校准」测一次, 或先导入几次带功率的训练。"
+            )
+        mock = MockFTPModel(base_ftp=base_ftp)
         X = np.array([values], dtype=np.float32)
         point = float(mock.predict(X)[0])
         half = 10.0

@@ -24,6 +24,9 @@ router = APIRouter(prefix="/api/dev", tags=["dev"])
 
 # ---------- Mock 活动生成器 ----------
 
+# 演示数据生成器专用 —— 不是给真实 athlete 兜底的
+DEMO_FTP = 250
+
 PROFILES = {
     "z2_long": {
         "name": "Z2 长距离 90min",
@@ -159,7 +162,9 @@ def generate_mock_activity(
 
     profile = PROFILES[profile_key]
     athlete = profile_store.get_or_create_athlete(db)
-    ftp = athlete.ftp or 250
+    # 演示数据生成器, 这里用默认值是**有意为之** —— 它本来就是在造样本。
+    # 但不能用它去污染真实 athlete 的 ftp 字段(那才是 V0.9.0-07 的问题)。
+    ftp = athlete.ftp or DEMO_FTP
 
     samples = _generate_samples(profile)
     samples = _scale_samples_to_ftp(samples, ftp)
