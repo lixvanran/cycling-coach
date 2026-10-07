@@ -58,9 +58,15 @@ def _get_athlete_ctx(db: Session) -> dict:
         "athlete_id": athlete.id,
         "athlete_name": ctx.get("athlete", {}).get("name") or "Rider",
         "athlete_exp": ctx.get("athlete", {}).get("experience") or "未填",
-        "athlete_max_hr": ctx.get("athlete", {}).get("max_hr") or 0,
-        "athlete_lthr": ctx.get("athlete", {}).get("lthr") or 0,
-        "athlete_ftp": ctx.get("athlete", {}).get("ftp") or 0,
+        # 🔴 V0.9.0-07: 这三个原来都是 `or 0`。
+        # 语义完全不同:
+        #   "最大心率 0"  —— 不存在
+        #   "最大心率 185" —— 测过
+        # 传 0 给模型, 它会当成"这人最大心率就是 0", 然后基于这个算训练区间。
+        # 未知就是 None, 不是 0。下游 prompt 层有 `or "未测"` 能处理 None。
+        "athlete_max_hr": ctx.get("athlete", {}).get("max_hr"),
+        "athlete_lthr": ctx.get("athlete", {}).get("lthr"),
+        "athlete_ftp": ctx.get("athlete", {}).get("ftp"),
         "pmc": _safe(ctx.get("pmc")),
         "acwr": _safe(ctx.get("acwr")),
         "rpe_7d": _safe(ctx.get("rpe_7d")),

@@ -43,6 +43,7 @@ from cycling_coach.core.pmc import recompute_pmc
 from cycling_coach.data.parsers import FitParser, TcxParser, WkoCsvParser
 from cycling_coach.data.parsers.schema import Activity as PydanticActivity, Sample
 from cycling_coach.data.sqlite.models import Activity as DBActivity
+from cycling_coach.data.sqlite.models import Athlete as DBAthlete
 
 logger = logging.getLogger(__name__)
 
@@ -134,13 +135,32 @@ class ActivityService:
     所有方法接收基本参数, 返回 dict / 模型, 不抛 HTTPException
     业务异常用 NotFoundError / ValidationError
     """
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, athlete_id: int | None = None):
         self.db = db
         # V0.8.1 批 2: 启动时绑定当前 athlete, 所有 ID 查询自动 scope 到该 athlete,
         # 防止 IDOR (别人猜到 ID 就能读/改/删你的活动)。
         # 单用户 MVP: 始终 get_or_create (1 个 athlete),
         # 多用户: 由 Services bundle 上层决定 (目前也是 1 个)
-        self.athlete = profile_store.get_or_create_athlete(db)
+        # 🔴 V0.9.0-07: 加了 athlete_id 参数。
+        #
+        # 原来硬绑 `get_or_create_athlete` (永远返回库里**第一个** athlete),
+        # 于是"载入示例数据"必然撞车:
+        #     ActivityService 绑到 #1(用户的占位车手)
+        #     计划课却挂在 #62(演示车手)
+        #     → 归属校验失败 → 用户点"先看示例"只看到"载入失败"
+        #
+        # 单用户 MVP 下"库里第一个 = 当前用户"成立, 但只要库里多了一个车手
+        # (演示数据、旧数据、测试数据), 就会错绑。
+        #
+        # 单用户路径完全不变(None → 仍然是 get_or_create), 只是让"明确指定"
+        # 成为可能。
+        self.athlete = (
+            db.query(DBAthlete).filter(DBAthlete.id == athlete_id).first()
+            if athlete_id is not None
+            else profile_store.get_or_create_athlete(db)
+        )
+        if self.athlete is None:
+            raise NotFoundError(f"车手 {athlete_id} 不存在")
 
     # ---------- 解析 + 入库 ----------
 

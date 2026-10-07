@@ -73,7 +73,7 @@ export function TrustPage() {
             </h1>
             <p className="text-xs text-text-muted mt-1">
               v{check.version} · 车手 {check.athlete.name}
-              {check.athlete.ftp ? ` · FTP ${check.athlete.ftp}W` : ""}
+              {check.athlete.ftp ? ` · FTP ${check.athlete.ftp}W` : " · FTP 未设置"}
             </p>
             <div className="mt-2 text-sm">
               当前可用{" "}
@@ -92,6 +92,46 @@ export function TrustPage() {
           </div>
         </div>
       </div>
+
+      {/* 🔴 V0.9.0-07: FTP 没设置时, 主动告诉他"设了能解锁什么"。
+          原来这里什么都不显示 —— 用户不知道 FTP 是什么, 更不知道
+          整个训练区间体系都建在它上面。
+
+          这就是"看得见的价值": 不是"你什么都没数据所以啥也看不到",
+          而是"告诉我一个数, 我现在就能给你全部训练区间"。 */}
+      {!check.athlete.ftp && (
+        <div className="panel p-4 border-l-2 border-l-accent-primary">
+          <div className="text-sm font-semibold text-text-primary">
+            先填一个数字, 就能解锁大部分功能
+          </div>
+          <p className="text-xs text-text-secondary mt-1.5 leading-relaxed">
+            你的 FTP(最大摄氧量) 是所有训练区间的基准。填了它, 立刻就能算:
+          </p>
+          <div className="text-[11px] text-text-secondary mt-2 space-y-0.5">
+            <div>· Coggan 7 个训练区(Z1 恢复 → Z7 冲刺)的功率区间</div>
+            <div>· 你每次训练到底骑在哪个区、各区花了多少时间</div>
+            <div>· Seiler 80/20 极化分布是否合理</div>
+            <div>· AI 教练给训练建议时的强度参照</div>
+          </div>
+          <p className="text-[11px] text-text-muted mt-2">
+            不想测? 导入几次带功率的训练, 我们会用 20 分钟最大功率的经验公式帮你估一个。
+          </p>
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={() => (window.location.href = "/data/ftp-test")}
+              className="px-3 py-1.5 text-xs rounded bg-accent-primary text-white hover:opacity-90"
+            >
+              去测 FTP
+            </button>
+            <button
+              onClick={() => (window.location.href = "/data/import")}
+              className="px-3 py-1.5 text-xs rounded border border-border text-text-secondary hover:bg-surface-hover"
+            >
+              先导入训练让它估算
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 维度状态 */}
       <div className="panel p-4">

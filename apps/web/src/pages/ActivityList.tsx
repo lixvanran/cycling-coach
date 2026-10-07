@@ -138,6 +138,11 @@ export function ActivityList() {
     loadActivities();
   }
 
+  /** 有没有设置过任何筛选条件 —— 决定空状态说"去导入"还是"去调筛选" */
+  const hasActiveFilter = Object.values(filters).some(
+    (v) => typeof v === "string" ? v !== "" : v != null,
+  );
+
   function resetFilters() {
     setFilters({
       date_from: "", date_to: "",
@@ -266,8 +271,52 @@ export function ActivityList() {
         {!loading && activities.length === 0 && (
           <div className="text-center text-text-muted py-12">
             <ActivityIcon className="w-12 h-12 mx-auto mb-3 opacity-30" />
-            <div>没有匹配的活动</div>
-            <div className="text-xs mt-1">试试调整过滤条件,或点 "上传 FIT" 导入数据</div>
+            {/* 🔴 V0.9.0-07: 原来只有一句话"试试调整过滤条件" ——
+                但**新用户根本没设置过任何过滤条件**。让一个第一次打开的人
+                去"调整过滤条件", 等于让他以为自己漏了什么。
+
+                分成两种情况:
+                  - 库里压根没有数据 → 说清楚要做什么, 给可点的入口
+                  - 有数据但被筛掉了   → 这时才说"调整过滤条件" */}
+            {hasActiveFilter ? (
+              <>
+                <div>没有匹配的训练</div>
+                <div className="text-xs mt-1">
+                  你有 {total > 0 ? "其他" : ""}训练记录, 只是被当前筛选条件挡住了
+                </div>
+                <button
+                  onClick={resetFilters}
+                  className="mt-3 px-3 py-1.5 text-xs rounded border border-border
+                             text-text-secondary hover:bg-surface-hover"
+                >
+                  清除筛选条件
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="text-text-secondary font-medium">
+                  还没有任何训练记录
+                </div>
+                <div className="text-xs mt-1.5 max-w-md mx-auto leading-relaxed">
+                  导入一次骑行, 这里就能算出你的训练区间、体能曲线和每周建议
+                </div>
+                <div className="mt-3 flex gap-2 justify-center">
+                  <button
+                    onClick={() => navigate("/data/import")}
+                    className="px-3 py-1.5 text-xs rounded bg-accent-primary text-white hover:opacity-90"
+                  >
+                    导入 FIT
+                  </button>
+                  <button
+                    onClick={() => navigate("/data/trust")}
+                    className="px-3 py-1.5 text-xs rounded border border-border
+                               text-text-secondary hover:bg-surface-hover"
+                  >
+                    先看能算出什么
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
         {!loading && activities.length > 0 && (

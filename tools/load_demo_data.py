@@ -32,11 +32,15 @@
 from __future__ import annotations
 
 import argparse
+import logging
+
+logger = logging.getLogger(__name__)
 import asyncio
 import os
 import random
 import sys
 from datetime import date, datetime, timedelta, timezone
+import logging
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.resolve()
@@ -100,6 +104,124 @@ def build_week_rides(week_idx: int) -> list[tuple[str, str, list, float]]:
     return out
 
 
+def _clear_athlete_rows(db, athlete_id: int) -> dict[str, int]:
+    """删掉某个车手名下的**所有**记录(遍历所有外键引用表)。
+
+    ## 为什么需要遍历全部
+
+    有 13 张表外键引用 athletes: activities / daily_metrics / planned_workouts /
+    training_phases / workouts / ftp_tests / chat_sessions / training_diary /
+    ml_predictions / ml_model_meta / plan_ai_drafts / plan_periods /
+    race_tactics_sessions。
+
+    原来 --force 只删了前 3 张就 `db.delete(athlete)`, 剩下的外键悬空 →
+    `NOT NULL constraint failed: activities.athlete_id`。
+
+    **删车手失败会让整个"载入示例"失败** —— 用户点一下按钮看到的是报错,
+    而不是数据。
+    """
+    from sqlalchemy import inspect as _inspect, text as _text
+    insp = _inspect(db.bind)
+    removed: dict[str, int] = {}
+    for t in insp.get_table_names():
+        if t == "athletes":
+            continue
+        cols = None
+        for fk in insp.get_foreign_keys(t):
+            if fk.get("referred_table") == "athletes":
+                cols = fk.get("constrained_columns")
+                break
+        if not cols:
+            continue
+        col = cols[0]
+        try:
+            n = db.execute(
+                _text(f"SELECT COUNT(*) FROM {t} WHERE {col} = :aid"),
+                {"aid": athlete_id},
+            ).scalar() or 0
+            if n:
+                db.execute(_text(f"DELETE FROM {t} WHERE {col} = :aid"),
+                           {"aid": athlete_id})
+                removed[t] = n
+        except Exception as e:
+            logger.debug(f"跳过 {t}: {e}")
+    # ⚠️ 必须 commit + expire_all: 否则 session 缓存里还持有那些 ORM 对象,
+    # 后面 db.delete(athlete) 时 ORM 会再发一次
+    #     UPDATE activities SET athlete_id=NULL
+    # 而 activities.athlete_id 是 NOT NULL → 整个载入失败。
+    #
+    # 也就是说: **原生 SQL 删了还不够, 得让 session 忘掉它们。**
+    db.commit()
+    db.expire_all()
+    return removed
+
+
+def _delete_athlete_hard(db, athlete_id: int) -> None:
+    """删车手: 先清所有引用行, 再用**原生 SQL** 删 athletes 自己。
+
+    ## 为什么要绕开 ORM 的 db.delete()
+
+    `db.delete(athlete)` 会让 ORM 按 relationship 配置发
+    `UPDATE activities SET athlete_id=NULL` —— 而 activities.athlete_id
+    是 **NOT NULL** → IntegrityError → 整个"载入示例"失败。
+
+    我第一版用 `db.delete()` + 先清 3 张表, 连续踩了两次:
+      1. 只清 3 张表 → 另外 10 张外键悬空
+      2. 全清了但 session 缓存还在 → ORM 又发 UPDATE 置空
+    原生 SQL + commit + expire_all 才干净。
+    """
+    from sqlalchemy import text as _text
+    _clear_athlete_rows(db, athlete_id)
+    db.expunge_all()
+    db.execute(_text("DELETE FROM athletes WHERE id = :aid"), {"aid": athlete_id})
+    db.commit()
+    db.expire_all()
+
+
+def _delete_athlete_hard(db, athlete_id: int) -> None:
+    """删车手: 先清所有引用行, 再用**原生 SQL** 删 athletes 自己。
+
+    ## 为什么要绕开 ORM 的 db.delete()
+
+    `db.delete(athlete)` 会让 ORM 按 relationship 配置发
+    `UPDATE activities SET athlete_id=NULL` —— 而 activities.athlete_id
+    是 **NOT NULL** → IntegrityError → 整个"载入示例"失败。
+
+    我第一版用 `db.delete()` + 先清 3 张表, 连续踩了两次:
+      1. 只清 3 张表 → 另外 10 张外键悬空
+      2. 全清了但 session 缓存还在 → ORM 又发 UPDATE 置空
+    原生 SQL + commit + expire_all 才干净。
+    """
+    from sqlalchemy import text as _text
+    _clear_athlete_rows(db, athlete_id)
+    db.expunge_all()
+    db.execute(_text("DELETE FROM athletes WHERE id = :aid"), {"aid": athlete_id})
+    db.commit()
+    db.expire_all()
+
+
+def _delete_athlete_hard(db, athlete_id: int) -> None:
+    """删车手: 先清所有引用行, 再用**原生 SQL** 删 athletes 自己。
+
+    ## 为什么要绕开 ORM 的 db.delete()
+
+    `db.delete(athlete)` 会让 ORM 按 relationship 配置发
+    `UPDATE activities SET athlete_id=NULL` —— 而 activities.athlete_id
+    是 **NOT NULL** → IntegrityError → 整个"载入示例"失败。
+
+    我第一版用 `db.delete()` + 先清 3 张表, 连续踩了两次:
+      1. 只清 3 张表 → 另外 10 张外键悬空
+      2. 全清了但 session 缓存还在 → ORM 又发 UPDATE 置空
+    原生 SQL + commit + expire_all 才干净。
+    """
+    from sqlalchemy import text as _text
+    _clear_athlete_rows(db, athlete_id)
+    db.expunge_all()
+    db.execute(_text("DELETE FROM athletes WHERE id = :aid"), {"aid": athlete_id})
+    db.commit()
+    db.expire_all()
+
+
 def load_demo_data(weeks: int = 8, end: str | None = None,
                    athlete_name: str = "演示车手",
                    force: bool = False, no_plans: bool = False,
@@ -149,18 +271,10 @@ def load_demo_data(weeks: int = 8, end: str | None = None,
         )
         old_a = db.query(Athlete).filter(Athlete.name == args.athlete).first()
         if old_a:
-            acts = db.query(Activity).filter(Activity.athlete_id == old_a.id).all()
-            ids = [x.id for x in acts]
-            db.query(PlannedWorkout).filter(
-                PlannedWorkout.athlete_id == old_a.id).delete()
-            if ids:
-                db.query(Activity).filter(Activity.id.in_(ids)).delete(
-                    synchronize_session=False)
-            db.query(DailyMetric).filter(
-                DailyMetric.athlete_id == old_a.id).delete()
-            db.delete(old_a)
-            db.commit()
-            print(f"已清除旧的演示数据: {len(ids)} 条活动")
+            _removed = _clear_athlete_rows(db, old_a.id)
+            _delete_athlete_hard(db, old_a.id)
+            print(f"已清除旧的演示数据: "
+                  f"{sum(_removed.values())} 行 ({', '.join(f'{k}:{v}' for k, v in _removed.items())})")
 
         # V0.9.0: 同时清掉 ActivityService 自动建的占位 athlete。
         #
@@ -173,13 +287,54 @@ def load_demo_data(weeks: int = 8, end: str | None = None,
         # 原来的 --force 只删**同名**的演示车手, 清不掉这个占位。
         # 但占位的意思是"没有任何活动", 删掉它不会丢用户数据。
         # 保守起见只在那个 athlete 名下**一条活动都没有**时才删。
-        for placeholder in db.query(Athlete).filter(Athlete.name == "Rider").all():
-            _n = db.query(Activity).filter(
-                Activity.athlete_id == placeholder.id).count()
-            if _n == 0:
-                db.delete(placeholder)
-                db.commit()
-                print("已清除自动创建的占位车手 (Rider, 无任何训练记录)")
+        # ⚠️ 原来这里按 **名字 == "Rider"** 找占位车手, 但用户可能:
+        #   - 改过名字(设置页里填了真实姓名)
+        #   - 装的是旧版本, 占位叫别的名字
+        # 这时候占位清不掉 → ActivityService 绑到 #1、课表挂到 #2 →
+        # 归属校验直接失败 → 用户点"先看示例"只看到"载入失败"。
+        #
+        # 判据应该是"这个车手名下什么都没有", 不是"它叫什么名字"。
+        #
+        # ⚠️ 而且**不能只查活动**: 有 13 张表外键引用 athletes
+        # (daily_metrics / ftp_tests / training_phases / chat_sessions /
+        #  training_diary / ml_predictions / ...)。我第一版只查了 activities
+        # 和 training_phases, 结果删一个"看起来空"的车手时
+        # FOREIGN KEY constraint failed —— 而**删车手失败会让整个载入失败**。
+        #
+        # 所以: 一次性扫全部引用表, 任何一张有行就不删。
+        from sqlalchemy import inspect as _inspect
+        _insp = _inspect(db.bind)
+        _ref_tables = []
+        for _t in _insp.get_table_names():
+            for _fk in _insp.get_foreign_keys(_t):
+                if _fk.get("referred_table") == "athletes":
+                    _ref_tables.append((_t, _fk.get("constrained_columns")))
+                    break
+
+        for placeholder in db.query(Athlete).all():
+            if placeholder.name == args.athlete:
+                continue                       # 那是演示车手本身, 不能删
+            _occupied = None
+            for _t, _cols in _ref_tables:
+                _col = _cols[0]
+                try:
+                    _n = db.execute(
+                        __import__("sqlalchemy").text(
+                            f"SELECT COUNT(*) FROM {_t} WHERE {_col} = :aid"
+                        ), {"aid": placeholder.id}
+                    ).scalar() or 0
+                except Exception:
+                    continue                    # 表不存在/列名不同 -> 跳过
+                if _n:
+                    _occupied = f"{_t}({_n})"
+                    break
+            if _occupied is None:
+                _delete_athlete_hard(db, placeholder.id)
+                print(f"  已清除空车手 id={placeholder.id} 名字={placeholder.name!r} "
+                      f"(活动/计划/课程/对话全空)")
+            else:
+                print(f"  保留车手 id={placeholder.id} 名字={placeholder.name!r} "
+                      f"—— 名下有 {_occupied}, 不动它")
 
     a = db.query(Athlete).filter(Athlete.name == args.athlete).first()
     if a is None:
@@ -192,8 +347,9 @@ def load_demo_data(weeks: int = 8, end: str | None = None,
         db.refresh(a)
     print(f"车手: {a.name}  FTP={a.ftp}  LTHR={a.lthr}")
 
-    # 现在建 service, 它应该绑到刚建好的车手上
-    svc = ActivityService(db)
+    # 显式指定车手 —— ActivityService 默认绑库里第一个,
+    # 库里有多余车手时必然错绑(这正是载入失败的根因)
+    svc = ActivityService(db, athlete_id=a.id)
     if svc.athlete.id != a.id:
         # 静默继续下去就是"活动归 A、课表归 B", 直接失败
         raise SystemExit(

@@ -509,13 +509,25 @@ function SuggestionCard({ suggest, meta, onCreate }: any) {
   if (!suggest) return null;
   const c = PHASE_COLORS[suggest.suggestion] || PHASE_COLORS.base;
   const m = meta[suggest.suggestion];
+
+  // 🔴 V0.9.0-07: 原来这里 `m?.label || suggest.suggestion` ——
+  // 数据不足时 suggestion 是 "unknown", meta 里查不到, 于是**界面上
+  // 赫然写着蓝色的 `unknown`**。
+  //
+  // 后端其实给了中文标签 `suggest.label` = "数据不足，无法判断阶段",
+  // 我 P0-3 修好了它却没用上。中文的优先, 机器值只作为最后的兜底。
+  const displayLabel =
+    suggest.label || m?.label || (suggest.suggestion !== "unknown"
+      ? suggest.suggestion
+      : "数据不足");
+
   return (
     <div className="panel p-3">
       <div className="text-xs text-text-muted flex items-center gap-1">
         <Sparkles className="w-3 h-3" /> 智能推荐 (PMC 推导)
       </div>
       <div className={clsx("text-lg font-semibold mt-1", c.text)}>
-        {m?.icon} {m?.label || suggest.suggestion}
+        {m?.icon} {displayLabel}
       </div>
       <div className="text-xs text-text-muted mt-1 leading-relaxed space-y-0.5">
         {suggest.reasons?.map((r: string, i: number) => (
