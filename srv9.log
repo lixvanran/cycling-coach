@@ -1,0 +1,50 @@
+INFO:     Started server process [3538]
+INFO:     Waiting for application startup.
+2026-10-07 17:19:19,110 | INFO    | cycling_coach.api.main         | ==================================================
+2026-10-07 17:19:19,110 | INFO    | cycling_coach.api.main         | Cycling Coach Sidecar v0.9.0 启动 (desktop=False)
+2026-10-07 17:19:19,110 | INFO    | cycling_coach.api.main         | Mock 模式: True
+2026-10-07 17:19:19,110 | INFO    | cycling_coach.api.main         | Workspace: /run/csi/mount-root/nas/eab0d61a99b6696edb3d2aff87b585e8/t9
+2026-10-07 17:19:22,230 | INFO    | cycling_coach.data.sqlite.database | 数据库初始化完成
+2026-10-07 17:19:22,327 | INFO    | cycling_coach.api.main         | 知识库未导入, 开始首次导入...
+2026-10-07 17:19:22,339 | INFO    | cycling_coach.core.kb_importer | 附件导入: 0 个 (0 装饰)
+2026-10-07 17:20:25,429 | INFO    | cycling_coach.core.kb_importer | FTS5 索引: 全量填充完成
+2026-10-07 17:20:25,458 | INFO    | cycling_coach.core.kb_importer | FTS5 索引: 500 行
+2026-10-07 17:20:25,458 | INFO    | cycling_coach.core.kb_importer | 导入完成: {'categories': 359, 'documents': 359, 'chunks': 500, 'attachments': 0, 'doc_attachments': 0, 'likely_decoration': 0, 'errors': []}
+2026-10-07 17:20:25,459 | INFO    | cycling_coach.api.main         | 知识库导入完成: docs=359, chunks=500, atts=0
+2026-10-07 17:20:25,459 | INFO    | cycling_coach.api.main         | ==================================================
+2026-10-07 17:20:25,470 | INFO    | cycling_coach.api.routers.frontend | 已挂载前端静态资源: /workspace/cycling-coach/cycling_coach/static
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8988 (Press CTRL+C to quit)
+INFO:     127.0.0.1:38678 - "GET /api/health HTTP/1.1" 200 OK
+2026-10-07 17:21:13,203 | INFO    | cycling_coach.core.profile.store | 创建默认 athlete: id=1 (FTP/最大心率待用户设置或估算)
+2026-10-07 17:21:13,670 | INFO    | cycling_coach.data.sqlite.database | 数据库初始化完成
+2026-10-07 17:21:14,660 | ERROR   | cycling_coach.api.routers.demo_data | 载入示例数据失败
+Traceback (most recent call last):
+  File "/run/csi/mount-root/nas/eab0d61a99b6696edb3d2aff87b585e8/cycling-coach/cycling_coach/api/routers/demo_data.py", line 84, in load_demo
+    stats = load_demo_data(weeks=weeks, force=payload.force)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/run/csi/mount-root/nas/eab0d61a99b6696edb3d2aff87b585e8/cycling-coach/tools/load_demo_data.py", line 304, in load_demo_data
+    _delete_athlete_hard(db, placeholder.id)
+  File "/run/csi/mount-root/nas/eab0d61a99b6696edb3d2aff87b585e8/cycling-coach/tools/load_demo_data.py", line 193, in _delete_athlete_hard
+    if getattr(obj, "id", None) == athlete_id:
+       ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/run/csi/mount-root/nas/eab0d61a99b6696edb3d2aff87b585e8/cycling-coach/.venv/lib/python3.11/site-packages/sqlalchemy/orm/attributes.py", line 575, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/run/csi/mount-root/nas/eab0d61a99b6696edb3d2aff87b585e8/cycling-coach/.venv/lib/python3.11/site-packages/sqlalchemy/orm/attributes.py", line 1091, in get
+    value = self._fire_loader_callables(state, key, passive)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/run/csi/mount-root/nas/eab0d61a99b6696edb3d2aff87b585e8/cycling-coach/.venv/lib/python3.11/site-packages/sqlalchemy/orm/attributes.py", line 1121, in _fire_loader_callables
+    return state._load_expired(state, passive)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/run/csi/mount-root/nas/eab0d61a99b6696edb3d2aff87b585e8/cycling-coach/.venv/lib/python3.11/site-packages/sqlalchemy/orm/state.py", line 833, in _load_expired
+    self.manager.expired_attribute_loader(self, toload, passive)
+  File "/run/csi/mount-root/nas/eab0d61a99b6696edb3d2aff87b585e8/cycling-coach/.venv/lib/python3.11/site-packages/sqlalchemy/orm/loading.py", line 1712, in _load_scalar_attributes
+    raise orm_exc.ObjectDeletedError(state)
+sqlalchemy.orm.exc.ObjectDeletedError: Instance '<Athlete at 0x7f48d946b710>' has been deleted, or its row is otherwise not present.
+INFO:     127.0.0.1:38682 - "POST /api/demo/load HTTP/1.1" 500 Internal Server Error
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-10-07 17:21:26,406 | INFO    | cycling_coach.api.main         | Sidecar 关闭
+INFO:     Application shutdown complete.
+INFO:     Finished server process [3538]

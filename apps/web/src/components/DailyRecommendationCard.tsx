@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { renderDimension, READINESS_DIMENSIONS } from "../lib/readinessDisplay";
 import clsx from "clsx";
+import { useDemoData } from "../hooks/useDemoData";
 
 interface Recommendation {
   // V0.9.0: 补 "info"。后端 recommendations.py 的 _insufficient_data_recommendation
@@ -122,33 +123,10 @@ interface DataSufficiency {
 }
 
 function InsufficientDataPrompt({ suff }: { suff?: DataSufficiency }) {
-  // V0.9.0: 用 useNavigate 而不是 window.location.hash ——
-  // 路由是双模式的(desktop file:// 用 HashRouter, web http:// 用 BrowserRouter),
-  // 手写 hash 跳转在 web 模式下会跳错。
-  const navigate = useNavigate();
-  const [loadingDemo, setLoadingDemo] = useState(false);
-  const [demoMsg, setDemoMsg] = useState<string | null>(null);
+  // V0.9.0-07: 抽出 useDemoData —— 因为 Dashboard 空状态也要用同一套,
+  // 而 Dashboard 才是新用户的第一屏(这张卡在零数据时压根不渲染)。
+  const { navigate, loadDemo, loadingDemo, demoMsg } = useDemoData();
   const n = suff?.n_activities ?? 0;
-
-  // V0.9.0: 载入示例数据。
-  // ⚠️ 载入后**必须明确告诉用户这是示例**, 否则 45 条活动混进他的库里,
-  // 他会以为那些是自己骑的 —— 这正是我们这周一直在消灭的那类"骗人"。
-  async function loadDemo() {
-    setLoadingDemo(true);
-    setDemoMsg(null);
-    try {
-      const r = await api.demoLoad(8, true);
-      setDemoMsg(
-        `已载入 ${r.n_activities} 次「${r.athlete_name}」的示例数据。` +
-        `这是示例, 不是你的骑行记录 —— 导入你自己的 .fit 就会替换掉它。`
-      );
-      setTimeout(() => window.location.reload(), 1800);
-    } catch (e) {
-      setDemoMsg(`载入失败: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setLoadingDemo(false);
-    }
-  }
   const span = suff?.span_days ?? 0;
   // 差多少才够 —— 说具体的数字, 别说"数据不足"
   const needActivities = Math.max(0, 7 - n);

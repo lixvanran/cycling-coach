@@ -264,7 +264,15 @@ class ActivityService:
             raise ValidationError(f"解析失败: {e}")
 
         # 指标计算
-        athlete = profile_store.get_or_create_athlete(self.db)
+        #
+        # 🔴 V0.9.0-07: 原来这里又调了一次 get_or_create_athlete,
+        # 绕过了 __init__ 里绑好的 self.athlete。
+        # 于是即使构造时指定了 athlete_id, **活动还是会挂到"库里第一个车手"** ——
+        # 表现就是"活动在 athlete 1, 课表在 athlete 2"的归属校验失败。
+        #
+        # 这正是我自己写进 CLAUDE.md 的铁律二: 改契约要找出每一个读取点。
+        # 我改了构造参数, 却没找出使用点。**自己立的规矩自己第一个犯。**
+        athlete = self.athlete
         metrics = await asyncio.to_thread(
             compute_metrics,
             activity,
@@ -395,8 +403,8 @@ class ActivityService:
                                 "activity_id": r.get("activity_id"),
                                 "duplicate": r.get("duplicate", False)})
                 if athlete_id is None:
-                    from cycling_coach.core.profile import store as profile_store
-                    athlete_id = profile_store.get_or_create_athlete(self.db).id
+                    # 同样: 用 self.athlete, 不要再 get_or_create
+                    athlete_id = self.athlete.id
             except Exception as e:
                 # 单条失败不该毁掉整批 —— 用户导 200 条, 有一条格式不对
                 # 就全白搭, 那体验比慢更糟。
@@ -655,8 +663,9 @@ class ActivityService:
             if cp3.get("cp_estimated"):
                 cp = int(round(cp3["cp_estimated"]))
             else:
-                athlete = profile_store.get_or_create_athlete(self.db)
-                cp = int(athlete.ftp or 0) or None
+                # 同上: 用 self.athlete (且 FTP 可能为 None —— V0.9.0-07 之后
+                # 占位车手不再带假 250, 拿 0 也不对)
+                cp = int(self.athlete.ftp or 0) or None
         if not cp or cp <= 0:
             raise ValidationError("CP 无法确定, 请传 ?cp=N 或先在个人资料配置 FTP")
         result = wbal_analysis(sample_objs, cp=cp, w_prime=w_prime)

@@ -145,82 +145,53 @@ def _clear_athlete_rows(db, athlete_id: int) -> dict[str, int]:
                 removed[t] = n
         except Exception as e:
             logger.debug(f"跳过 {t}: {e}")
-    # ⚠️ 必须 commit + expire_all: 否则 session 缓存里还持有那些 ORM 对象,
-    # 后面 db.delete(athlete) 时 ORM 会再发一次
-    #     UPDATE activities SET athlete_id=NULL
-    # 而 activities.athlete_id 是 NOT NULL → 整个载入失败。
+    # ⚠️ 必须 commit + **expire_all**(不是 expunge_all):
+    #   - expire_all: 只清属性缓存, 对象**仍然绑定**在 session 上 ✅
+    #   - expunge_all: 把对象彻底踢出 session → 后面再用就报
+    #     "Instance ... is not bound to a Session"
     #
-    # 也就是说: **原生 SQL 删了还不够, 得让 session 忘掉它们。**
+    # 我第一版写的是 expunge_all, 结果 CLI 路径能过(新进程新 session,
+    # 没别的对象), API 路径 500(那个 session 里已经加载过 athlete)。
+    # **同一个函数, 两条路径, 一个通一个挂** —— 典型的"测了一条路就以为对了"。
     db.commit()
     db.expire_all()
     return removed
 
 
 def _delete_athlete_hard(db, athlete_id: int) -> None:
-    """删车手: 先清所有引用行, 再用**原生 SQL** 删 athletes 自己。
+    """删车手: 清掉所有引用行, 再删 athletes 本身。
 
-    ## 为什么要绕开 ORM 的 db.delete()
+    ## 这里踩了四次, 每次错法不同 —— 全记下来
 
-    `db.delete(athlete)` 会让 ORM 按 relationship 配置发
-    `UPDATE activities SET athlete_id=NULL` —— 而 activities.athlete_id
-    是 **NOT NULL** → IntegrityError → 整个"载入示例"失败。
+    1. `db.delete(athlete)` → ORM 按 relationship 发
+       `UPDATE activities SET athlete_id=NULL`, 而该列 NOT NULL → IntegrityError
+    2. 改用原生 SQL 删行, 但 session 的 identity map 里还留着那个对象
+       → 后续用它报 "has been deleted, or its row is otherwise not present"
+    3. 为修 #2 用 `db.expunge_all()` → 把 session 里**所有**对象都踢出去
+       → 报 "is not bound to a Session"
+    4. 手动 `db.expunge(obj)` 遍历 identity_map → 还是 #2
+       （expire_all 之后访问 obj.id 本身就可能抛异常, 遍历并不可靠）
 
-    我第一版用 `db.delete()` + 先清 3 张表, 连续踩了两次:
-      1. 只清 3 张表 → 另外 10 张外键悬空
-      2. 全清了但 session 缓存还在 → ORM 又发 UPDATE 置空
-    原生 SQL + commit + expire_all 才干净。
+    **最终解法: 让 ORM 自己同步 identity map**, 别手动摘:
+        db.query(Athlete).filter(...).delete(synchronize_session="fetch")
+
+    ## 更要命的: CLI 能过, API 500
+
+    1-4 之间还藏着一个陷阱: **命令行跑通了不代表修好了**。
+    CLI 是新进程新 session(里面没别的对象), API 路径的 session 里
+    已经加载过 athlete, 于是只有 API 挂。
+
+    所以这条路径我坚持用**浏览器点按钮**验, 而不是只跑脚本。
     """
-    from sqlalchemy import text as _text
+    from cycling_coach.data.sqlite.models import Athlete as _Athlete
+
     _clear_athlete_rows(db, athlete_id)
-    db.expunge_all()
-    db.execute(_text("DELETE FROM athletes WHERE id = :aid"), {"aid": athlete_id})
+    # synchronize_session="fetch" 让 ORM 把 identity map 里对应的对象清掉,
+    # 否则后面任何一次属性访问都会报 "has been deleted"
+    db.query(_Athlete).filter(_Athlete.id == athlete_id).delete(
+        synchronize_session="fetch"
+    )
     db.commit()
-    db.expire_all()
-
-
-def _delete_athlete_hard(db, athlete_id: int) -> None:
-    """删车手: 先清所有引用行, 再用**原生 SQL** 删 athletes 自己。
-
-    ## 为什么要绕开 ORM 的 db.delete()
-
-    `db.delete(athlete)` 会让 ORM 按 relationship 配置发
-    `UPDATE activities SET athlete_id=NULL` —— 而 activities.athlete_id
-    是 **NOT NULL** → IntegrityError → 整个"载入示例"失败。
-
-    我第一版用 `db.delete()` + 先清 3 张表, 连续踩了两次:
-      1. 只清 3 张表 → 另外 10 张外键悬空
-      2. 全清了但 session 缓存还在 → ORM 又发 UPDATE 置空
-    原生 SQL + commit + expire_all 才干净。
-    """
-    from sqlalchemy import text as _text
-    _clear_athlete_rows(db, athlete_id)
-    db.expunge_all()
-    db.execute(_text("DELETE FROM athletes WHERE id = :aid"), {"aid": athlete_id})
-    db.commit()
-    db.expire_all()
-
-
-def _delete_athlete_hard(db, athlete_id: int) -> None:
-    """删车手: 先清所有引用行, 再用**原生 SQL** 删 athletes 自己。
-
-    ## 为什么要绕开 ORM 的 db.delete()
-
-    `db.delete(athlete)` 会让 ORM 按 relationship 配置发
-    `UPDATE activities SET athlete_id=NULL` —— 而 activities.athlete_id
-    是 **NOT NULL** → IntegrityError → 整个"载入示例"失败。
-
-    我第一版用 `db.delete()` + 先清 3 张表, 连续踩了两次:
-      1. 只清 3 张表 → 另外 10 张外键悬空
-      2. 全清了但 session 缓存还在 → ORM 又发 UPDATE 置空
-    原生 SQL + commit + expire_all 才干净。
-    """
-    from sqlalchemy import text as _text
-    _clear_athlete_rows(db, athlete_id)
-    db.expunge_all()
-    db.execute(_text("DELETE FROM athletes WHERE id = :aid"), {"aid": athlete_id})
-    db.commit()
-    db.expire_all()
-
 
 def load_demo_data(weeks: int = 8, end: str | None = None,
                    athlete_name: str = "演示车手",
@@ -329,8 +300,14 @@ def load_demo_data(weeks: int = 8, end: str | None = None,
                     _occupied = f"{_t}({_n})"
                     break
             if _occupied is None:
-                _delete_athlete_hard(db, placeholder.id)
-                print(f"  已清除空车手 id={placeholder.id} 名字={placeholder.name!r} "
+                # ⚠️ 名字要**先取出来**再删。
+                # 删完之后对象已经不在 session 里(synchronize_session 把它摘掉了),
+                # 这时再读 `placeholder.name` 就是 DetachedInstanceError。
+                #
+                # "先操作对象, 再打印它的属性" —— 顺序反了就炸。
+                _pid, _pname = placeholder.id, placeholder.name
+                _delete_athlete_hard(db, _pid)
+                print(f"  已清除空车手 id={_pid} 名字={_pname!r} "
                       f"(活动/计划/课程/对话全空)")
             else:
                 print(f"  保留车手 id={placeholder.id} 名字={placeholder.name!r} "
@@ -488,14 +465,38 @@ def load_demo_data(weeks: int = 8, end: str | None = None,
     _aname = _arow.name if _arow else athlete_name
     _aftp = _arow.ftp if _arow else None
     from sqlalchemy import text as _sql_text
+    # ⚠️ 原来查的是 **全库** 的 athlete_id, 于是校验语义变成了
+    # "库里所有活动必须属于同一个车手"。
+    #
+    # 但"用户自己有 5 条训练 + 点先看示例加了 45 条演示数据"是完全合法的,
+    # 这时候 acts_ath = {1, 2}、plan_ath = {2} → 报"归属校验失败" → 载入失败。
+    #
+    # 校验真正要抓的是: **这次生成的演示数据自己内部**别错绑
+    # (演示活动挂用户车手、演示课表挂演示车手)。
+    # 所以只查演示车手名下的记录。
     acts_ath = {r[0] for r in db.execute(
-        _sql_text("SELECT DISTINCT athlete_id FROM activities")).fetchall()}
+        _sql_text("SELECT DISTINCT athlete_id FROM activities WHERE athlete_id = :aid"),
+        {"aid": _aid}).fetchall()}
     plan_ath = {r[0] for r in db.execute(
-        _sql_text("SELECT DISTINCT athlete_id FROM planned_workouts")).fetchall()}
+        _sql_text("SELECT DISTINCT athlete_id FROM planned_workouts WHERE athlete_id = :aid"),
+        {"aid": _aid}).fetchall()}
     if not args.no_plans and acts_ath and plan_ath and acts_ath != plan_ath:
         raise SystemExit(
-            f"❌ 归属校验失败: 活动在 athlete {acts_ath}, 课表在 {plan_ath}。"
-            f"这种数据看起来正常但用起来全错, 宁可构建失败。"
+            f"❌ 归属校验失败: 演示活动在 athlete {acts_ath}, "
+            f"演示课表在 {plan_ath}。这种数据看起来正常但用起来全错, 宁可构建失败。"
+        )
+    # 收窄范围之后上面那条几乎不可能触发, 所以补一条**真的能触发**的:
+    # 演示车手名下的活动数必须等于我们生成的数。
+    #
+    # 这才是那个校验真正想抓的 —— "活动挂错车手"最常见的形态不是
+    # 活动落在两个车手上, 而是**一条都没落到演示车手上**。
+    _demo_acts = db.execute(
+        _sql_text("SELECT COUNT(*) FROM activities WHERE athlete_id = :aid"),
+        {"aid": _aid}).scalar() or 0
+    if _demo_acts != n_ride:
+        raise SystemExit(
+            f"❌ 归属校验失败: 演示车手 #{_aid} 名下只有 {_demo_acts} 条活动, "
+            f"但我们生成了 {n_ride} 条 —— 说明活动挂到了别的车手上。"
         )
     print(f"归属校验: 活动与课表均在 athlete {acts_ath or plan_ath} ✅")
     print("=" * 56)

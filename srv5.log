@@ -1,0 +1,156 @@
+INFO:     Started server process [3267]
+INFO:     Waiting for application startup.
+2026-10-07 17:06:50,331 | INFO    | cycling_coach.api.main         | ==================================================
+2026-10-07 17:06:50,331 | INFO    | cycling_coach.api.main         | Cycling Coach Sidecar v0.9.0 启动 (desktop=False)
+2026-10-07 17:06:50,331 | INFO    | cycling_coach.api.main         | Mock 模式: True
+2026-10-07 17:06:50,331 | INFO    | cycling_coach.api.main         | Workspace: /run/csi/mount-root/nas/eab0d61a99b6696edb3d2aff87b585e8/t5
+2026-10-07 17:06:53,500 | INFO    | cycling_coach.data.sqlite.database | 数据库初始化完成
+2026-10-07 17:06:53,640 | INFO    | cycling_coach.api.main         | 知识库未导入, 开始首次导入...
+2026-10-07 17:06:53,651 | INFO    | cycling_coach.core.kb_importer | 附件导入: 0 个 (0 装饰)
+2026-10-07 17:07:59,645 | INFO    | cycling_coach.core.kb_importer | FTS5 索引: 全量填充完成
+2026-10-07 17:07:59,674 | INFO    | cycling_coach.core.kb_importer | FTS5 索引: 500 行
+2026-10-07 17:07:59,674 | INFO    | cycling_coach.core.kb_importer | 导入完成: {'categories': 359, 'documents': 359, 'chunks': 500, 'attachments': 0, 'doc_attachments': 0, 'likely_decoration': 0, 'errors': []}
+2026-10-07 17:07:59,675 | INFO    | cycling_coach.api.main         | 知识库导入完成: docs=359, chunks=500, atts=0
+2026-10-07 17:07:59,675 | INFO    | cycling_coach.api.main         | ==================================================
+2026-10-07 17:07:59,685 | INFO    | cycling_coach.api.routers.frontend | 已挂载前端静态资源: /workspace/cycling-coach/cycling_coach/static
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8984 (Press CTRL+C to quit)
+2026-10-07 17:08:35,512 | INFO    | cycling_coach.core.profile.store | 创建默认 athlete: id=1 (FTP/最大心率待用户设置或估算)
+INFO:     127.0.0.1:39396 - "GET /api/athlete HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39406 - "GET /training HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39422 - "GET /assets/index-pwQvhw1w.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39452 - "GET /assets/vendor-markdown-CuYlodXF.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39406 - "GET /assets/index-DQrxPDsz.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39436 - "GET /assets/vendor-react-tM6dMMKq.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39476 - "GET /assets/vendor-icons-BH4DHy5m.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39468 - "GET /assets/vendor-charts-W0StyatN.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39406 - "GET /assets/middleware-BqWLjkaz.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39468 - "GET /assets/MetricCard-C4EX5onR.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39452 - "GET /assets/Dashboard-DnKHjor7.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39436 - "GET /assets/vendor-state-D8bIa1U1.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39436 - "GET /api/version HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39452 - "GET /api/diagnose HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39476 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39476 - "GET /api/diagnose HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39436 - "GET /api/pmc?days=90 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39468 - "GET /api/kb/categories HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39422 - "GET /api/athlete HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39452 - "GET /api/pmc/today HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39406 - "GET /api/insights/today HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42570 - "GET /api/version HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42576 - "GET /api/diagnose HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /api/athlete HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42570 - "GET /api/pmc?days=90 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /api/diagnose HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42592 - "GET /api/insights/today HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42576 - "GET /api/pmc/today HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42590 - "GET /api/kb/categories HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42590 - "GET /assets/TrustPage-Dbv29NDz.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42576 - "GET /api/trust/metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42590 - "GET /api/trust/self-check HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49274 - "GET /api/version HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49276 - "GET /api/diagnose HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49320 - "GET /api/athlete HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49312 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49320 - "GET /api/diagnose HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49298 - "GET /api/insights/today HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49274 - "GET /api/pmc?days=90 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49276 - "GET /api/pmc/today HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49282 - "GET /api/kb/categories HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49282 - "GET /assets/PhasesPage-CJHZvmZ6.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49298 - "GET /api/phases/meta HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49312 - "GET /api/phases/next-race HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49320 - "GET /api/phases/current HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49274 - "GET /api/phases HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49276 - "GET /api/race-prep/training-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49312 - "GET /api/phases/polarized?days=30 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49282 - "GET /api/phases/signals HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49298 - "GET /api/phases/suggest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49720 - "GET /training HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49720 - "GET /api/version HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49728 - "GET /api/diagnose HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49720 - "GET /api/diagnose HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49720 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49742 - "GET /api/pmc/today HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49728 - "GET /api/athlete HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49734 - "GET /api/insights/today HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49738 - "GET /api/pmc?days=90 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49730 - "GET /api/kb/categories HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49730 - "GET /assets/ActivityList-NHOzR2lO.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49738 - "GET /assets/RPEEditor-DJ9LJmGi.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49730 - "GET /api/activities?sort=start_time&order=desc&limit=20&offset=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49476 - "GET /assets/vendor-react-tM6dMMKq.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49472 - "GET /assets/index-DQrxPDsz.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49498 - "GET /assets/vendor-charts-W0StyatN.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49488 - "GET /assets/vendor-markdown-CuYlodXF.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49500 - "GET /assets/vendor-icons-BH4DHy5m.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49510 - "GET /assets/index-pwQvhw1w.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49510 - "GET /assets/Dashboard-DnKHjor7.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49498 - "GET /assets/middleware-BqWLjkaz.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49488 - "GET /assets/vendor-state-D8bIa1U1.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49500 - "GET /assets/MetricCard-C4EX5onR.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49500 - "GET /api/version HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49488 - "GET /api/diagnose HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49476 - "GET /api/athlete HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49476 - "GET /api/diagnose HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49500 - "GET /api/pmc?days=90 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49472 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49510 - "GET /api/insights/today HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49488 - "GET /api/pmc/today HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49498 - "GET /api/kb/categories HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49498 - "GET /assets/TrendsPage-Dz0jwY94.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49510 - "GET /api/trends/rpe-trend?days=90 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49488 - "GET /api/trends/acwr?days=90 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49498 - "GET /api/trends/overview?days=90 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34416 - "GET /training HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34416 - "GET /assets/index-DQrxPDsz.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34418 - "GET /assets/index-pwQvhw1w.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34432 - "GET /assets/vendor-markdown-CuYlodXF.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34422 - "GET /assets/vendor-react-tM6dMMKq.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34446 - "GET /assets/vendor-icons-BH4DHy5m.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34440 - "GET /assets/vendor-charts-W0StyatN.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34440 - "GET /assets/Dashboard-DnKHjor7.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34446 - "GET /assets/middleware-BqWLjkaz.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34422 - "GET /assets/MetricCard-C4EX5onR.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34432 - "GET /assets/vendor-state-D8bIa1U1.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34422 - "GET /api/diagnose HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34432 - "GET /api/version HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34422 - "GET /api/pmc?days=90 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34418 - "GET /api/athlete HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34422 - "GET /api/diagnose HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34416 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34440 - "GET /api/insights/today HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34446 - "GET /api/kb/categories HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34432 - "GET /api/pmc/today HTTP/1.1" 200 OK
+2026-10-07 17:12:15,567 | INFO    | cycling_coach.data.sqlite.database | 数据库初始化完成
+2026-10-07 17:12:16,643 | ERROR   | cycling_coach.api.routers.demo_data | 载入示例数据失败
+Traceback (most recent call last):
+  File "/run/csi/mount-root/nas/eab0d61a99b6696edb3d2aff87b585e8/cycling-coach/cycling_coach/api/routers/demo_data.py", line 84, in load_demo
+    stats = load_demo_data(weeks=weeks, force=payload.force)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/run/csi/mount-root/nas/eab0d61a99b6696edb3d2aff87b585e8/cycling-coach/tools/load_demo_data.py", line 333, in load_demo_data
+    print(f"  已清除空车手 id={placeholder.id} 名字={placeholder.name!r} "
+                         ^^^^^^^^^^^^^^
+  File "/run/csi/mount-root/nas/eab0d61a99b6696edb3d2aff87b585e8/cycling-coach/.venv/lib/python3.11/site-packages/sqlalchemy/orm/attributes.py", line 575, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/run/csi/mount-root/nas/eab0d61a99b6696edb3d2aff87b585e8/cycling-coach/.venv/lib/python3.11/site-packages/sqlalchemy/orm/attributes.py", line 1091, in get
+    value = self._fire_loader_callables(state, key, passive)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/run/csi/mount-root/nas/eab0d61a99b6696edb3d2aff87b585e8/cycling-coach/.venv/lib/python3.11/site-packages/sqlalchemy/orm/attributes.py", line 1121, in _fire_loader_callables
+    return state._load_expired(state, passive)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/run/csi/mount-root/nas/eab0d61a99b6696edb3d2aff87b585e8/cycling-coach/.venv/lib/python3.11/site-packages/sqlalchemy/orm/state.py", line 833, in _load_expired
+    self.manager.expired_attribute_loader(self, toload, passive)
+  File "/run/csi/mount-root/nas/eab0d61a99b6696edb3d2aff87b585e8/cycling-coach/.venv/lib/python3.11/site-packages/sqlalchemy/orm/loading.py", line 1633, in _load_scalar_attributes
+    raise orm_exc.DetachedInstanceError(
+sqlalchemy.orm.exc.DetachedInstanceError: Instance <Athlete at 0x7f67c05c19d0> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/21/bhk3)
+INFO:     127.0.0.1:34432 - "POST /api/demo/load HTTP/1.1" 500 Internal Server Error
+2026-10-07 17:14:18,879 | INFO    | cycling_coach.core.profile.store | 创建默认 athlete: id=1 (FTP/最大心率待用户设置或估算)
+INFO:     127.0.0.1:36938 - "GET /api/athlete HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-10-07 17:14:36,100 | INFO    | cycling_coach.api.main         | Sidecar 关闭
+INFO:     Application shutdown complete.
+INFO:     Finished server process [3267]

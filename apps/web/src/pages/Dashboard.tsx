@@ -18,6 +18,7 @@ import { FTPRetestBanner } from "../components/FTPRetestBanner";
 import { FTPPredictionCard } from "../components/FTPPredictionCard";
 import { EmptyState } from "../components/common";
 import { useAthleteStore } from "../store/athlete";
+import { useDemoData } from "../hooks/useDemoData";
 
 const RANGE_OPTIONS = [
   { value: 30, label: "30 天" },
@@ -30,6 +31,7 @@ export function Dashboard() {
   const navigate = useNavigate();
   const setAthleteProfile = useAthleteStore((s) => s.setAthlete);
   const [overview, setOverview] = useState<DashboardOverview | null>(null);
+  const { loadDemo, loadingDemo, demoMsg } = useDemoData();
   const [athlete, setAthlete] = useState<Athlete | null>(null);
   const [pmc, setPMC] = useState<PMCSeries | null>(null);
   const [pmcToday, setPMCToday] = useState<PMCToday | null>(null);
@@ -66,21 +68,53 @@ export function Dashboard() {
     return <div className="p-6 text-text-muted">加载中…</div>;
   }
 
+  // V0.9.0-07: 这是**新用户的第一屏**, 原来只有一个"开始训练"按钮,
+  // 而文案说"或者先生成一些示例训练" —— 说了两条路, 只给了一条。
+  //
+  // "先看示例"我之前做在 DailyRecommendationCard 里, 但零数据时这张卡
+  // 压根不渲染(Dashboard 先 early return 了), **等于没做**。
   if (!overview || overview.total_activities === 0) {
     return (
-      <EmptyState
-        icon={<Activity size={28} />}
-        title="还没有训练数据"
-        description="上传一个 FIT 文件,或者先生成一些示例训练看看效果。"
-        cta={
-          <button onClick={() => navigate("/data/import")} className="btn-primary">
-            开始训练 →
-          </button>
-        }
-      />
+      <div className="max-w-lg mx-auto mt-16">
+        <div className="panel p-8 text-center">
+          <Activity size={32} className="mx-auto mb-3 text-text-muted opacity-40" />
+          <h1 className="text-lg font-semibold text-text-primary">
+            还没有训练数据
+          </h1>
+          <p className="text-sm text-text-secondary mt-2 leading-relaxed">
+            导入一次骑行, 这里就能算出你的训练区间、体能曲线和每周建议
+          </p>
+          <div className="mt-5 flex gap-2 justify-center">
+            <button
+              onClick={() => navigate("/data/import")}
+              className="btn-primary"
+            >
+              导入 FIT
+            </button>
+            <button
+              onClick={loadDemo}
+              disabled={loadingDemo}
+              className="px-3 py-2 rounded text-sm border border-border
+                         text-text-secondary hover:bg-bg-subtle
+                         transition-colors disabled:opacity-50"
+              title="载入一组示例数据先看看效果 —— 标注为「演示车手」, 不会混进你自己的记录"
+            >
+              {loadingDemo ? "载入中…" : "先看示例"}
+            </button>
+          </div>
+          {demoMsg && (
+            <div className="mt-4 pt-4 border-t border-border text-xs text-text-secondary">
+              {demoMsg}
+            </div>
+          )}
+          <p className="mt-5 pt-4 border-t border-border text-[11px] text-text-muted leading-relaxed">
+            导入之后建议先填一个 FTP —— 它是所有训练区间的基准,
+            没有它就算不出你骑在哪个区
+          </p>
+        </div>
+      </div>
     );
   }
-
   const handleRebuild = async () => {
     setRebuilding(true);
     try {
