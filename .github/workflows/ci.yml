@@ -1,0 +1,101 @@
+# 为什么今天才加 CI
+#
+# 2026-10-06, V0.9.0 的三个 P0 全部是"测试全绿但用户会崩":
+#   - 零数据打开「周期化」页 → TypeError → 整页白屏
+#   - /api/recommendations/today → 500
+#   - ACWR 从来没进过 AI prompt (对所有人静默失效)
+#
+# 更根本的问题是: 契约变更跨了后端/前端/类型三层, 没有任何机制在合入前
+# 发现"后端返回 null, 前端还在当对象用"。
+#
+# 所以 CI 的第一职责不是"跑测试", 是**卡住契约不一致**。
+#
+# ⚠️ Verifier 复审抓到: 我第一版写的是 `pytest tests/ -q --timeout=300`,
+#    但 pytest-timeout 不在 dev 依赖里 → **exit 4, CI 根本跑不起来**。
+#    我本地验的是另一条命令(不带 --timeout), 所以没发现。
+#    教训: **CI 文件必须用 CI 里那条命令原样验一次。**
+name: CI
+
+on:
+  push:
+    branches: [main, master, "v*"]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: 后端 (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      # 不加 --timeout: pytest-timeout 不在 dev 依赖里, 加了会 exit 4。
+      # 不加 -x: 让它跑完, 一次看到全部失败而不是逐个试错。
+      - name: 全量测试
+        run: pytest tests/ -q
+
+  # 契约一致性: 零数据时后端不该返回"看起来合法"的默认值
+  #
+  # 今天三个 P0 里有三个是"后端改了契约而前端/消费者没跟上"或
+  # "零数据返回编造的数字"。tsc 只看 TypeScript 内部自洽, 抓不到跨语言。
+  contract:
+    name: 契约形状 + 诚实性扫描
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      # 这两个脚本今天真的抓到过 bug(周期化信号 0.00 → 凭空训练处方)
+      - name: 契约形状检查
+        run: python tools/check_contract_shapes.py
+      - name: 零数据 / 真实数据 差分扫描
+        run: python tools/scan_data_honesty.py
+
+  frontend:
+    name: 前端 (tsc + vitest + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+
+      # 🔴 这一步是今天三个 P0 的直接防线:
+      # 零数据时后端返回 dimensions: null, 而前端类型写的是必填非空 ——
+      # 于是 tsc 从不提醒。类型一改成 | null, 立刻冒出 4 个错误,
+      # 精确指向漏掉的每一处。
+      #
+      # **类型不是注释, 是编译器契约。** 所以 typecheck 是独立门禁,
+      # 不能被 build 顺带跑。
+      - name: 类型检查
+        run: pnpm exec tsc --noEmit
+      - name: 类型检查 (测试代码)
+        run: pnpm run typecheck:test
+      - name: 单元测试
+        run: pnpm exec vitest run
+      - name: 生产构建
+        run: pnpm run build
