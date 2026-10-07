@@ -114,3 +114,4 @@ apps/web/vite.config.d.ts
 WINDOWS_VERIFY_HANDOFF.md
 _review/WINDOWS_VERIFY_HANDOFF.md
 \*.log
+.devtools/
