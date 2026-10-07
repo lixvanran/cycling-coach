@@ -94,7 +94,12 @@ export function TrainingRadarChart() {
   //
   // 教训: 改后端契约 = 后端调用方 + 前端消费者 + 类型, 三层一起改。
   // 光改一层就会把 bug 推到下一层, 而且藏得比原来更深。
-  if (!data.data_sufficient || !data.dimensions) {
+  if (
+    !data.data_sufficient ||
+    !data.dimensions ||
+    !data.interpretation ||
+    data.overall === null
+  ) {
     return (
       <div className="rounded border border-border bg-white p-6">
         <h3 className="text-base font-semibold text-text-primary">5 维训练状态</h3>
@@ -116,9 +121,15 @@ export function TrainingRadarChart() {
     );
   }
 
-  // 上面的空态已经把 null 挡掉了, 这里 dims 必然是对象 ——
-  // 显式收窄一次, 不靠 tsc 猜。
-  const dims = data.dimensions as NonNullable<TrainingState["dimensions"]>;
+  // 上面那一个 if 已经把所有 null 字段一次挡掉了, 所以到这里
+  // TypeScript 能自己推导出 dims / overall / interpretation 都是非空。
+  //
+  // ⚠️ 这里**故意不写 `as`**。`as` 是把"诚实的类型"重新按回"我猜它非空" ——
+  // CLAUDE.md 铁律三写着"类型不是注释, 是编译器契约", 而 `as` 恰恰在推翻它。
+  // Verifier 复审时把两处 `as number` 挑出来了: 自己写的规矩自己没守。
+  //
+  // 让 tsc 自己证明, 比我断言它非空可靠。
+  const { dimensions: dims, overall, interpretation } = data;
   const chartData = (Object.keys(DIM_LABELS) as (keyof typeof DIM_LABELS)[]).map((k) => ({
     dim: DIM_LABELS[k],
     value: dims[k],
@@ -134,7 +145,7 @@ export function TrainingRadarChart() {
         <div className="text-right">
           <div
             className="text-2xl font-bold tabular-nums"
-            style={{ color: colorByScore(data.overall as number) }}
+            style={{ color: colorByScore(overall) }}
           >
             {data.overall}
           </div>
@@ -189,7 +200,7 @@ export function TrainingRadarChart() {
                 {score}
               </div>
               <div className="text-text-secondary mt-0.5 leading-tight">
-                {(data.interpretation as Record<string, string>)[k] || ""}
+                {interpretation[k] || ""}
               </div>
             </div>
           );
