@@ -113,3 +113,4 @@ apps/web/vite.config.d.ts
 # 对仓库的其他协作者没有意义, 留在历史里只会误导人。
 WINDOWS_VERIFY_HANDOFF.md
 _review/WINDOWS_VERIFY_HANDOFF.md
+\*.log
