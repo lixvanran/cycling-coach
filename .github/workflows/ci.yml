@@ -44,6 +44,15 @@ jobs:
       - name: 全量测试
         run: pytest tests/ -q
 
+      # 🔴 必须在非 UTC 时区下再跑一遍。
+      # 凌晨归档那个 bug(上海 01:00 骑的车记到前一天)在 UTC 上**完全不可观测** ——
+      # 本地日 == UTC 日, 旧实现和新实现结果一模一样, 测试会假绿。
+      # CI runner 是 UTC, 所以不显式指定 TZ 就等于没测这条。
+      - name: 全量测试 (Asia/Shanghai, 暴露时区相关 bug)
+        env:
+          TZ: Asia/Shanghai
+        run: pytest tests/ -q
+
   # 契约一致性: 零数据时后端不该返回"看起来合法"的默认值
   #
   # 今天三个 P0 里有三个是"后端改了契约而前端/消费者没跟上"或

@@ -400,7 +400,14 @@ def compute_readiness(
         breakdown["phase"] = phase_score
 
     # 5. RPE 7d (10 分) — 主观疲劳。没有记录就是没有, 不给中性分
-    today_d = datetime.utcnow().date()
+# 🔴 V0.9.0-07: 这里原来用 `datetime.utcnow().date()` (UTC) 算"今天",
+# 而 pmc 的读取侧和这个模块的其他部分用本地日期 —— 同一个产品里两个"今天"。
+# 中国骑行者 (UTC+8) 每天 00:00-07:59 有 8 小时落在这个缝里:
+# 数据归属错一天, 周报/周期化/HRV 窗口全部对不上。
+#
+# 真时间戳 (completed_at / updated_at) 走 `utcnow_naive()`, 那个是对的,
+# 不要一起改 —— 改的是**日历日**语义, 不是时间戳语义。
+    today_d = _date.today()
     rpe_7d = (
         db.query(DailyMetric)
         .filter(DailyMetric.athlete_id == athlete_id)
@@ -820,7 +827,7 @@ def generate_recommendations(
     recs.sort(key=lambda r: -r.priority)
     
     return DailyRecommendation(
-        date=datetime.utcnow().date().isoformat(),
+        date=_date.today().isoformat(),
         readiness_score=readiness,
         readiness_label=readiness_label,
         recommended_workout_type=rec_type,

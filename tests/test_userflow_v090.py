@@ -169,7 +169,15 @@ class TestInsufficientDataNoFakeScore:
         )
         assert rec.readiness_label == "数据不足"
         assert rec.recommended_workout_type == "none"
-        assert rec.target_tss == 0, "数据不足时不该给 TSS 目标"
+        # V0.9.0-07: 原来是 == 0。改 target_tss 契约时漏了这条老测试,
+        # 于是测试套件在 HEAD 上一直是红的。
+        #
+        # Verifier 抓到的: 0 在训练语境里不是"没目标", 是"今天免练"。
+        # 诚实值是 None —— 和同一个对象里的 readiness_score 一致。
+        assert rec.target_tss is None, (
+            f"数据不足时 target_tss={rec.target_tss!r} —— "
+            "界面上会显示'目标 TSS ~0', 用户会以为今天不用练"
+        )
 
     def test_zero_data_no_high_intensity_advice(self, fresh_db):
         """零数据不该推荐高强度训练"""

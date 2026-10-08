@@ -33,12 +33,40 @@ RAMP_WINDOW = 7  # ramp_rate 计算窗口
 
 
 def _day_key(dt: datetime | _date) -> _date:
-    """datetime/date 统一为 date"""
+    """datetime/date 统一为**本地日历日**
+
+    ## 🔴 V0.9.0-07 (Verifier 复审指出, 实测确认)
+
+    原来的写法: 先归一到 UTC, 再取 `.date()` —— 归档用 **UTC 日历日**。
+    而 `get_pmc_today()` / 窗口 / 周报用的都是**本地** "今天"。
+
+    写和读用了两个基准, 实测后果 (上海):
+
+        FIT 存 UTC 10-08 17:00 (= 上海 10-09 01:00 的骑行)
+        -> 入库剥掉 tzinfo, 存成 naive 17:00
+        -> 旧实现归档到 **10-08**
+        -> 而用户看的是 **10-09**, 今天那一行是空的
+
+    UTC+8 每天有 **8 小时** (00:00-07:59) 落在这个缝里。
+    骑行发生在当地, 用户认知也是当地, 所以归档要按**本地日历日**。
+
+    ## 两个关键取舍
+
+    **1. 为什么在这里转, 而不是把 UTC 转成本地再存**
+    `start_time` 是**绝对时间戳**, 存 UTC 是对的 —— 出了差换了时区,
+    它不该变。要变的只是"用哪个日历日归档"这一层, 所以只在归档时转换。
+    改存储会让换时区的用户历史数据集体错位。
+
+    **2. 为什么 naive 输入要补回 UTC**
+    入库时 tzinfo 被剥掉了(`activity.py` 里 `replace(tzinfo=None)`),
+    那个 naive 值承载的仍是 **UTC 墙钟**。补回 UTC 再转本地才不失真。
+    直接 `.date()` 等于把 UTC 墙钟当本地墙钟, 正是原来那个错。
+    """
     if isinstance(dt, datetime):
-        # 用 UTC 日期(避免时区漂移)
-        if dt.tzinfo is not None:
-            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-        return dt.date()
+        if dt.tzinfo is None:
+            # naive = 被剥掉时区的 UTC 墙钟 (见上文第 2 点)
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone().date()      # 本机时区的日历日
     return dt
 
 

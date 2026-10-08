@@ -143,7 +143,14 @@ def derive_phase(db: Session, athlete_id: int) -> PhaseDerivation:
 
     weeks_to_race = None
     if next_race:
-        days_to = (next_race.start_date.date() - datetime.utcnow().date()).days
+# 🔴 V0.9.0-07: 这里原来用 `datetime.utcnow().date()` (UTC) 算"今天",
+# 而 pmc 的读取侧和这个模块的其他部分用本地日期 —— 同一个产品里两个"今天"。
+# 中国骑行者 (UTC+8) 每天 00:00-07:59 有 8 小时落在这个缝里:
+# 数据归属错一天, 周报/周期化/HRV 窗口全部对不上。
+#
+# 真时间戳 (completed_at / updated_at) 走 `utcnow_naive()`, 那个是对的,
+# 不要一起改 —— 改的是**日历日**语义, 不是时间戳语义。
+        days_to = (next_race.start_date.date() - _date.today()).days
         weeks_to_race = max(0, days_to // 7)
 
     # 找当前是否在 phase 内
@@ -342,7 +349,7 @@ def generate_race_plan(
     - Race: 1 天
     - Recovery: 1-2 周 (主动恢复)
     """
-    today = datetime.utcnow().date()
+    today = _date.today()
     days_to_race = (race_date - today).days
     weeks_total = max(1, days_to_race // 7)
 
@@ -679,7 +686,7 @@ def detect_phase_signals(
     """
     from datetime import date as _date
     
-    today = datetime.utcnow().date()
+    today = _date.today()
     start = today - timedelta(days=days)
     
     signals = PhaseSignals()
