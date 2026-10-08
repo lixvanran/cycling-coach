@@ -56,7 +56,7 @@ class DailyRecommendation:
     readiness_label: str  # "极佳" / "良好" / "中等" / "低迷" / "危险" / "数据不足"
     recommended_workout_type: str  # "rest" | "recovery" | "endurance" | "tempo" | "threshold" | "vo2" | "none"
     recommended_intensity: str  # 描述: "轻松骑 60-90min Z1-Z2" 等
-    target_tss: int  # 今日目标 TSS
+    target_tss: int | None  # 今日目标 TSS; **算不出时是 None, 不是 0**
     recommendations: list[Recommendation] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     signals_summary: dict = field(default_factory=dict)
@@ -502,7 +502,10 @@ def _insufficient_data_recommendation(suff: dict) -> DailyRecommendation:
         readiness_label="数据不足",
         recommended_workout_type="none",
         recommended_intensity="数据不足，暂不给出训练强度建议",
-        target_tss=0,
+        # 0 不是"今天不用练" —— 是"算不出该练多少"。
+        # 同一个对象里 readiness_score 已经用 None 表达"算不出",
+        # 这里却用 0, 于是周报会打印"目标 TSS: 0"。
+        target_tss=None,
         recommendations=recs,
         warnings=[],
         signals_summary={

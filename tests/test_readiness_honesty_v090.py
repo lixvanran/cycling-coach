@@ -751,3 +751,37 @@ def test_phase_not_counted_without_load_or_race(empty_db):
         "零数据零赛程却把 '基础期(低 CTL)' 当成真实阶段计入了 —— "
         "低 CTL 的原因是没数据, 不是真的低"
     )
+
+
+# ================================================================
+# 9. 目标 TSS 算不出时是 None, 不是 0
+# ================================================================
+def test_target_tss_is_none_when_insufficient_not_zero():
+    """🔴 诚实: 数据不足时 target_tss=None
+
+    同一个对象里 readiness_score 已经用 None 表达"算不出",
+    target_tss 却硬编码 0 —— 于是周报 PDF 会打印"目标 TSS: 0"。
+
+    0 不是"今天不用练", 是"算不出该练多少"。**用户会照着它骑车。**
+    """
+    from datetime import date as _date
+    from cycling_coach.core.coaching.recommendations import generate_recommendations
+    from tests.conftest import use_temp_db
+    use_temp_db("v090_target_tss_none")
+    from cycling_coach.data.sqlite.database import SessionLocal
+    db = SessionLocal()
+    rec = generate_recommendations(db, 1)
+    assert rec.readiness_score is None
+    assert rec.target_tss is None, (
+        f"数据不足时 target_tss={rec.target_tss} —— 界面上会显示'目标 TSS ~0'"
+    )
+
+
+def test_weekly_report_does_not_print_zero_target():
+    """反向: 周报 PDF 不能把 None 打成 0"""
+    import inspect
+    from cycling_coach.core.reports import weekly
+    src = inspect.getsource(weekly)
+    assert "目标 TSS:</b> {rec.target_tss}" not in src, (
+        "周报直接插值 target_tss, None 会被渲染成 'None' 或 '0'"
+    )

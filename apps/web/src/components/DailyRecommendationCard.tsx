@@ -41,7 +41,7 @@ interface DailyRecommendation {
   readiness_label: string;
   recommended_workout_type: string;
   recommended_intensity: string;
-  target_tss: number;
+  target_tss: number | null;  // 算不出时是 null, 不是 0
   recommendations: Recommendation[];
   warnings: string[];
   signals_summary: {
@@ -306,7 +306,8 @@ export function DailyRecommendationCard() {
               <span className="text-sm font-semibold">{wMeta.label}</span>
               <span className="text-[10px] text-text-secondary">· {wMeta.tssHint}</span>
               <span className="ml-auto text-[11px] font-mono text-text-secondary">
-                目标 TSS ~{data.target_tss}
+                {/* null = 算不出。渲染成 0 会让用户以为"今天免练" */}
+                {data.target_tss != null ? `目标 TSS ~${data.target_tss}` : '目标待定'}
               </span>
             </div>
             <div className="text-xs text-text-secondary leading-relaxed">

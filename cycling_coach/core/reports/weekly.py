@@ -132,7 +132,9 @@ def generate_weekly_report(
     story.append(Spacer(1, 2*mm))
     story.append(Paragraph(f'<b>推荐今日训练:</b> {rec.recommended_intensity}', body))
     story.append(Spacer(1, 2*mm))
-    story.append(Paragraph(f'<b>目标 TSS:</b> {rec.target_tss}', body))
+    # 目标 TSS 为 None = 算不出, 不能打成 0 (0 看起来像"今天免练")
+    _tts = "数据不足，暂不设定" if rec.target_tss is None else rec.target_tss
+    story.append(Paragraph(f'<b>目标 TSS:</b> {_tts}', body))
     story.append(Spacer(1, 6*mm))
     
     # === 3. 5 维 Breakdown ===

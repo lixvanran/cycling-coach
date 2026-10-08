@@ -106,7 +106,12 @@ def _diff(zero, real, path="") -> dict:
     else:
         if zero == real:
             return out
-        if _is_fake_zero(path, zero):
+        # 布尔值不是"假的 0": False 就是一个诚实的"没有负荷数据"。
+        # 以前这条扫描把 has_load_data 报成 FAKE_ZERO, 于是真问题(target_tss=0)
+        # 被淹没在噪声里 —— **扫描器报假警, 就是在削弱它的可信度**。
+        if isinstance(zero, bool) or isinstance(real, bool):
+            out["DIFFERS"].append(f"{path}: {zero} vs {real}")
+        elif _is_fake_zero(path, zero):
             out["FAKE_ZERO"].append(f"{path} = 0 (真实数据: {real})")
         else:
             out["DIFFERS"].append(f"{path}: {zero} vs {real}")
