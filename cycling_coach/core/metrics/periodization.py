@@ -108,6 +108,14 @@ COGGAN_ZONES = [
 
 # ---------- 阶段自动推导 ----------
 
+    # 🔴 V0.9.0-07: 这里原来用 `datetime.utcnow().date()` (UTC) 算"今天",
+    # 而 pmc 的读取侧和这个模块的其他部分用本地日期 —— 同一个产品里两个"今天"。
+    # 中国骑行者 (UTC+8) 每天 00:00-07:59 有 8 小时落在这个缝里:
+    # 数据归属错一天, 周报/周期化/HRV 窗口全部对不上。
+    #
+    # 真时间戳 (completed_at / updated_at) 走 `utcnow_naive()`, 那个是对的,
+    # 不要一起改 —— 改的是**日历日**语义, 不是时间戳语义。
+
 def derive_phase(db: Session, athlete_id: int) -> PhaseDerivation:
     """基于 PMC + 比赛日 + 历史, 自动推导当前应处阶段
 
@@ -143,13 +151,6 @@ def derive_phase(db: Session, athlete_id: int) -> PhaseDerivation:
 
     weeks_to_race = None
     if next_race:
-# 🔴 V0.9.0-07: 这里原来用 `datetime.utcnow().date()` (UTC) 算"今天",
-# 而 pmc 的读取侧和这个模块的其他部分用本地日期 —— 同一个产品里两个"今天"。
-# 中国骑行者 (UTC+8) 每天 00:00-07:59 有 8 小时落在这个缝里:
-# 数据归属错一天, 周报/周期化/HRV 窗口全部对不上。
-#
-# 真时间戳 (completed_at / updated_at) 走 `utcnow_naive()`, 那个是对的,
-# 不要一起改 —— 改的是**日历日**语义, 不是时间戳语义。
         days_to = (next_race.start_date.date() - _date.today()).days
         weeks_to_race = max(0, days_to // 7)
 

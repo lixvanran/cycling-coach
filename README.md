@@ -29,9 +29,22 @@
 | 没有 FTP | 沿用默认 250W | 用**估算值**算并标记 `用估算=True`，或明确说算不出 |
 | 0 训练时打印"今日计划" | 打印空计划 | 打印"无计划"并链接 FTP 输入指引 |
 
-这些不是设计文档里的口号，是 `tools/scan_data_honesty.py` 每次全量扫描 107 个端点时机器校验的。
+这些不是设计文档里的口号，是 `tools/scan_data_honesty.py` 每次运行机器校验的。
 
-**新增一个假的 0 或默认值，扫描器就会红。**
+**但要说清楚它覆盖到什么程度** —— 产品有 127 个接口操作（107 条路径），
+扫描器实际覆盖 **58 个，约 46%**：
+
+- ✅ 覆盖：无路径参数的 GET（75 个 GET 里的 58 个）
+- ❌ **不覆盖：所有 POST / PUT / DELETE** —— 上传、写计划、导入等写操作一律不扫
+- ❌ 不覆盖：带路径参数的 GET（17 个，如 `/api/activities/{id}`）
+- ❌ 不覆盖：strava / static 等被排除的路径
+
+所以它是**防回归的护栏**，不是全面保证。写操作的诚实性目前靠
+逐个 review 和专门的测试保证。
+
+> 这段说明本身是 Verifier 复审逼出来的 —— 我原来写的是"扫 107 个端点"，
+> 既和同一份文档里另一处的"58"自相矛盾，也是一个**虚假覆盖率声明**。
+> 在一个卖点是"不编造"的项目里，夸自己的检查力度比不检查更糟。
 
 ---
 
@@ -114,12 +127,12 @@ cycling_coach/
 │   ├── coaching/        # readiness / 建议生成
 │   ├── services/        # 领域服务
 │   └── reports/         # 周报 PDF
-├── api/routers/         # 28 个路由模块, 107 端点
+├── api/routers/         # 26 个路由模块, 127 个接口操作 (107 条路径)
 ├── data/sqlite/         # 存储层
 └── static/              # 前端构建产物 (随包提供, 不需要 Node.js)
 
 apps/web/                # 前端源码 (React + TypeScript + Vite)
-kb_source/markdown/      # 知识库原文 (359 篇)
+kb_source/markdown/      # 知识库原文 (359 篇 .md + LICENSE/NOTICE = 361 个文件)
 tools/                   # 启动/打包/校验脚本
 tests/                   # 30 个测试文件
 ```
@@ -137,7 +150,7 @@ cd apps/web && npm run dev      # 开发模式
 cd apps/web && npm run build    # 构建到 cycling_coach/static/
 
 # 数据诚实性校验（每次改动后都该跑）
-.venv/bin/python tools/scan_data_honesty.py    # 扫 107 个端点的零数据行为
+.venv/bin/python tools/scan_data_honesty.py    # 扫 58 个端点的零数据行为 (约占 46%)
 .venv/bin/python tools/check_contract_shapes.py # 契约形状
 
 # 打包 Windows 源码包

@@ -262,6 +262,14 @@ def _data_sufficiency(db: Session, athlete_id: int) -> dict:
     }
 
 
+    # 🔴 V0.9.0-07: 这里原来用 `datetime.utcnow().date()` (UTC) 算"今天",
+    # 而 pmc 的读取侧和这个模块的其他部分用本地日期 —— 同一个产品里两个"今天"。
+    # 中国骑行者 (UTC+8) 每天 00:00-07:59 有 8 小时落在这个缝里:
+    # 数据归属错一天, 周报/周期化/HRV 窗口全部对不上。
+    #
+    # 真时间戳 (completed_at / updated_at) 走 `utcnow_naive()`, 那个是对的,
+    # 不要一起改 —— 改的是**日历日**语义, 不是时间戳语义。
+
 def compute_readiness(
     db: Session, athlete_id: int
 ) -> tuple[int, dict]:
@@ -400,13 +408,6 @@ def compute_readiness(
         breakdown["phase"] = phase_score
 
     # 5. RPE 7d (10 分) — 主观疲劳。没有记录就是没有, 不给中性分
-# 🔴 V0.9.0-07: 这里原来用 `datetime.utcnow().date()` (UTC) 算"今天",
-# 而 pmc 的读取侧和这个模块的其他部分用本地日期 —— 同一个产品里两个"今天"。
-# 中国骑行者 (UTC+8) 每天 00:00-07:59 有 8 小时落在这个缝里:
-# 数据归属错一天, 周报/周期化/HRV 窗口全部对不上。
-#
-# 真时间戳 (completed_at / updated_at) 走 `utcnow_naive()`, 那个是对的,
-# 不要一起改 —— 改的是**日历日**语义, 不是时间戳语义。
     today_d = _date.today()
     rpe_7d = (
         db.query(DailyMetric)
@@ -463,14 +464,28 @@ def compute_readiness(
     #
     # 封顶规则: 缺一半维度 → 最高 70 分; 缺四分之一 → 最高 80。
     # **五维齐全时 cap = 100, 老用户的分数一个字节都不变。**
+    return _apply_dimension_cap(score, breakdown), breakdown
+
+
+def _apply_dimension_cap(score: int, breakdown: dict) -> int:
+    """按**可用维度数**给分数封顶
+
+    抽成独立函数不是为了好看 —— 是因为它原先埋在 compute_readiness 深处,
+    想测它就必须造出 40 天训练 + HRV 序列 + 28 天 ACWR 史才能走到那一行,
+    于是"造不出数据"和"封顶坏了"分不清, 测试最后退化成断言 fixture。
+
+    (第一次就这么翻车了: 造了 10 天拿不到五维, 造 40 天还差 acwr。)
+
+    规则: 缺一半维度 -> 最高 70; 缺四分之一 -> 最高 80;
+    **五维齐全时 cap = 100, 老用户的分数一个字节都不变。**
+    """
     n_total = len(READINESS_WEIGHTS)
     n_avail = len(breakdown)
-    if n_avail < n_total:
-        missing_ratio = (n_total - n_avail) / n_total
-        cap = round(100 - missing_ratio * 100 * 0.5)
-        score = min(score, cap)
-
-    return score, breakdown
+    if n_avail >= n_total:
+        return score
+    missing_ratio = (n_total - n_avail) / n_total
+    cap = round(100 - missing_ratio * 100 * 0.5)
+    return min(score, cap)
 
 
 def _insufficient_data_recommendation(suff: dict) -> DailyRecommendation:

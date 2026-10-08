@@ -154,6 +154,14 @@ def compute_hrv_state(
     }
 
 
+    # 🔴 V0.9.0-07: 这里原来用 `datetime.utcnow().date()` (UTC) 算"今天",
+    # 而 pmc 的读取侧和这个模块的其他部分用本地日期 —— 同一个产品里两个"今天"。
+    # 中国骑行者 (UTC+8) 每天 00:00-07:59 有 8 小时落在这个缝里:
+    # 数据归属错一天, 周报/周期化/HRV 窗口全部对不上。
+    #
+    # 真时间戳 (completed_at / updated_at) 走 `utcnow_naive()`, 那个是对的,
+    # 不要一起改 —— 改的是**日历日**语义, 不是时间戳语义。
+
 def record_hrv_today(
     db: Session, athlete_id: int, hrv_ms: float, sleep_h: float | None = None
 ) -> dict:
@@ -161,13 +169,6 @@ def record_hrv_today(
 
     更新今日 DailyMetric 的 hrv_ms / sleep_h 字段
     """
-# 🔴 V0.9.0-07: 这里原来用 `datetime.utcnow().date()` (UTC) 算"今天",
-# 而 pmc 的读取侧和这个模块的其他部分用本地日期 —— 同一个产品里两个"今天"。
-# 中国骑行者 (UTC+8) 每天 00:00-07:59 有 8 小时落在这个缝里:
-# 数据归属错一天, 周报/周期化/HRV 窗口全部对不上。
-#
-# 真时间戳 (completed_at / updated_at) 走 `utcnow_naive()`, 那个是对的,
-# 不要一起改 —— 改的是**日历日**语义, 不是时间戳语义。
     today = date.today()
     row = (
         db.query(DailyMetric)

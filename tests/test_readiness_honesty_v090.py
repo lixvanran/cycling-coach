@@ -777,11 +777,58 @@ def test_target_tss_is_none_when_insufficient_not_zero():
     )
 
 
-def test_weekly_report_does_not_print_zero_target():
-    """反向: 周报 PDF 不能把 None 打成 0"""
-    import inspect
-    from cycling_coach.core.reports import weekly
-    src = inspect.getsource(weekly)
-    assert "目标 TSS:</b> {rec.target_tss}" not in src, (
-        "周报直接插值 target_tss, None 会被渲染成 'None' 或 '0'"
+def test_weekly_report_renders_no_target_when_insufficient():
+    """🔴 周报在数据不足时不能打印任何 TSS 目标数字
+
+    Verifier 变异 M3: 旧版这测试断言**源码字符串**
+    (`"目标 TSS:</b> {rec.target_tss}" not in source`),
+    于是把代码换成 `rec.target_tss or 0` 就完全绕过 —— 实测:
+        PDF 渲染出 "目标 TSS: 0", 测试 passed。
+    **它测的是修复的拼写, 不在测行为。**
+
+    现在真造一份数据不足的库、真生成报告, 然后检查**真正进入 story 的文本**
+    (不是从 PDF 二进制里猜 —— reportlab 5 用 CID 子集, 中文抽不出来)。
+    """
+    from tests.conftest import use_temp_db
+    use_temp_db("v090_weekly_no_target")
+    from cycling_coach.data.sqlite.database import SessionLocal
+    from cycling_coach.core.profile import store as ps
+    import cycling_coach.core.reports.weekly as weekly_mod
+    generate_weekly_report = weekly_mod.generate_weekly_report
+
+    db = SessionLocal()
+    a = ps.get_or_create_athlete(db)          # 零训练数据
+    assert a.ftp is None
+
+    pdf = generate_weekly_report(db, a.id)
+    assert isinstance(pdf, (bytes, bytearray)) and len(pdf) > 1000
+
+    # 从报告里取回实际渲染的 story。
+    # 直接 spy weekly 模块里 import 进来的那个 SimpleDocTemplate.build ——
+    # 比 patch 源模块可靠(from X import Y 之后, 改 X 的属性仍会影响 Y,
+    # 但直接 patch weekly.SimpleDocTemplate 意图更清楚)。
+    captured: dict = {}
+    real_build = weekly_mod.SimpleDocTemplate.build
+
+    def spy(self, story, *a, **k):
+        captured["story"] = list(story)
+        return real_build(self, story, *a, **k)
+
+    weekly_mod.SimpleDocTemplate.build = spy
+    try:
+        generate_weekly_report(db, a.id)
+    finally:
+        weekly_mod.SimpleDocTemplate.build = real_build
+
+    story = captured.get("story")
+    assert story, "没抓到 story —— 生成路径变了, 需同步这条测试"
+    texts = [getattr(x, "text", "") for x in story if hasattr(x, "text")]
+    line = next((t for t in texts if "目标 TSS" in t), None)
+    assert line is not None, f"报告里没有目标 TSS 那一行; 现有文本: {texts[:6]}"
+    # 数据不足时不该是 0 —— 0 在训练语境里是"今天不用练"
+    assert "暂不设定" in line or "无数据" in line, (
+        f"数据不足时目标 TSS 行不是'暂不设定': {line!r}"
+    )
+    assert ">0<" not in line and ": 0<" not in line.replace(" ", ""), (
+        f"数据不足时周报打印了 TSS 目标 0: {line!r}"
     )
