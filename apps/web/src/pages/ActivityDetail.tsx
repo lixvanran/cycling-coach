@@ -95,8 +95,25 @@ export function ActivityDetail() {
 
   const m = activity.metrics;
   const dt = new Date(activity.start_time);
-  const ftp = athlete?.ftp || m?.ftp_estimated || 250;
-  const lthr = athlete?.lthr || Math.round((athlete?.max_hr || 190) * 0.89);
+  // 🔴 V0.9.0: 这里原来写着 `|| 250` 和 `max_hr || 190`。
+  // 后端和 TrustPage 都清了, **这个文件漏了** ——
+  // 于是"没测 FTP 的用户"在训练详情页会看到"基于 FTP 250W 计算"。
+  // 那个 250 是我之前亲手删掉的占位值, 它从后端绕到了前端。
+  //
+  // 现在: 没有真实 FTP 就没有 FTP; 有估算值必须**标明是估算的**。
+  const realFtp = athlete?.ftp ?? null;
+  const estFtp = m?.ftp_estimated ?? null;
+  const ftp = realFtp ?? estFtp;
+  const ftpIsEstimate = realFtp == null && estFtp != null;
+  const ftpLabel = realFtp != null
+    ? `FTP ${realFtp}W`
+    : ftpIsEstimate
+      ? `估算 FTP ${estFtp}W`
+      : "未设置 FTP";
+
+  // LTHR 同样不猜: 没有就是没有, 不要用 max_hr * 0.89 蒙一个。
+  const lthr = athlete?.lthr ?? null;
+  const lthrLabel = lthr != null ? `LTHR ${lthr}` : "未设置 LTHR";
 
   // V0.8.2 U-4 + U-9: AI 报告生成支持取消 + 友好超时
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -236,15 +253,20 @@ export function ActivityDetail() {
             <MetricCard
               label="IF"
               value={m?.intensity_factor?.toFixed(2)}
-              hint={`FTP ${ftp}W`}
+              hint={ftpLabel}
             />
             <MetricCard
               label="TSS"
               value={m?.tss}
+              // 估算 FTP 算出来的 TSS 看起来和实测一模一样 ——
+              // 必须让它在界面上就说清楚, 否则诚实只存在于数据库里。
+              hint={m?.tss_uses_estimated_ftp ? "基于估算 FTP" : undefined}
               accent={
-                (m?.tss || 0) >= 150
+                m?.tss == null
+                  ? "default"
+                  : m.tss >= 150
                   ? "danger"
-                  : (m?.tss || 0) >= 100
+                  : m.tss >= 100
                   ? "warning"
                   : "default"
               }
@@ -352,6 +374,7 @@ export function ActivityDetail() {
             <div className="panel-header">
               <div className="text-sm font-medium text-text-primary">
                 心率区间{lthr ? " (LTHR 7 区)" : " (max_hr 5 区)"}
+                <span className="ml-1 text-text-muted">{lthrLabel}</span>
               </div>
               <div className="text-xs text-text-muted">
                 HR Drift: {m?.hr_drift ?? "—"} bpm

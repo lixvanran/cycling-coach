@@ -54,6 +54,11 @@ export interface ActivityMetrics {
   hr_drift: number | null;
   cadence_zones: Record<string, number>;
   ftp_estimated: number | null;
+  // 🔴 V0.9.0: 这两个字段是**诚实性标记**, 不是可选装饰。
+  // tss_uses_estimated_ftp=true 意味着这个 TSS 是拿**估算** FTP 算的,
+  // 界面上必须能让用户看见 —— 否则"诚实"只存在于数据库里。
+  tss_uses_estimated_ftp?: boolean;
+  ftp_used_for_tss?: number | null;
 }
 
 export interface ActivityDetail extends ActivitySummary {
