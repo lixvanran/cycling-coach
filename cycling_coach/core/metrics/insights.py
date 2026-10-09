@@ -524,7 +524,17 @@ def compute_weekly_review(db: Session, athlete_id: Optional[int] = None) -> dict
     )
     # (V0.9.0-09) 原来 else 250 —— 同一个"编造 FTP"病。
     # 没有就是没有, 让调用方看到 None 而不是 250。
-    ftp_w = latest_ftp.ftp_w if latest_ftp else getattr(athlete, "ftp", None) or getattr(athlete, "ftp_estimated", None)
+    #
+    # 注意: 这个函数里只有 athlete_id, 没有 athlete 对象 ——
+    # 我第一版写成 `getattr(athlete, ...)` 直接把 /api/insights/weekly
+    # 打成 500 (UnboundLocalError), 是诚实扫描器抓出来的。
+    # 教训: 改完一个函数, 至少要打一次它对外的那个端点。
+    if latest_ftp:
+        ftp_w = latest_ftp.ftp_w
+    else:
+        from cycling_coach.data.sqlite.models import Athlete as _Athlete
+        _a = db.query(_Athlete).filter(_Athlete.id == athlete_id).first()
+        ftp_w = (getattr(_a, "ftp", None) or getattr(_a, "ftp_estimated", None)) if _a else None
 
     zone_seconds = {f"Z{i+1}": 0 for i in range(7)}
     total_s = 0
