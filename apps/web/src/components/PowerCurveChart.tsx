@@ -45,7 +45,7 @@ const WINDOW_PRESETS: Record<string, { label: string; from: number; to: number; 
   ultra: { label: "超长距离", from: 7200, to: 86400, description: "2h+, Gran Fondo 完赛能力" },
 };
 
-export function PowerCurveChart({ data, powerCurve, ftp }: PowerCurveChartProps) {
+export function PowerCurveChart({ data, powerCurve, ftp, ftpIsEstimate = false }: PowerCurveChartProps & { ftpIsEstimate?: boolean }) {
   const [windowKey, setWindowKey] = useState<keyof typeof WINDOW_PRESETS>("all");
 
   // 统一转成 [{seconds, label, watts}]
@@ -79,6 +79,8 @@ export function PowerCurveChart({ data, powerCurve, ftp }: PowerCurveChartProps)
     return points.filter((p) => p.seconds >= win.from && p.seconds <= win.to);
   }, [points, windowKey]);
 
+  // ftp 可能来自 athlete.ftp(实测) 也可能来自 ftp_estimated(估算),
+  // 调用方知道是哪个 —— 传 ftpIsEstimate 明确告知, 组件不猜。
   const ftpLine = ftp ?? inferredFtp;
 
   if (points.length === 0) {
@@ -134,9 +136,20 @@ export function PowerCurveChart({ data, powerCurve, ftp }: PowerCurveChartProps)
           {ftpLine && (
             <ReferenceLine
               y={ftpLine}
-              stroke="#10b981"
+              stroke={ftpIsEstimate ? "#f59e0b" : "#10b981"}
               strokeDasharray="3 3"
-              label={{ value: `FTP ${ftpLine}W`, position: "right", fill: "#10b981", fontSize: 10 }}
+              // 🔴 V0.9.0-08: 原来写死 `FTP ${ftpLine}W`。
+              // 用户没测过 FTP、只有估算值时, 这条线和实测的**长得一模一样** ——
+              // 而下面那句"💡 估算 FTP"只在 `inferredFtp`(从功率曲线推算)时出现,
+              // 档案里填的估算值**不显示任何标记**。
+              //
+              // 于是一个从没测过 FTP 的用户, 在图上看到一条写着 "FTP 280W" 的绿线。
+              label={{
+                value: ftpIsEstimate ? `估算 FTP ${ftpLine}W` : `FTP ${ftpLine}W`,
+                position: "right",
+                fill: ftpIsEstimate ? "#f59e0b" : "#10b981",   // 估算用琥珀色
+                fontSize: 10,
+              }}
             />
           )}
           <Line

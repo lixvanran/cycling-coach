@@ -447,6 +447,7 @@ export function ActivityDetail() {
                 data={powerCurve ?? undefined}
                 powerCurve={m?.power_curve}
                 ftp={ftp}
+                ftpIsEstimate={ftpIsEstimate}
               />
             </div>
           </div>
