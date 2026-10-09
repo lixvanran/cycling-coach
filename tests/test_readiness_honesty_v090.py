@@ -845,3 +845,31 @@ def test_weekly_report_renders_no_target_when_insufficient():
     assert ">0<" not in line and ": 0<" not in line.replace(" ", ""), (
         f"数据不足时周报打印了 TSS 目标 0: {line!r}"
     )
+
+
+# ================================================================
+# 11. 分数封顶的真实数据测试
+#
+# ⚠️ 这段曾经存在过, 然后被我用 `p.write_text(s[:i] + new)` 截断文件时
+# **静默删掉了** —— 那次跑测试我只看了 "1 failed"(预期的变异红),
+# 没看 "collected 27 items" 变成了多少。
+# 独立审查发现"整段封顶删掉后 60 个相关测试全绿", 我才回头查, 发现测试没了。
+#
+# **教训: 改测试文件时绝不用截断式写入。** 应该用 edit 工具或精确的
+# 前缀/后缀替换, 截断会把后面所有内容无声吃掉 —— 而测试文件"少了内容"
+# 不会报错, 只会让覆盖率悄悄下降。
+# ================================================================
+def test_dimension_cap_table():
+    """🔴 维度越少分数上限越低; 五维齐全不封顶(老用户不受影响)"""
+    from cycling_coach.core.coaching.recommendations import (
+        READINESS_WEIGHTS, _apply_dimension_cap,
+    )
+    n = len(READINESS_WEIGHTS)
+    assert n == 5, f"维度数变成 {n} 了, 下面的封顶期望要重算"
+
+    for n_avail, expect in ((5, 100), (4, 90), (3, 80), (2, 70)):
+        bd = {k: READINESS_WEIGHTS[k] for k in list(READINESS_WEIGHTS)[:n_avail]}
+        got = _apply_dimension_cap(100, bd)
+        assert got == expect, f"{n_avail}/{n} 维时封顶应为 {expect}, 实得 {got}"
+        # 分数本来就低时不该被抬高 (只压不抬)
+        assert _apply_dimension_cap(40, bd) == 40, f"{n_avail}/{n} 维时 40 分被抬高了"
