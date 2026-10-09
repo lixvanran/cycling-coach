@@ -364,7 +364,11 @@ export function ActivityDetail() {
               <div className="text-sm font-medium text-text-primary">
                 功率区间(Coggan 7 区)
               </div>
-              <div className="text-xs text-text-muted">基于 FTP {ftp}W</div>
+              {/* 🔴 V0.9.0-08: 原来写死 `基于 FTP {ftp}W`。
+                  而 `ftp = realFtp ?? estFtp` —— 用户没测过 FTP 时它是估算值,
+                  于是这里会说"基于 FTP 280W", **把估算说成了实测基准**。
+                  功率区间本身就是按 FTP 推的, 所以这句话最不能错。改用 ftpLabel。 */}
+              <div className="text-xs text-text-muted">{ftpLabel}</div>
             </div>
             <div className="p-4">
               <PowerZoneChart zones={powerZonesDetailed || m?.power_zones || {}} />
