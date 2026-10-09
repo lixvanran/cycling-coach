@@ -873,3 +873,54 @@ def test_dimension_cap_table():
         assert got == expect, f"{n_avail}/{n} 维时封顶应为 {expect}, 实得 {got}"
         # 分数本来就低时不该被抬高 (只压不抬)
         assert _apply_dimension_cap(40, bd) == 40, f"{n_avail}/{n} 维时 40 分被抬高了"
+
+
+def test_cap_is_actually_wired_into_compute_readiness():
+    """🔴 变异 B 专用: 独立审查把"废调用点"和"废函数体"拆开跑, 发现:
+
+        变异 A(废函数体) -> 1 failed  ✅
+        变异 B(废调用点) -> 26 passed ❌
+
+    因为全仓**没有任何测试让封顶真的 binding 过**:
+    现有的端到端断言锁的是**封顶前**的公式, 而那个 fixture 的分数
+    恰好低于封顶线 —— 封顶代码删了也看不出差别。
+
+    根因: 上一条规则表测试只测 `_apply_dimension_cap` 这个**函数**,
+    守不住"它被接进了 compute_readiness"这个**事实**。
+
+    这里直接断言返回值等于"同一份 breakdown 走一遍封顶"的结果 ——
+    调用点被删, 两者立刻不相等。
+    """
+    from cycling_coach.core.coaching.recommendations import (
+        _apply_dimension_cap, compute_readiness,
+    )
+    from tests.conftest import use_temp_db
+    use_temp_db("v090_cap_wiring")
+    from cycling_coach.data.sqlite.database import SessionLocal
+    from cycling_coach.core.profile import store as ps
+    from datetime import date as _date, timedelta as _td
+    from cycling_coach.data.sqlite.models import DailyMetric
+
+    db = SessionLocal()
+    a = ps.get_or_create_athlete(db)
+    a.ftp = 250; a.max_hr = 190; db.commit()
+    today = _date.today()
+    for i in range(6):
+        db.add(DailyMetric(athlete_id=a.id, date=today - _td(days=i),
+                           tss=50, ctl=40, atl=42, tsb=-2, rpe=3,
+                           hrv_ms=60.0 + (i % 5)))
+    db.commit()
+
+    score, bd = compute_readiness(db, a.id)
+    assert score is not None, "造了训练数据却拿不到分数"
+    assert bd, "breakdown 是空的"
+
+    # 把**未封顶的原始分数**单独算出来, 再过一遍封顶 ——
+    # 两者必须相等。调用点被删时, score 就是未封顶的原始值, 不相等。
+    from cycling_coach.core.coaching.recommendations import READINESS_WEIGHTS
+    raw = round(sum(bd.values()) / sum(READINESS_WEIGHTS[k] for k in bd) * 100)
+    expected = _apply_dimension_cap(raw, bd)
+    assert score == expected, (
+        f"compute_readiness 返回 {score}, 但按同一份 breakdown 走封顶应是 {expected} "
+        f"(raw={raw}, 维度={len(bd)}) —— 封顶函数可能没被调用"
+    )
