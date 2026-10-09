@@ -610,8 +610,19 @@ def test_tier_cap_cannot_be_bypassed(fresh, short_history_athlete):
 
     score, bd = compute_readiness(fresh, short_history_athlete)
     cov = readiness_coverage(bd)
-    if score is None or cov["complete"]:
-        return  # 该场景拿不到分数, 封顶无从谈起, 跳过
+    # ⚠️ 这里原来写的是 `if score is None or cov["complete"]: return`。
+    #
+    # Verifier 批评过这种早退守卫: **fixture 一变, 测试静默退化成空跑, 永远绿**。
+    # 换句话说 —— 造数据造得不对, 它不会报错, 而是假装通过了。
+    #
+    # 前提不成立必须**让测试红**, 那才是正确表达。所以改成硬断言。
+    assert score is not None, (
+        f"造了 short_history 却拿不到分数 —— fixture 坏了, "
+        f"不是'跳过', 是'这条测试根本没测到东西'"
+    )
+    assert not cov["complete"], (
+        f"造的是 short_history(应该维度不全), 实际却完整: {cov}"
+    )
 
     rec = generate_recommendations(fresh, short_history_athlete)
     cap = MAX_TIER_BY_COVERAGE.get(cov["n_available"])
@@ -656,8 +667,10 @@ def test_coverage_rec_present_even_at_minimum_dimensions(fresh, short_history_at
     """变异 M9: 删掉覆盖度提示 Recommendation 时必须红"""
     from cycling_coach.core.coaching.recommendations import generate_recommendations
     rec = generate_recommendations(fresh, short_history_athlete)
-    if rec.readiness_score is None:
-        return
+    # 同上: 原来这里是早退, 改成硬断言 (Verifier 点名的静默空跑模式)
+    assert rec.readiness_score is not None, (
+        "short_history 却拿不到分数 —— fixture 坏了, 这条测试没测到东西"
+    )
     assert any("个维度" in r.title for r in rec.recommendations), (
         "覆盖度提示不见了 —— 用户会看到一个来路不明的分数"
     )
