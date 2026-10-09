@@ -55,23 +55,32 @@
 - Python 3.11+
 - **不需要装 Node.js**（前端已随源码包提供）
 
-### 两步
+### 三步
 
 ```bat
 :: 1. 解压到短路径（重要：知识库里有长路径名，别放太深）
 mkdir C:\cc
-:: 把 zip 解压到 C:\cc
+:: 把 zip 解压到 C:\cc  —— 用命令提示符解压到 C:\cc，
+:: 不要双击 zip 让资源管理器解到"下载"目录（路径会变长，逼近 260 字符上限）
 
-:: 2. 启动（它自己会建 venv、装依赖、开浏览器）
-cd C:\cc
-python tools\start.py
+:: 2. 双击 tools\ACCEPTANCE_CHECKLIST.bat
+::    它会一步步带你走：装依赖 -> 自检 -> 启动 -> 检查界面
+::    每一步都有明确的"通过/停在这里"，出问题会告诉你报告在哪
+
+:: 3. 日常使用就双击 tools\start.bat
 ```
+
+> ⚠️ **如果你要手动敲命令启动，必须带 `--desktop`**：
+>
+> ```bat
+> python tools\start.py --desktop
+> ```
+>
+> 不带的话会进开发模式，试图启动 Vite —— 而 **Windows 上你没装 Node.js**。
+> `start.bat` 会自动加上这个参数，但手动敲时容易漏。
 
 `start.py` 会自动完成：建虚拟环境 → 装后端依赖 → 拉起服务 → 打开浏览器。
 **不需要你手动 pip install。**
-
-> 想要手动控制的话：`python -m venv .venv` + `.venv\Scripts\pip install -e .`，然后 `python tools\start.py` 也能跑。
-> 但默认路径是直接 `python tools\start.py`——启动器已经把这些都做了。
 
 ### 第一次用
 
