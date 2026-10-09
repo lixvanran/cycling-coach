@@ -42,21 +42,58 @@ from cycling_coach.data.sqlite.models import Activity, Athlete, DailyMetric
 logger = logging.getLogger(__name__)
 
 
+# (路径, 字体名, ttc 内的子字体序号)
+#
+# 🔴 V0.9.0-08: 原来这份清单**只有 Linux 路径**。
+# 交付目标是 Windows, 而 Windows 上这三条一个都不存在 ——
+# 于是字体注册全部失败, 静默退回 Helvetica, **中文 PDF 全是乱码**。
+# 用户拿到的周报根本没法看, 而 diagnose 只报"警告"不报"失败"。
+#
+# Windows 自带中文字体, 补上即可(微软雅黑/宋体/等线 都是系统字体):
+#     C:\Windows\Fonts\msyh.ttc / msyhbd.ttc / simsun.ttc / simhei.ttf
+#
+# 另外 .ttc 是字体**集合**, reportlab 的 TTFont 不直接认,
+# 必须给 subfontIndex 指定集合里第几个字体 —— 这是原来 Linux 那条也
+# 注册失败的原因(字体文件存在, 报的是 "Unable to read TrueType font")。
+_FONT_CANDIDATES = [
+    # --- Windows (主要目标平台) ---
+    (r"C:\Windows\Fonts\msyh.ttc", "MSYH", 0),      # 微软雅黑
+    (r"C:\Windows\Fonts\msyhl.ttc", "MSYH-Light", 0),
+    (r"C:\Windows\Fonts\simsun.ttc", "SimSun", 0),   # 宋体
+    (r"C:\Windows\Fonts\simhei.ttf", "SimHei", 0),      # 黑体
+    (r"C:\Windows\Fonts\Deng.ttf", "DengXian", 0),     # 等线
+    # --- macOS ---
+    ("/System/Library/Fonts/PingFang.ttc", "PingFang", 0),
+    ("/System/Library/Fonts/STHeiti Light.ttc", "STHeiti", 0),
+    # --- Linux ---
+    ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "NotoSansCJK", 0),
+    ("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc", "WQY", 0),
+    ("/usr/share/fonts/truetype/arphic/ukai.ttc", "AR PL UKai", 0),
+]
+
+
 def _register_chinese_font() -> str:
-    """注册中文字体 (Noto Sans CJK 优先, 找不到用默认)"""
-    candidates = [
-        ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "NotoSansCJK"),
-        ("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc", "WQY"),
-        ("/usr/share/fonts/truetype/arphic/ukai.ttc", "AR PL UKai"),
-    ]
-    for path, name in candidates:
-        try:
-            pdfmetrics.registerFont(TTFont(name, path))
-            logger.info(f"周报使用字体: {name} ({path})")
-            return name
-        except Exception as e:
-            logger.warning(f"字体 {name} 注册失败: {e}")
+    """注册中文字体。返回可用字体名, 实在找不到退回 Helvetica。"""
+    from pathlib import Path as _P
+
+    for path, name, idx in _FONT_CANDIDATES:
+        if not _P(path).exists():
             continue
+        # ttc 集合: 换着 index 试, 不同发行版里字体顺序不一样
+        for sub in (idx, 0, 1, 2, 3):
+            try:
+                pdfmetrics.registerFont(TTFont(name, path, subfontIndex=sub))
+                logger.info(f"周报使用字体: {name} ({path}, subfont={sub})")
+                return name
+            except Exception as e:
+                last = e
+        logger.warning(f"字体 {name} ({path}) 注册失败: {last}")
+    logger.error(
+        "没找到任何可用的中文字体 —— 周报 PDF 的中文会显示为方块或乱码。\n"
+        "  Windows: 确认 C:\\Windows\\Fonts\\msyh.ttc 存在(微软雅黑)。\n"
+        "  Linux:   装 fonts-noto-cjk。\n"
+        "  详见 README「已知限制」。"
+    )
     return "Helvetica"
 
 
