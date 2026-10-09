@@ -54,18 +54,28 @@ def test_missing_tss_renders_as_no_data_not_none():
 
 
 def test_frontend_has_no_hardcoded_ftp_placeholder():
-    """🔴 前端不许再有 `|| 250` 这种占位兜底
+    """[WEAK GUARD] 弱守卫, 独立审查实测过它可被绕过
 
-    这个值我在后端和 TrustPage 都清掉了, 但 ActivityDetail 漏了 ——
-    于是"没测 FTP 的用户"在训练详情页会看到"基于 FTP 250W 计算"。
+    它只 grep 源码里的 `|| 250` / `|| 190` 两个字节面量。
+    审查用现代运算符把假 250 原样加回来:
+
+        const ftp = realFtp ?? estFtp ?? 250;      # 变异
+        -> 4 passed, 0 failed
+
+    任何别的写法(`?? 250` / 三元 / 常量表)都能绕过去, 而且它完全不看
+    `cycling_coach/static/assets/*.js` —— 那才是用户实际加载的东西。
+
+    为什么还留着: 成本为零, 至少能挡住"复制粘贴式"回归。
+    真正的守卫是 `test_no_unguarded_ftp_label_v090.py`:
+    它 grep **渲染出来的文案** 并剥掉注释, 审查实测能杀变异。
+
+    **别把这个当门禁。** 真要确保, 应该上 React 渲染测试
+    (需要 @testing-library/react + jsdom, 目前项目没装)。
     """
     import pathlib
     src = (pathlib.Path("apps/web/src") / "pages" / "ActivityDetail.tsx").read_text()
-    # 只看代码行 —— 注释里提到 `|| 250` 是为了说明"这里原来有", 不该被算成残留。
-    # (第一版没排除注释, 结果自己的说明文字把自己测红了。)
     code = "\n".join(
         l for l in src.splitlines() if not l.strip().startswith(("//", "*", "/*"))
     )
     for fake in ("|| 250", "|| 190"):
         assert fake not in code, f"前端代码里还留着假值兜底: {fake}"
-    assert "tss_uses_estimated_ftp" in code, "前端没消费估算标记 —— 用户看不到"
