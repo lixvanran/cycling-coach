@@ -338,7 +338,9 @@ def generate_race_plan(
     race_date: _date,
     race_name: str,
     current_ctl: float = 50,
-    current_ftp: int = 250,
+    # (V0.9.0-09) 原来默认值 250。默认值等于"没传就用假值",
+    # 于是漏传的调用点会静默拿到 250 —— 改成 None, 让它必须显式传。
+    current_ftp: int | None = None,
 ) -> RacePlan:
     """比赛日倒推, 生成完整周期计划
 
@@ -706,7 +708,11 @@ def detect_phase_signals(
     
     # 1. 28d 平均 IF (从 avg_power + FTP 推, 简化: TSS/总时长)
     athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-    ftp = (athlete.ftp if athlete and athlete.ftp else None) or (athlete.ftp_estimated if athlete else None) or 200
+    # (V0.9.0-09) 原来 `or 200` —— 同一个概念散着 200 和 250 两个魔数,
+    # 谁也说不清哪个对。现在统一: 实测 > 估算 > 没有就是 None。
+    ftp = None
+    if athlete:
+        ftp = athlete.ftp or getattr(athlete, "ftp_estimated", None)
     
     # 28d 总 TSS / 总时长 (秒) / 3600 = 平均小时
     # IF ≈ NP/FTP, 但我们没有 NP, 用 TSS 估算

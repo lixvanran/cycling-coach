@@ -41,9 +41,19 @@ def export_erg(
     title: str,
     description: str,
     structure: list[dict],
-    ftp: int = 250,
+    ftp: int | None = None,
 ) -> str:
-    """导出 ERG 格式 (CompuTrainer / TrainerRoad)"""
+    """导出 ERG 格式 (CompuTrainer / TrainerRoad)
+
+    V0.9.0-09: 原来 `ftp: int = 250`。课程里每一段的瓦数都是按 FTP 乘出来的,
+    所以默认值 250 意味着**没传 FTP 就导出一份强度全错的骑行台课程** ——
+    用户在骑行台上照着骑, 什么强度都是错的。
+    """
+    if not ftp:
+        raise ValueError(
+            "导出 ERG 课程需要 FTP: 课程里每一段的瓦数都按 FTP 计算, "
+            "没有 FTP 就无法导出一份强度正确的课程。"
+        )
     flat = _flatten_to_erg(structure, ftp)
     lines = [f"{title} {description or ''} {len(flat)}"]
     for minutes, watts in flat:

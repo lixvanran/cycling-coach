@@ -61,7 +61,26 @@ def get_tsb_target(
 
     athlete = profile_store.get_or_create_athlete(db)
     pcm = get_pmc_today(db, athlete.id)
-    current_ctl = pcm.get("ctl", 60) or 60
+    # (V0.9.0-09 独立审查指出的 falsy-zero)
+    #
+    # 原来 `pcm.get("ctl", 60) or 60`: get_pmc_today 对零训练用户返回
+    # ctl=0 (key 存在), 但 **0 在 Python 里是 falsy**, 于是默认值 60 生效 ——
+    # 一个从没训练过的人拿到了 "当前 CTL=60", 然后 compute_tsb_target
+    # 按这个数生成了完整的减量计划。
+    #
+    # 和之前修的 `rec.target_tss or 0` 是同一个病, 只是方向相反(那次 0->编造,
+    # 这次 0->60)。
+    #
+    # 有负荷数据就用它; 没有就是没有, 不给 TSB 处方。
+    _ctl = pcm.get("ctl")
+    if not pcm.get("has_load_data") or _ctl is None:
+        raise HTTPException(
+            400,
+            "还没有训练负荷数据, 无法计算赛前 TSB 计划 —— "
+            "减量方案要按你当前的体能状态(CTL)来定。"
+            "请先导入几次训练记录。",
+        )
+    current_ctl = float(_ctl)
 
     target = compute_tsb_target(rd, race_type, current_ctl=current_ctl)
     rt = get_race_type(race_type)

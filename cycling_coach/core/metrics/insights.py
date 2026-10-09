@@ -522,7 +522,9 @@ def compute_weekly_review(db: Session, athlete_id: Optional[int] = None) -> dict
         .order_by(desc(FTPTest.test_date))
         .first()
     )
-    ftp_w = latest_ftp.ftp_w if latest_ftp else 250
+    # (V0.9.0-09) 原来 else 250 —— 同一个"编造 FTP"病。
+    # 没有就是没有, 让调用方看到 None 而不是 250。
+    ftp_w = latest_ftp.ftp_w if latest_ftp else getattr(athlete, "ftp", None) or getattr(athlete, "ftp_estimated", None)
 
     zone_seconds = {f"Z{i+1}": 0 for i in range(7)}
     total_s = 0

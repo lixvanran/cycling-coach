@@ -538,7 +538,25 @@ def race_plan(
         .order_by(FTPTest.test_date.desc())
         .first()
     )
-    current_ftp = latest_ftp.ftp_w if latest_ftp else 250
+    # (V0.9.0-09 独立审查端到端打穿: 原来是 else 250)
+    #
+    # 一个从没测过 FTP 的用户打这个接口, 拿到:
+    #     current_ftp: 250
+    #     plan 里 7 个节点的 ftp_target 全部 = 250
+    #
+    # 也就是一份按编造 FTP 开的完整比赛训练计划, 而且那个 250
+    # 明晃晃写在 API 响应里。用户照着它训练, 强度全是错的。
+    #
+    # 这比前端那几处"标签文案不诚实"严重一个量级:
+    # 前端最多误导, 这里直接生成处方。
+    #
+    # 优先级: 实测 FTP > 估算 FTP(标明是估算) > 没有(400, 不开处方)
+    current_ftp = latest_ftp.ftp_w if latest_ftp else None
+    ftp_is_estimate = False
+    if current_ftp is None:
+        _measured = getattr(athlete, "ftp", None)
+        current_ftp = _measured or getattr(athlete, "ftp_estimated", None)
+        ftp_is_estimate = current_ftp is not None and not _measured
 
     # 找当前 CTL
     from cycling_coach.core.pmc import get_pmc_today
@@ -550,12 +568,23 @@ def race_plan(
     except ValueError:
         raise HTTPException(400, f"race_date 格式错误: {race_date}, 需 YYYY-MM-DD")
 
+    if current_ftp is None:
+        # 没有 FTP 就不开处方 —— 训练强度全靠 FTP 推, 编一个数等于
+        # 给一份强度全错的计划, 那比"给不了"有害得多。
+        raise HTTPException(
+            400,
+            "还没有 FTP 数据, 无法生成比赛训练计划 —— "
+            "训练处方必须按你的真实 FTP 算强度区间。"
+            "请到「个人资料」填 FTP, 或去 FTP 测试页测一次。",
+        )
+
     plan = generate_race_plan(rd, race_name, current_ctl=current_ctl, current_ftp=current_ftp)
     return {
         "race_date": plan.race_date.isoformat(),
         "race_name": plan.race_name,
         "weeks_total": plan.weeks_total,
         "current_ftp": current_ftp,
+        "current_ftp_is_estimate": ftp_is_estimate,
         "current_ctl": round(current_ctl, 1),
         "plan": plan.plan,
     }
