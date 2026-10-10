@@ -196,6 +196,17 @@ def main() -> int:
     print(f"已构造: 空库 + {n_acts} 次真实训练")
 
     spec = TestClient(app).get("/openapi.json").json()
+    # 跳过理由必须写下来 —— 否则下一个人看到 "/api/sync/strava/* 不在覆盖里"
+    # 会以为是遗漏, 顺手"修好"它, 结果把扫描搞挂。
+    #
+    #   docs/openapi/redoc/static : FastAPI 自动生成 + 静态资源, 不是业务 API
+    #   strava                    : **有意跳过**。这些端点会发 OAuth 网络请求
+    #                              (实测把 strava 从 skip 里去掉后扫描直接超时,
+    #                              exit=124)。零数据场景下它们会卡在网络等待,
+    #                              拿不到有意义的结果。
+    #
+    # 代价要说清楚: 那 6 个端点**从不被检查编造数据**。
+    # 要覆盖它们, 得先给它们加 mock(不打真实网络)才行 —— 独立改动。
     skip = ("docs", "openapi", "redoc", "static", "strava")
     paths = [p for p, m in spec["paths"].items()
              if "get" in m and "{" not in p
