@@ -27,12 +27,33 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-python -c "import sys;print('   Python', sys.version.split()[0])"
+".venv\Scripts\python.exe" -c "import sys;print('   Python', sys.version.split()[0])"
 echo   [OK] Python 在。
 echo.
 
 echo [2/6] 安装依赖（第一次较慢, 请等 2-5 分钟）
-python -m pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --quiet
+REM ============================================================
+REM V0.9.1 (用户 Windows 真机实测报的): 原来这里是
+REM     python -m pip install -r requirements.txt
+REM 直接往【全局 Python】装包 -- 会污染系统环境, 可能顶掉别的
+REM 软件依赖的包版本, 而且没有权限时直接失败。
+REM
+REM 改成用项目自己的 .venv (和 start.bat 保持一致):
+REM     - 不碰全局环境
+REM     - 和实际启动产品用的是同一个解释器, 验出来的才作数
+REM     - 删掉 .venv 目录就等于彻底卸载, 干净
+REM ============================================================
+if not exist ".venv\Scripts\python.exe" (
+  echo   [..] 正在创建 .venv 虚拟环境, 需要 1-3 分钟...
+  python -m venv .venv
+  if errorlevel 1 (
+    echo   [停] 虚拟环境创建失败, 请检查 Python 版本.
+    echo.
+    pause
+    exit /b 1
+  )
+)
+".venv\Scripts\python.exe" -m pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --quiet
 if errorlevel 1 (
   echo   [停] 依赖安装失败。通常是网络问题, 换个网络重试。
   echo.
@@ -43,7 +64,7 @@ echo   [OK] 依赖装好了。
 echo.
 
 echo [3/6] 自检（端口 / 数据库 / 前端文件 / 中文字体）
-python tools\diagnose.py
+".venv\Scripts\python.exe" tools\diagnose.py
 if errorlevel 1 (
   echo.
   echo   [注意] 自检发现失败项。上面标 [FAIL] 的就是问题。
@@ -61,11 +82,11 @@ echo   浏览器会自动打开 http://127.0.0.1:8765
 echo   这个黑窗口要保持打开, 关掉窗口 = 服务停止。
 echo.
 echo   启动中... 15 秒后自动继续检查。
-start "" python tools\start.py --desktop
+start "" ".venv\Scripts\python.exe" tools\start.py --desktop
 timeout /t 15 >nul
 
 echo [5/6] 接口连通性检查
-python -c "import urllib.request,json;r=urllib.request.urlopen('http://127.0.0.1:8765/api/pmc/today',timeout=10);d=json.load(r);print('   [OK] 后端活着。has_load_data =',d.get('has_load_data'))" 2>nul
+".venv\Scripts\python.exe" -c "import urllib.request,json;r=urllib.request.urlopen('http://127.0.0.1:8765/api/pmc/today',timeout=10);d=json.load(r);print('   [OK] 后端活着。has_load_data =',d.get('has_load_data'))" 2>nul
 if errorlevel 1 (
   echo   [停] 连不上后端。可能是端口 8765 被别的程序占用。
   echo.
