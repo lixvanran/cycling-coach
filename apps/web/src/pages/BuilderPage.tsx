@@ -18,6 +18,7 @@ import {
 import clsx from "clsx";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
+import { intentLabel } from "../lib/intentConstants";
 import { useToast } from "../components/Toast";
 import { useConfirm, ScheduleModal } from "../components/common";
 import type { Workout, WorkoutGoal, WorkoutStep, StepKind } from "../lib/types";
@@ -997,7 +998,9 @@ function BlockLibrary(props: {
             >
               <div className="font-medium truncate">{w.title}</div>
               <div className="text-text-muted text-[10px] flex items-center gap-2 mt-0.5">
-                <span>{w.goal}</span>
+                {/* 🔴 V0.9.1: 原来渲染原始英文(`race`/`endurance`),
+                    和日历页的「比赛」「耐力 Z2」不一致。统一走 intentLabel()。 */}
+                <span>{intentLabel(w.goal) || w.goal}</span>
                 <span>{w.duration_min}min</span>
               </div>
             </button>

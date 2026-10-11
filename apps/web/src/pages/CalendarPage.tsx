@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../lib/api";
+// 🔴 V0.9.1: intent 标签的唯一真相源(V0.9.1 从本地定义提到共享)
+import { INTENT_LABEL as INTENT_LABEL_SHARED, intentLabel } from "../lib/intentConstants";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/common";
 import type {
@@ -33,9 +35,10 @@ const INTENT_COLORS: Record<WorkoutIntent, { bg: string; border: string; text: s
   race:        { bg: "bg-status-info",border: "border-accent-primary/60",text: "text-white",     light: "bg-status-info" },
 };
 
-const INTENT_LABEL: Record<WorkoutIntent, string> = {
-  recovery: "恢复", endurance: "耐力 Z2", tempo: "节奏 Z3", threshold: "阈值 Z4", vo2max: "VO2 Z5", race: "比赛",
-};
+// 🔴 V0.9.1: 原本是本地定义的 INTENT_LABEL。已移到
+//    lib/intentConstants.ts —— 因为 LibraryPage 也在渲染 intent,
+//    两边各写一份就迟早不一致(现在正是这样: 课程库显示原始英文)。
+const INTENT_LABEL = INTENT_LABEL_SHARED;
 const INTENT_ICON: Record<WorkoutIntent, any> = {
   recovery: Activity, endurance: Target, tempo: Flame, threshold: Flame, vo2max: Flame, race: Sparkles,
 };
@@ -494,7 +497,7 @@ function DayCell(props: {
                   ? "bg-bg-subtle text-text-muted border-border line-through opacity-60"
                   : clsx(INTENT_COLORS[p.intent].bg, INTENT_COLORS[p.intent].text, INTENT_COLORS[p.intent].border, "")
             )}
-            title={`${p.title} · ${INTENT_LABEL[p.intent]} · ${p.duration_target_min ?? "?"}min`}
+            title={`${p.title} · ${intentLabel(p.intent)} · ${p.duration_target_min ?? "?"}min`}
           >
             <span className="truncate flex-1">{p.title}</span>
             {p.status === "done" && <span>✓</span>}

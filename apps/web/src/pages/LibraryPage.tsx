@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../lib/api";
+import { intentLabel } from "../lib/intentConstants";
 import { useToast } from "../components/Toast";
 import { useConfirm, ScheduleModal } from "../components/common";
 import type {
@@ -688,7 +689,12 @@ function WorkoutCard({
                 c.chip
               )}
             >
-              {w.goal}
+              {/* 🔴 V0.9.1: 原来直接渲染原始英文。
+                  我第一遍只改了下面两处(783/790), 漏了这个渲染点 ——
+                  改完实测徽章还是 `race`。**"改契约要枚举每一个读取点"**,
+                  而这一页就有三个: 卡片主徽章 / 卡片副徽章 / 详情区。
+                  grep 是 `grep -E "\{[a-z.]*goal[a-z.]*\}"`, 不是靠印象。 */}
+              {intentLabel(w.goal) || w.goal}
             </span>
             {w.source === "system" && (
               <span className="px-1.5 py-0.5 rounded text-[10px] bg-bg-base text-text-muted">
@@ -780,11 +786,14 @@ function WorkoutDetailDrawer({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2">
             <span className={clsx("px-2 py-0.5 rounded text-[10px] font-medium", c.chip)}>
-              {workout.goal}
+              {intentLabel(workout.goal) || workout.goal}
             </span>
             {workout.intensity && workout.intensity !== workout.goal && (
               <span className="px-1.5 py-0.5 rounded text-[10px] bg-bg-base text-text-muted">
-                {workout.intensity}
+                {/* 🔴 V0.9.1: 原来直接渲染原始英文(`race` / `endurance`),
+                    而日历页显示的是「比赛」「耐力 Z2」——
+                    同一个概念两个页面两种语言。统一走 intentLabel()。 */}
+                {intentLabel(workout.intensity)}
               </span>
             )}
           </div>

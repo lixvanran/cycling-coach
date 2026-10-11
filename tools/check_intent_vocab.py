@@ -113,8 +113,12 @@ def collect_python() -> list[tuple[str, int, str, str]]:
 def collect_frontend() -> dict[str, set[str]]:
     """从 TS 里抓 INTENT_LABEL / WORKOUT_META / _TIER_ORDER 的键。"""
     out: dict[str, set[str]] = {}
+    # 🔴 V0.9.1: INTENT_LABEL 已从 CalendarPage 移到共享模块
+    #    lib/intentConstants.ts —— 它现在是**唯一真相源**, 两个页面共用。
+    #    同一个概念两个页面各写一份映射表, 迟早不一致(就是这么坏的)。
     files = [
-        ("apps/web/src/pages/CalendarPage.tsx", "INTENT_LABEL"),
+        ("apps/web/src/lib/intentConstants.ts", "INTENT_LABEL"),
+        ("apps/web/src/lib/intentConstants.ts", "CANONICAL_INTENTS"),
         ("apps/web/src/pages/CalendarPage.tsx", "INTENT_ICON"),
         ("apps/web/src/components/DailyRecommendationCard.tsx", "WORKOUT_META"),
     ]
@@ -192,6 +196,22 @@ def main() -> int:
             print(f"   非标准键: {sorted(extra)}")
         else:
             print(f"✅ {name}: {len(keys)} 个键全部标准")
+
+    # 1b. 共享模块的 INTENT_LABEL 必须覆盖 CANONICAL_INTENTS 的每一个值。
+    #     少一个键 -> intentLabel() 走到 fallback, 用户看到原始英文
+    #     (不是 undefined, 但两个页面语言不一致)。
+    _shared = ROOT / "apps/web/src/lib/intentConstants.ts"
+    if _shared.exists():
+        _src = _shared.read_text(encoding="utf-8")
+        _labels = set(re.findall(r'^\s*([a-z0-9_]+):', _src, re.M))
+        _missing = CANONICAL_INTENTS - _labels
+        if _missing:
+            bad = True
+            print(f"❌ intentConstants.INTENT_LABEL 缺少: {sorted(_missing)}")
+            print("   intentLabel() 会回落到原始英文, 页面语言就不一致了")
+        else:
+            print(f"✅ intentConstants.INTENT_LABEL 覆盖全部 "
+                  f"{len(CANONICAL_INTENTS)} 个标准 intent")
 
     # 2. Python 里的列表常量
     for name, vals in collect_python_lists().items():
