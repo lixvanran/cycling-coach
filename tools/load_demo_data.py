@@ -49,6 +49,25 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 FTP = 280
 LTHR = 168
+# ⚠️ 用**正则**而不是前缀通配符 —— 因为 SQLite `LIKE` 和 Python
+#   `str.startswith` 的通配符语义不同(`%` vs `*`), 想两边通用就得写两套,
+#   而两套会悄悄失准:
+#   我第一版写 `"w%d_d%"`(Python 格式串思维), 于是:
+#     - LIKE 拿字面量 "%d" 去匹配 -> 什么都没删掉(force 静默失效)
+#     - startswith("w%d_d%") -> 全 False(生成处 assert 应该炸,但它没被接上)
+#   **静默失准比报错难查得多。**
+#
+# 改成正则, 只有一处定义, 两边都用 `re`:
+#   对应生成: f"w{w+1}_d{day_idx}_{intent}.fit"  -> w1_d1_endurance.fit
+#   用户的:   "2026-10-01_ride.fit" / "wahoo_ride.fit" -> 都不匹配
+DEMO_FILE_RE = r"^w\d+_d\d+_"
+DEMO_FILE_PREFIX = "w"   # 仅供 LIKE 粗筛, 精确判定用 DEMO_FILE_RE
+
+
+def _is_demo_file(file_name: str | None) -> bool:
+    """这条记录是不是 demo 生成的?"""
+    import re as _re
+    return bool(file_name and _re.match(DEMO_FILE_RE, file_name))
 HR_MAX = 188
 WEIGHT = 68.0
 
@@ -104,8 +123,33 @@ def build_week_rides(week_idx: int) -> list[tuple[str, str, list, float]]:
     return out
 
 
-def _clear_athlete_rows(db, athlete_id: int) -> dict[str, int]:
+def _clear_athlete_rows(db, athlete_id: int,
+                        only_prefix: str | None = None) -> dict[str, int]:
     """删掉某个车手名下的**所有**记录(遍历所有外键引用表)。
+
+    ## 🔴 V0.9.1 新增 `only_prefix`
+
+    原来无条件清空该车手名下的一切。V0.8.3 之前这没问题 ——
+    demo 数据挂在**专属的"演示车手"**下面, 删干净正合适。
+
+    但 V0.9.1 让 demo **复用库里第一个车手**(为了修"数据不可见"这个 P0),
+    于是同一句 `force` 会把**用户自己的真实训练**一起删光:
+
+        已清除旧数据(车手 #1 'Rider'): 1 行 (activities:1)
+
+    用户点一次"重新载入示例", 自己三个月的骑行就没了。
+    这是最不可接受的一类 bug —— 不可逆, 而且完全无声。
+
+    ## 怎么区分 demo 数据和真实数据
+
+    demo 生成的 FIT 文件名是 `w{周}_d{日}_{类型}.fit`(`w1_d1_endurance.fit`),
+    用户自己的文件是 Garmin/Strava 导出的名字。**文件名是我们唯一可靠的
+    区分依据** —— 没有 "is_demo" 标记位, 加一个要改 schema 并回填历史数据,
+    对这个规模的项目不划算。
+
+    ⚠️ 代价: 如果用户把自己的文件恰好命名成 `w1_d1_xxx.fit`, 会被一起清掉。
+    概率极低, 但**这是真实的取舍**, 不是"完美方案"。
+    真正的修法是给 activities 加 `is_demo` 列 + 迁移, 应该排进后续版本。
 
     ## 为什么需要遍历全部
 
@@ -135,6 +179,66 @@ def _clear_athlete_rows(db, athlete_id: int) -> dict[str, int]:
             continue
         col = cols[0]
         try:
+            cols_names = [c["name"] for c in insp.get_columns(t)]
+            # 🔴 只删 demo 自己生成的那些行(见上面的 only_prefix 说明)
+            #
+            # ⚠️ 认得出的表: 有 file_name 的(activities 等)按文件名过滤。
+            #    **认不出的表**(planned_workouts 没有 file_name, 只有 title/
+            #    intent —— 用户也能自己建同样的)一律**跳过**, 不删。
+            #
+            #    这是有意的保守选择: 宁可残留一些重复的计划课,
+            #    也不能删掉用户自己排的课。残留是可修正的(重装库),
+            #    误删是不可逆的。
+            if only_prefix and "file_name" not in cols_names:
+                continue
+            if only_prefix:
+                # 逐行判 regex 而不是靠 LIKE 粗筛 —— LIKE 会漏, 也会误伤。
+                _rows = db.execute(
+                    _text(f"SELECT rowid, file_name FROM {t} WHERE {col} = :aid"),
+                    {"aid": athlete_id},
+                ).fetchall()
+                import re as _re
+                _rx = _re.compile(DEMO_FILE_RE)
+                _hit = [r[0] for r in _rows if r[1] and _rx.match(r[1])]
+                if _hit:
+                    _ids = ','.join(str(int(x)) for x in _hit)
+                    # ⚠️ 删 activities 之前必须先清掉引用它的行, 否则
+                    #   FOREIGN KEY constraint failed。
+                    #   引用方: ml_predictions / planned_workouts /
+                    #          training_diary / workouts
+                    #
+                    #   ⚠️⚠️ 第一版我写成 `WHERE {col} IN (SELECT rowid FROM {t} ...)`,
+                    #   那个子查询查的是**当前表 t 自己的 rowid**,
+                    #   而引用方表要的是 **activities.id** —— 两者不是一回事
+                    #   (SQLite 里恰好常常相等, 于是"有时能跑",
+                    #   但一旦 activities 有过删除, id 和 rowid 就错位了,
+                    #   表现为**第二次 force 就 500**)。
+                    #
+                    #   正解: 显式用被删的 activities **id**, 不是 rowid。
+                    _act_ids = [str(int(r[0])) for r in db.execute(
+                        _text(f"SELECT id FROM {t} WHERE rowid IN ({_ids})")
+                    ).fetchall()]
+                    if _act_ids:
+                        _alist = ','.join(_act_ids)
+                        for _ft in insp.get_table_names():
+                            for _fk in insp.get_foreign_keys(_ft):
+                                if _fk.get("referred_table") != t:
+                                    continue
+                                for _fc in (_fk.get("constrained_columns") or []):
+                                    try:
+                                        db.execute(_text(
+                                            f"UPDATE {_ft} SET {_fc} = NULL "
+                                            f"WHERE {_fc} IN ({_alist})"
+                                        ))
+                                    except Exception:
+                                        pass
+                    db.execute(
+                        _text(f"DELETE FROM {t} WHERE {col} = :aid "
+                              f"AND rowid IN ({_ids})"),
+                        {"aid": athlete_id},
+                    )
+                    removed[t] = len(_hit)
+                continue
             n = db.execute(
                 _text(f"SELECT COUNT(*) FROM {t} WHERE {col} = :aid"),
                 {"aid": athlete_id},
@@ -144,7 +248,16 @@ def _clear_athlete_rows(db, athlete_id: int) -> dict[str, int]:
                            {"aid": athlete_id})
                 removed[t] = n
         except Exception as e:
-            logger.debug(f"跳过 {t}: {e}")
+            # 🔴 V0.9.1: 原来是 `logger.debug`, 于是**删除失败完全不可见** ——
+            #   函数返回 `{}`, 调用方打印"已清除旧数据: 0 行",
+            #   看起来一切正常, 实际什么都没删。
+            #   我为这个"静默的空操作"debug 了很久, 最后是手动把日志级别
+            #   调到 DEBUG 才看到真因是 FOREIGN KEY constraint failed。
+            #
+            #   **凡是"结果决定成败"的分支, 异常必须可见。**
+            #   这里删除失败会让 force 静默失效 -> 重复载入堆重复数据。
+            logger.warning("清理 %s 失败: %s", t, e, exc_info=True)
+            raise
     # ⚠️ 必须 commit + **expire_all**(不是 expunge_all):
     #   - expire_all: 只清属性缓存, 对象**仍然绑定**在 session 上 ✅
     #   - expunge_all: 把对象彻底踢出 session → 后面再用就报
@@ -157,41 +270,6 @@ def _clear_athlete_rows(db, athlete_id: int) -> dict[str, int]:
     db.expire_all()
     return removed
 
-
-def _delete_athlete_hard(db, athlete_id: int) -> None:
-    """删车手: 清掉所有引用行, 再删 athletes 本身。
-
-    ## 这里踩了四次, 每次错法不同 —— 全记下来
-
-    1. `db.delete(athlete)` → ORM 按 relationship 发
-       `UPDATE activities SET athlete_id=NULL`, 而该列 NOT NULL → IntegrityError
-    2. 改用原生 SQL 删行, 但 session 的 identity map 里还留着那个对象
-       → 后续用它报 "has been deleted, or its row is otherwise not present"
-    3. 为修 #2 用 `db.expunge_all()` → 把 session 里**所有**对象都踢出去
-       → 报 "is not bound to a Session"
-    4. 手动 `db.expunge(obj)` 遍历 identity_map → 还是 #2
-       （expire_all 之后访问 obj.id 本身就可能抛异常, 遍历并不可靠）
-
-    **最终解法: 让 ORM 自己同步 identity map**, 别手动摘:
-        db.query(Athlete).filter(...).delete(synchronize_session="fetch")
-
-    ## 更要命的: CLI 能过, API 500
-
-    1-4 之间还藏着一个陷阱: **命令行跑通了不代表修好了**。
-    CLI 是新进程新 session(里面没别的对象), API 路径的 session 里
-    已经加载过 athlete, 于是只有 API 挂。
-
-    所以这条路径我坚持用**浏览器点按钮**验, 而不是只跑脚本。
-    """
-    from cycling_coach.data.sqlite.models import Athlete as _Athlete
-
-    _clear_athlete_rows(db, athlete_id)
-    # synchronize_session="fetch" 让 ORM 把 identity map 里对应的对象清掉,
-    # 否则后面任何一次属性访问都会报 "has been deleted"
-    db.query(_Athlete).filter(_Athlete.id == athlete_id).delete(
-        synchronize_session="fetch"
-    )
-    db.commit()
 
 def load_demo_data(weeks: int = 8, end: str | None = None,
                    athlete_name: str = "演示车手",
@@ -240,86 +318,86 @@ def load_demo_data(weeks: int = 8, end: str | None = None,
         from cycling_coach.data.sqlite.models import (
             Activity, DailyMetric, PlannedWorkout,
         )
-        old_a = db.query(Athlete).filter(Athlete.name == args.athlete).first()
-        if old_a:
-            _removed = _clear_athlete_rows(db, old_a.id)
-            _delete_athlete_hard(db, old_a.id)
-            print(f"已清除旧的演示数据: "
-                  f"{sum(_removed.values())} 行 ({', '.join(f'{k}:{v}' for k, v in _removed.items())})")
+        # 🔴 V0.9.1: 原来是 `Athlete.name == args.athlete`("演示车手")。
+        # 但 V0.9.1 之后 demo **复用库里第一个车手**, 它的名字是用户自己的
+        # ("Rider" / 真实姓名) —— 这个条件**永远匹配不到**。
+        #
+        # 后果: 点两次"先看示例"(第二次 force=false):
+        #   - 旧数据没被清掉
+        #   - 新生成的 FIT 因为 SHA256 相同被去重, 一条都插不进去
+        #   - 但生成循环仍然把 n_ride 记成满额
+        #   -> 归属校验(新增条数 < 生成条数)失败 -> SystemExit -> HTTP 409
+        #   -> 用户看到"载入失败", 而数据其实早就有了
+        #
+        # force 的语义是"重来一遍", 所以就该清**第一个车手**名下
+        # 这次要重建的东西 —— 和写入侧同一个口径。
+        _target = db.query(Athlete).first()
+        if _target is not None:
+            _removed = _clear_athlete_rows(db, _target.id,
+                                            only_prefix=DEMO_FILE_PREFIX)
+            print(f"已清除旧数据(车手 #{_target.id} {_target.name!r}): "
+                  f"{sum(_removed.values())} 行 "
+                  f"({', '.join(f'{k}:{v}' for k, v in _removed.items())})")
 
-        # V0.9.0: 同时清掉 ActivityService 自动建的占位 athlete。
+        # 🔴 V0.9.1: 整个"清除空占位车手"的循环被**删掉了**。
         #
-        # 背景: `ActivityService.__init__` 会调 get_or_create_athlete(),
-        # 它"返回第 1 个 athlete, 没有就建一个叫 Rider(ftp=250)"。
-        # 空库 + 点「先看示例」= 先建了 Rider(id=1), 再建 演示车手(id=2),
-        # 于是 ActivityService 绑到 #1 而计划课挂在 #2 ——
-        # 下面那道归属校验会直接抛 SystemExit, 用户看到"载入失败"。
+        # 它存在的唯一目的是: 别让库里出现第二个车手(ActivityService 绑 #1、
+        # 计划课挂 #2, 归属校验直接失败)。而 V0.9.1 的修法是
+        # **让 demo 复用库里第一个车手**, 从根上就不存在"第二个"。
         #
-        # 原来的 --force 只删**同名**的演示车手, 清不掉这个占位。
-        # 但占位的意思是"没有任何活动", 删掉它不会丢用户数据。
-        # 保守起见只在那个 athlete 名下**一条活动都没有**时才删。
-        # ⚠️ 原来这里按 **名字 == "Rider"** 找占位车手, 但用户可能:
-        #   - 改过名字(设置页里填了真实姓名)
-        #   - 装的是旧版本, 占位叫别的名字
-        # 这时候占位清不掉 → ActivityService 绑到 #1、课表挂到 #2 →
-        # 归属校验直接失败 → 用户点"先看示例"只看到"载入失败"。
+        # 留着它的后果更糟 —— 它会把**正在用的那个车手**也当成占位删掉:
+        #   BrokenPipeError: [Errno 32] Broken pipe  @ load_demo_data.py:310
+        #   (删掉 #1 之后 session 还握着它, 后面任何操作都炸,
+        #    而用户只看到"载入失败")
         #
-        # 判据应该是"这个车手名下什么都没有", 不是"它叫什么名字"。
-        #
-        # ⚠️ 而且**不能只查活动**: 有 13 张表外键引用 athletes
-        # (daily_metrics / ftp_tests / training_phases / chat_sessions /
-        #  training_diary / ml_predictions / ...)。我第一版只查了 activities
-        # 和 training_phases, 结果删一个"看起来空"的车手时
-        # FOREIGN KEY constraint failed —— 而**删车手失败会让整个载入失败**。
-        #
-        # 所以: 一次性扫全部引用表, 任何一张有行就不删。
-        from sqlalchemy import inspect as _inspect
-        _insp = _inspect(db.bind)
-        _ref_tables = []
-        for _t in _insp.get_table_names():
-            for _fk in _insp.get_foreign_keys(_t):
-                if _fk.get("referred_table") == "athletes":
-                    _ref_tables.append((_t, _fk.get("constrained_columns")))
-                    break
-
-        for placeholder in db.query(Athlete).all():
-            if placeholder.name == args.athlete:
-                continue                       # 那是演示车手本身, 不能删
-            _occupied = None
-            for _t, _cols in _ref_tables:
-                _col = _cols[0]
-                try:
-                    _n = db.execute(
-                        __import__("sqlalchemy").text(
-                            f"SELECT COUNT(*) FROM {_t} WHERE {_col} = :aid"
-                        ), {"aid": placeholder.id}
-                    ).scalar() or 0
-                except Exception:
-                    continue                    # 表不存在/列名不同 -> 跳过
-                if _n:
-                    _occupied = f"{_t}({_n})"
-                    break
-            if _occupied is None:
-                # ⚠️ 名字要**先取出来**再删。
-                # 删完之后对象已经不在 session 里(synchronize_session 把它摘掉了),
-                # 这时再读 `placeholder.name` 就是 DetachedInstanceError。
-                #
-                # "先操作对象, 再打印它的属性" —— 顺序反了就炸。
-                _pid, _pname = placeholder.id, placeholder.name
-                _delete_athlete_hard(db, _pid)
-                print(f"  已清除空车手 id={_pid} 名字={_pname!r} "
-                      f"(活动/计划/课程/对话全空)")
-            else:
-                print(f"  保留车手 id={placeholder.id} 名字={placeholder.name!r} "
-                      f"—— 名下有 {_occupied}, 不动它")
-
-    a = db.query(Athlete).filter(Athlete.name == args.athlete).first()
+        # 教训: **修根因之后要回头删掉为老根因打的补丁**。
+        # 留着它不但没用, 还会制造新 bug —— 这正是"逐处打补丁"的代价。
+    # 🔴 V0.9.1 (用户在 Windows 真机测出来的 P0): 原来这里是
+    #     a = db.query(Athlete).filter(Athlete.name == args.athlete).first()
+    #     if a is None: a = Athlete(name="演示车手", ...)
+    #
+    # 也就是"**库里没有叫演示车手的就新建一个**"。而只读侧
+    # `get_or_create_athlete()` 永远返回 `db.query(Athlete).first()`(#1)。
+    #
+    # 真实场景(用户实测复现):
+    #     1. 打开产品 -> 任何一次 API 调用建出占位车手 Rider (#1)
+    #     2. 点"先看示例" -> 这里新建演示车手 (#2), 数据挂 #2
+    #     3. 界面所有页面读 #1 -> **显示"还没有训练数据"**
+    #     4. 而且 HTTP 200, 不报任何错 —— 静默失败
+    #
+    # **这不是边缘情况**: Dashboard 加载本来就会建占位车手,
+    # 所以每个新用户点"先看示例"都会踩到。
+    #
+    # 修法: 复用库里**第一个** athlete(和只读侧同一个),
+    # 不再新建第二个。只在它名下完全空的时候写数据。
+    a = db.query(Athlete).first()
+    # 示例数据会不会和用户自己的训练混在一起? 前端要据此提示
+    _mixed_with_existing = False
     if a is None:
         a = Athlete(
             name=args.athlete, ftp=FTP, lthr=LTHR,
             max_hr=HR_MAX, weight_kg=WEIGHT,
         )
         db.add(a)
+        db.commit()
+        db.refresh(a)
+    else:
+        # 复用已有的第一个车手: 名字保持用户自己填的(可能是真实姓名),
+        # 但补上 demo 需要的 FTP 等参数, 否则强度区间算不出来。
+        _existing_acts = db.query(Activity).filter(
+            Activity.athlete_id == a.id).count()
+        _mixed_with_existing = _existing_acts > 0
+        if _mixed_with_existing:
+            print(f"⚠️ 车手 {a.name!r} 名下已有 {_existing_acts} 条训练, "
+                  f"示例数据会**混进同一个档案**。")
+        if a.ftp is None:
+            a.ftp = FTP
+        if a.lthr is None:
+            a.lthr = LTHR
+        if a.max_hr is None:
+            a.max_hr = HR_MAX
+        if a.weight_kg is None:
+            a.weight_kg = WEIGHT
         db.commit()
         db.refresh(a)
     print(f"车手: {a.name}  FTP={a.ftp}  LTHR={a.lthr}")
@@ -336,6 +414,18 @@ def load_demo_data(weeks: int = 8, end: str | None = None,
             f"库里已有别的 athlete 占着 id={svc.athlete.id}。"
             f"请用 --force 重建, 或先清空该 workspace。"
         )
+
+    # 入库前的基线 —— 最后的归属校验靠它算"这次新增了多少条"。
+    # 🔴 V0.9.1: 必须在这里取, 即任何写入之前。
+    #
+    # ⚠️ `_sql_text` 的 import 原本写在函数更下面(校验段),
+    #    这里先用了它 -> UnboundLocalError。这正是用户 Windows 报告里
+    #    `/api/insights/weekly` 踩过的那一类错误, 我在同一个文件里又踩了一次。
+    #    教训: **函数里所有 import 一律提到最前面**, 别按使用顺序随手放。
+    from sqlalchemy import text as _sql_text
+    _acts_before = db.execute(
+        _sql_text("SELECT COUNT(*) FROM activities WHERE athlete_id = :aid"),
+        {"aid": a.id}).scalar() or 0
 
     out_dir = Path(os.environ["WORKSPACE_DIR"]) / "_demo_fits"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -408,11 +498,33 @@ def load_demo_data(weeks: int = 8, end: str | None = None,
             actual_segs = [(m, max(55, int(w_ * k))) for m, w_ in segs]
 
             path = out_dir / f"w{w+1}_d{day_idx}_{intent}.fit"
+            # 断言常量没和真实命名脱节 —— force 删除逻辑依赖它。
+            # 一旦脱节就是"静默删不掉"或"静默删太多", 所以当场炸。
+            assert _is_demo_file(path.name), (
+                f"实际文件名 {path.name!r} 没匹配 DEMO_FILE_RE "
+                f"({DEMO_FILE_RE!r}) —— 删除旧 demo 数据的逻辑会失准"
+            )
             start_dt = datetime.combine(
                 d, datetime.min.time(), tzinfo=timezone.utc
             ) + timedelta(hours=6)
             gt = build_profile_fit(
                 path, actual_segs, start=start_dt, seed=w * 100 + day_idx,
+                # V0.9.1: 采样率 2s 而不是默认的 1s。
+                #
+                # 慢的根源在这里 —— 造一条 1.5h 的 FIT 要 10 秒(每秒一个采样点,
+                # 5400 条 fitparse 记录), 8 周 40 条就是 6 分钟; 而这个测试
+                # 文件调了 4 次(第 3 个测试跑两遍), **单文件 24 分钟**,
+                # 全量套件因此要 1 小时 44 分起。
+                #
+                # 实测降采样对统计特征无损(同一条课):
+                #     1s: 4200 点 avg=130.0 std=14.8
+                #     2s: 2100 点 avg=130.0 std=14.9
+                #     5s:  840 点 avg=130.0 std=14.8
+                # 功率是缓变信号, 2s 采样不丢任何统计特征, 速度快 2.4 倍。
+                #
+                # 只改 demo 生成的采样率, **不动 realistic_rides 的默认值** ——
+                # 那些是测试夹具, 保持 1s 才不降低其他测试的真实性。
+                sample_interval_s=2.0,
                 ftp=FTP, lthr=LTHR,
             )
 
@@ -457,10 +569,19 @@ def load_demo_data(weeks: int = 8, end: str | None = None,
 
     # 关掉逐条 PMC 重算之后, 必须在收尾**统一算一次** ——
     # 否则示例数据的 PMC / 体能曲线是空的, 用户看到 0/5 维度却以为 App 坏了。
+    #
+    # ⚠️🔴 V0.9.1: `_aid` 在这里用, 但它在下面 ~490 行才被赋值 ——
+    #   UnboundLocalError: cannot access local variable '_aid'
+    #   而且它被 try/except Exception 吞掉了, 只打印一行 WARN,
+    #   **表面上"载入成功", 实际上 PMC 曲线是空的** ——
+    #   用户看到"体能 0/5 维度", 以为 App 坏了。
+    #
+    #   静默吞异常 + 变量顺序错误 = 双重掩盖。这类地方要一起看。
     if n_ride:
         try:
             from cycling_coach.core.pmc import recompute_pmc as _rpmc
-            _days = _rpmc(db, _aid)
+            _athlete_id = db.query(Athlete).first().id
+            _days = _rpmc(db, _athlete_id)
             print(f"  PMC 已重算 {_days} 天")
         except Exception as _e:
             print(f"  ⚠️ PMC 重算失败(不影响训练数据本身): {_e}")
@@ -481,7 +602,13 @@ def load_demo_data(weeks: int = 8, end: str | None = None,
     # 静态看完全正常(它原本就存在, 只是以前 return 0 用不到这些字段)。
     # 所以重新查一次数据库拿值, 不碰已 detach 的对象。
     from cycling_coach.data.sqlite.models import Activity as _Act
-    _arow = db.query(Athlete).filter(Athlete.name == athlete_name).first()
+    # 🔴 V0.9.1: 原来是按名字查 `Athlete.name == athlete_name`("演示车手")。
+    # 但 V0.9.1 之后 demo **复用库里第一个车手**, 它的名字可能是用户自己的
+    # 真实姓名 —— 于是这里查到 None, `_aid` 变成 None,
+    # 后面所有校验都作用在 NULL 上, 静默失效。
+    #
+    # 和写入侧保持同一个口径: **第一个车手**。
+    _arow = db.query(Athlete).first()
     _aid = _arow.id if _arow else None
     _aname = _arow.name if _arow else athlete_name
     _aftp = _arow.ftp if _arow else None
@@ -511,18 +638,35 @@ def load_demo_data(weeks: int = 8, end: str | None = None,
     #
     # 这才是那个校验真正想抓的 —— "活动挂错车手"最常见的形态不是
     # 活动落在两个车手上, 而是**一条都没落到演示车手上**。
+    # 🔴 V0.9.1: 复用第一个车手之后, 这个校验的**语义必须跟着改**。
+    #
+    # 原来 `_demo_acts` 查的是"这个车手名下所有活动", 于是隐含假设
+    # "他名下只有演示数据"。V0.9.1 之后 demo 复用用户第一个车手,
+    # 用户可能已经有自己的训练 —— 于是:
+    #     用户 1 条 + demo 12 条 = 13 != n_ride(12)
+    # 校验失败 → SystemExit → HTTP 409, **但数据其实已经写进去了**。
+    # 用户看到"载入失败", 数据库里却有 13 条, 状态自相矛盾。
+    #
+    # 修法: 记录**入库前**该车手的活动数, 校验增量。
+    # 这样校验真正想抓的东西("这次生成的演示数据一条都没落到
+    # 正确的车手上")依然能抓到, 又不受用户既有数据干扰。
     _demo_acts = db.execute(
         _sql_text("SELECT COUNT(*) FROM activities WHERE athlete_id = :aid"),
         {"aid": _aid}).scalar() or 0
-    if _demo_acts != n_ride:
+    if _demo_acts - _acts_before < n_ride - n_fail:
         _why = (f"\n\n失败明细(前 5 条):\n    " + "\n    ".join(_failures[:5])
                 if _failures else
                 "\n\n⚠️ 没有任何一条报了失败, 但入库数对不上 —— "
                 "那就是 upload 内部静默吞掉了异常(比如 recompute_pmc 失败后 "
                 "session 进入 PendingRollback 状态, 后续 commit 全部作废)。")
         raise SystemExit(
-            f"❌ 归属校验失败: 演示车手 #{_aid} 名下只有 {_demo_acts} 条活动, "
-            f"但我们生成了 {n_ride} 条。{_why}"
+            f"❌ 归属校验失败: 演示车手 #{_aid} 名下这次只新增了 "
+            f"{_demo_acts - _acts_before} 条活动, "
+            f"但我们生成了 {n_ride} 条(失败 {n_fail} 条)。{_why}\n\n"
+            f"最可能的原因: **这次没加 --force, 而库里已经有同一批示例数据**。\n"
+            f"   (demo 的 FIT 用固定随机种子生成, 每次内容完全一样 → SHA256 相同\n"
+            f"    → 被上传去重逻辑挡掉, 一条都插不进去)\n"
+            f"   重新载入请加 --force。"
         )
     if _failures:
         print(f"⚠️ 有 {n_fail} 条训练导入失败(已跳过), 其余 {n_ride} 条成功")
@@ -537,6 +681,10 @@ def load_demo_data(weeks: int = 8, end: str | None = None,
         "ftp": _aftp,
         "n_activities": n_ride,
         "n_planned": n_plan,
+        # 🔴 V0.9.1: 复用第一个车手后, 示例数据可能和用户自己的训练
+        # 混在同一个档案里。**这件事必须让前端知道** ——
+        # 用户有权知道自己的档案里被塞进了 12 条不是自己骑的训练。
+        "mixed_with_existing": _mixed_with_existing,
     }
 
 

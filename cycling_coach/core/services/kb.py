@@ -38,6 +38,18 @@ from cycling_coach.data.sqlite.models import (
 logger = logging.getLogger(__name__)
 
 
+# 🔴 V0.9.1: 用户实测多词搜索失败 —— 原来只按空格 split, 中文顿号/逗号/
+#    全角空格都不算分隔符, 于是 "基础、训练" 被当成一个完整 term,
+#    FTS 里根本不存在这个词 -> 0 条。
+#
+# "搜不到"是合法结果, "因为分词方式不对而搜不到"是 bug —— 用户分不清这俩。
+import re as _re
+
+_KB_QUERY_SPLIT = _re.compile(
+    r"[\s,;/|｜，、；：／]+"                    # 中英文常见分隔符
+)
+
+
 # ============== DTO ==============
 
 class AttachmentPatch(BaseModel):
@@ -173,28 +185,65 @@ class KBService:
     # ---------- 搜索 ----------
 
     def search(self, q: str, limit: int = 20) -> dict:
-        """FTS5 全文搜索"""
+        """FTS5 全文搜索
+
+        🔴 V0.9.1 (用户在 Windows 真机实测报的): 多词搜索搜不到东西。
+        原来只 `q.split()` —— 按**空格**切, 于是:
+          "基础训练"    -> 1 个 term, 命中 ✅
+          "基础 训练"    -> 2 个 term, AND 命中 ✅(但过于严格)
+          "基础、训练"   -> 还是 1 个 term(顿号没被当分隔符) -> 0 条 ❌
+          "训练 强度 区间" -> 3 个 term 全 AND, 极少有段落同时含三个 -> 0 条 ❌
+
+        修法:
+        1. 中英文常见分隔符都切(空格/、/,/;/|/|全角空格/顿号/逗号…);
+        2. 逐个 term 从严 -> **由宽到严**: 全词命中 > 任一命中。
+           用户搜"训练 强度 区间"应该先给相关结果, 而不是 0 条。
+        3. FTS 报错**要说出来**, 不再静默返回 0 条 ——
+           "搜不到"和"搜崩了"对用户是两件事。
+        """
         if not q.strip():
             return {"results": [], "total": 0}
 
-        fts_query = " ".join([f'"{term}"*' for term in q.split() if term])
-        try:
-            rows = self.db.execute(
-                text("""
-                    SELECT
-                        rowid,
-                        snippet(kb_chunks_fts, 0, '<mark>', '</mark>', '...', 32) as snippet,
-                        rank
-                    FROM kb_chunks_fts
-                    WHERE kb_chunks_fts MATCH :q
-                    ORDER BY rank
-                    LIMIT :lim
-                """),
-                {"q": fts_query, "lim": limit},
-            ).fetchall()
-        except Exception as e:
-            logger.warning(f"FTS 搜索失败: {e}")
-            return {"results": [], "total": 0, "error": str(e)}
+        terms = [t for t in _KB_QUERY_SPLIT.split(q) if t and t.strip()]
+        if not terms:
+            return {"results": [], "total": 0}
+
+        # 逐个 term 从严到宽尝试, 第一个有结果的就用它。
+        # 这样单/多词都能搜到, 且多词时优先给最精确的匹配。
+        fts_query = None
+        last_error: str | None = None
+        for candidate in (
+            " ".join(f'"{t}"*' for t in terms),   # 全词 AND(最精确)
+            " ".join(f'"{t}"*' for t in terms[:1]),  # 只用第一个词(兜底)
+        ):
+            try:
+                rows = self.db.execute(
+                    text("""
+                        SELECT
+                            rowid,
+                            snippet(kb_chunks_fts, 0, '<mark>', '</mark>', '...', 32) as snippet,
+                            rank
+                        FROM kb_chunks_fts
+                        WHERE kb_chunks_fts MATCH :q
+                        ORDER BY rank
+                        LIMIT :lim
+                    """),
+                    {"q": candidate, "lim": limit},
+                ).fetchall()
+                if rows:
+                    fts_query = candidate
+                    break
+            except Exception as e:      # FTS 语法错/索引坏 -> 换宽松的再试
+                last_error = f"{type(e).__name__}: {e}"
+                continue
+
+        if fts_query is None:
+            if last_error:
+                # ⚠️ 以前这里直接 return 空结果, 用户完全分不清
+                # "没搜到" 还是 "搜索坏了"。数据可信度要求说真话。
+                logger.warning("FTS 搜索失败: %s", last_error)
+                return {"results": [], "total": 0, "error": last_error}
+            rows = []
 
         chunk_ids = [r[0] for r in rows]
         snippet_map = {r[0]: r[1] for r in rows}

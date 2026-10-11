@@ -240,6 +240,18 @@ cd apps/web && npm run build    # 构建到 cycling_coach/static/
 
 #### 前端
 
+- **「个人画像」页从来没能成功渲染过一次**（用户 Windows 实测发现）。
+  `useEffect` 写在了 `if (!athlete) return` 后面 —— 首次渲染跑 2 个 hook、
+  数据回来后跑 3 个，React 抛 **error #310（Rendered more hooks than
+  during the previous render）**，整页被 ErrorBoundary 接管。
+  React 硬规则：所有 hook 必须在任何条件 return 之前无条件调用。
+  修完用 Playwright 实测：7 个输入框、4 个按钮、零 JS 错误。
+- **「导入」页一打开就 404**（16 个侧边栏页面里唯独它挂）。
+  它无条件调 `api.listMockProfiles()` 且**没有 `.catch`**，
+  而 `/dev/mock-profiles` 只在 `dev_mode=True` 时挂载 —— 正式用户跑的是
+  `--desktop`，dev_mode 默认 False，**必然 404**。
+  改成 404 时静默降级为空列表，并且那一整块「模拟数据」UI 在列表为空时
+  不渲染。
 - **功率区间副标题不再把估算 FTP 说成实测**。Coggan 七区本身就是按 FTP 推的，
   那句"基于 FTP 280W"不是装饰，是用户理解整张图的依据。
   同一个文案在文件里出现了两处，我第一次只改了其中一处。
@@ -247,6 +259,33 @@ cd apps/web && npm run build    # 构建到 cycling_coach/static/
   颜色 绿 → 琥珀。组件不猜，由调用方明确告知是实测还是估算。
 - 现在用的是早就写好的 `ftpLabel`（实测 / 估算 / 未设置 三态），
   并加了防同类测试：不允许再出现裸的 `基于 FTP {ftp}W` 模板。
+
+#### 「先看示例」看不到数据（用户 Windows 实测的 P0）
+
+点了「先看示例」，接口返回 **200**，数据库里确实多了 12 条训练，
+**但界面还是显示"还没有训练数据"** —— 而且全程不报任何错。
+
+**根因**：demo 数据按名字新建一个"演示车手"（#2），
+而所有只读 API 走 `get_or_create_athlete()`，**永远返回库里第一个**（#1）。
+数据写进去了，界面读的是另一个档案。
+
+**这不是边缘情况**：打开产品时任何一次 API 调用都会建出占位车手，
+所以每个新用户点「先看示例」都会踩到。
+
+- 修法：**demo 复用库里第一个车手**，从根上不再存在"第二个"。
+- **修根因之后必须回头删旧补丁**：原来那段"清除空占位车手"的循环
+  就是为这个 bug 打的补丁，根因修好后它变成**主动破坏** ——
+  它会把正在用的车手当占位删掉，报 `BrokenPipeError`，
+  用户只看到"载入失败"。留着旧补丁比不修更糟。
+- **修完又差点把用户数据删光**：`force` 原本清空该车手名下一切记录，
+  车手复用之后这意味着"点一次重新载入，三个月的真实骑行没了"。
+  现在只删**能被识别为 demo 的行**（文件名正则 `^w\d+_d\d+_`），
+  认不出的表（计划课没有 `file_name`）一律跳过 ——
+  **宁可残留重复，也不能误删**。
+- 连带修掉：归属校验把"车手名下活动总数"当期望值，
+  复用车手后用户自己的数据会把它顶到不相等 →
+  **返回 409 说失败，但数据其实已经写进去了**，状态自相矛盾。
+  改成比较"这次新增了多少条"。
 
 #### 时区
 
@@ -257,6 +296,23 @@ cd apps/web && npm run build    # 构建到 cycling_coach/static/
 - 修法是在**归档层**转换，不动存储：`start_time` 是绝对时间戳，存 UTC 是对的，
   要变的只是"用哪个日历日归档"。
 - 这一条我自己第一遍修错了方向（把测试改成跟生产代码对齐，掩盖了问题）。
+- **V0.9.1 收口**：上面那条只修了归档层，而代码里还散着 **29 处
+  `datetime.utcnow()`**。更糟的是 `core/time_utils.py` 里有个
+  `utcnow_naive()`，注释写着"SQLAlchemy DateTime 默认存 UTC naive" ——
+  **这个前提是错的**。`Activity.start_time` 在导入时做了
+  `replace(tzinfo=None)`，而 timestamp 先解析成**本地**时间再剥掉，
+  **存的是本地时间**。于是 `utcnow_naive()` 和它比较时，
+  偏移整个时区差；两边都"看起来是 naive datetime"，比较不报错，
+  所以错得极其隐蔽。
+  - 已改为统一走 `core.time_utils.local_now()` / `local_today()`；
+    `utcnow_naive()` 保留但注释写明**只用于真 UTC 场景**。
+  - 这次补上的漏网之鱼：周期化的 phase 边界、insights 的周边界、
+    race-prep 的近 7/14 天、FTP 校准窗口、CSV/TCX 解析器的缺省起始时间。
+  - 新增 `tests/test_local_time_v091.py`：既测行为（凌晨样本不跨日、
+    phase 边界），也有静态防线（业务代码里禁止再出现裸 `utcnow()`）。
+    变异注入验证过（把 `local_now` 改回 `utcnow`，测试确实失败）。
+  - **Windows 上这条测不了**：Windows 没有 `TZ` 环境变量机制，
+    套件会 skip。真正的证据是 CI 的两轮（UTC + `TZ=Asia/Shanghai`）。
 
 #### Windows 交付
 
@@ -268,6 +324,37 @@ cd apps/web && npm run build    # 构建到 cycling_coach/static/
 - 第二个坑：文件存在 ≠ 能用。`.ttc` 是字体集合必须给 `subfontIndex`，
   不然 Linux 上也一样失败。**找不到任何中文字体时现在打 ERROR 日志**，原来是静默 fallback。
 - 验收脚本必须带 `--desktop`，否则 Windows 上没装 Node.js 会起不来。
+
+#### 知识库多词搜索
+
+用户实测「搜多个词搜不到」。原来只按**空格**切词，于是
+`基础、训练` 被当成一个完整词条，FTS 里根本没有这个词 → 0 条；
+`训练 强度 区间` 三个词全 AND，也几乎必然 0 条。
+
+现在中英文常见分隔符（空格 / `、` / `，` / `；` / `/` / 全角 `／` …）都切，
+并且**从严到宽**尝试（全词 AND 优先，无结果则退到单词），
+"FTS 报错"也不再静默返回空结果，而是带上原因返回 ——
+用户分不清"没搜到"和"搜崩了"是两件事。
+
+#### Windows 交付
+
+- **验收脚本不再污染全局 Python**。原来直接
+  `python -m pip install -r requirements.txt` 装到系统环境，
+  可能顶掉别的软件的包、没权限时直接失败。改成用项目自己的 `.venv`
+  （和 `start.bat` 同一个解释器，验出来的才算数；删掉 `.venv` 等于彻底卸载）。
+- **`ACCEPTANCE_CHECKLIST.bat` 的编码差点被我改坏**：它是 GBK 的，
+  我用 utf-8 写回后整份文件变乱码 —— 中文 Windows 用户唯一的第一条上手路径，
+  满屏乱码等于没人看得懂。
+  新增 `tools/check_bat_encoding.py` 进 CI：编码必须是 GBK、无 BOM、能解出中文。
+  （这个检查本身也做了变异验证：故意改成 UTF-8 后确实报错。）
+- **周报 PDF 测试不再依赖 `pdftotext`**（poppler 的外部二进制，Windows 没有）。
+  换 `pypdf`（纯 Python，已进 `dev` 依赖）。之前这个测试在用户机器上**必挂**，
+  而它是验证"零数据时不打印 CTL 0.0"的唯一防线 —— 防线本身挂了等于没验。
+- **新增 `tools/migrate_placeholder_ftp.py`**：清理老用户库里
+  V0.9.0 之前写入的假 FTP（250）/ 假最大心率（185）。
+  **默认只报告不修改** —— 真的有人 FTP 就是 250，
+  自动清空会把人家的正确数据也抹掉。加 `--apply` 才写入，
+  `--keep <id>` 可以豁免。
 
 #### 打包护栏
 

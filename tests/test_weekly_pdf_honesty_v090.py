@@ -20,15 +20,20 @@ from __future__ import annotations
 
 
 def _pdf_text(pdf_bytes: bytes) -> str:
-    import subprocess, tempfile, os
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
-        f.write(pdf_bytes)
-        path = f.name
-    try:
-        out = subprocess.run(["pdftotext", path, "-"], capture_output=True, timeout=60)
-        return out.stdout.decode("utf-8", errors="replace")
-    finally:
-        os.unlink(path)
+    """从 PDF 提取文本。
+
+    🔴 V0.9.1 (用户在 Windows 真机跑的): 原来这里用 `subprocess` 调
+    **pdftotext** —— 那是 poppler 的命令行工具, Windows 上默认没有,
+    于是这个测试在用户的机器上直接失败。而它是验证
+    "零数据时不打印 CTL 0.0" 的唯一防线 —— 防线本身挂了, 等于没验。
+
+    改用 pypdf(纯 Python, 已在 dev 依赖里), 无外部二进制依赖,
+    Windows / Linux / macOS 行为一致。
+    """
+    from pypdf import PdfReader
+    import io
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    return "\n".join((p.extract_text() or "") for p in reader.pages)
 
 
 def test_zero_data_pdf_never_prints_zero_metrics():
