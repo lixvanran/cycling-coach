@@ -46,7 +46,12 @@ logger = logging.getLogger(__name__)
 import re as _re
 
 _KB_QUERY_SPLIT = _re.compile(
-    r"[\s,;/|｜，、；：／]+"                    # 中英文常见分隔符
+    # 中英文常见分隔符。
+    # ⚠️ **全角和半角必须成对列全** —— 我第一版只写了全角 `：`
+    #    漏了半角 `:`, 而输入法打出来的往往是半角。
+    #    测试 `test_splitting_regex_actually_covers_the_separators`
+    #    就是靠逐个枚举把这个漏网之鱼抓出来的。
+    r"[\s,;/|:｜，、；：／]+"
 )
 
 
