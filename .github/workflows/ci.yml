@@ -124,3 +124,12 @@ jobs:
         run: pnpm exec vitest run
       - name: 生产构建
         run: pnpm run build
+      # 🔴 base 曾经是 "./", 于是 index.html 里是 ./assets/xxx.js
+      # 浏览器在 /plan/calendar 下解析成 /plan/assets/ -> 404
+      # -> SPA fallback 返回 text/html -> 浏览器拒绝加载 JS 模块
+      # -> **该页面完全不执行**, 空白骨架且不报错。
+      #
+      # 根路径 "/" 恰好正常, 所以首页好好的, 一进子页面就空了 ——
+      # 躲过了好几轮 review。必须查构建产物, 不是查配置。
+      - name: 产物资源路径 (绝对路径 + 文件存在)
+        run: node tools/check_frontend_asset_paths.mjs
