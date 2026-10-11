@@ -78,6 +78,11 @@ jobs:
       # 而没有任何测试会发现。放进 CI 才不会下次又漂。
       - name: 版本号一致性
         run: python tools/check_version_drift.py
+      # ACCEPTANCE_CHECKLIST.bat 是中文 Windows 用户唯一的第一条上手路径,
+      # 它是 GBK 的。曾被我用 utf-8 写回, 整份文件变乱码, 用户看不懂哪步失败。
+      # bat 不进 pytest, 所以只能靠这个显式检查。
+      - name: Windows 脚本编码
+        run: python tools/check_bat_encoding.py
 
   frontend:
     name: 前端 (tsc + vitest + build)

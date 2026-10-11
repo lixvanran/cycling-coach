@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 import logging
+from cycling_coach.core.time_utils import local_now, local_today
 from datetime import datetime, timedelta
 from typing import Optional, Any
 
@@ -125,7 +126,7 @@ def build_rpe_7d_context(db: Session, athlete_id: int) -> Optional[dict]:
 
 
 def _build_rpe_7d_context(db: Session, athlete_id: int) -> Optional[dict]:
-    cutoff_7d = datetime.utcnow() - timedelta(days=7)
+    cutoff_7d = local_now() - timedelta(days=7)
     acts = (
         db.query(Activity)
         .filter(Activity.athlete_id == athlete_id)

@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 import logging
+from cycling_coach.core.time_utils import local_now, local_today
 from datetime import datetime, timedelta
 
 from pydantic import BaseModel
@@ -221,7 +222,7 @@ class FTPService:
     def list_history(self, days: int = 365) -> list:
         """FTP 测试历史"""
         athlete = profile_store.get_or_create_athlete(self.db)
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = local_now() - timedelta(days=days)
         tests = (
             self.db.query(FTPTest)
             .filter(FTPTest.athlete_id == athlete.id)
@@ -241,7 +242,7 @@ class FTPService:
             .first()
         )
 
-        now = datetime.utcnow()
+        now = local_now()
         if not last:
             return {
                 "days_since": None,
@@ -315,7 +316,7 @@ class FTPService:
     # ---------- helpers ----------
 
     def _to_out(self, t: FTPTest) -> dict:
-        now = datetime.utcnow()
+        now = local_now()
         days_since = (now.date() - t.test_date.date()).days
         prev = (
             self.db.query(FTPTest)

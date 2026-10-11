@@ -17,6 +17,7 @@
 """
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict
+from cycling_coach.core.time_utils import local_now, local_today
 from datetime import datetime, timedelta, date as _date
 from typing import Optional
 
@@ -134,7 +135,7 @@ def compute_today_insights(db: Session, athlete_id: Optional[int] = None) -> Ins
         athlete_id = athlete.id
 
     insights: list[Insight] = []
-    now = datetime.utcnow()
+    now = local_now()
     today = now.date()
 
     # ===== 1. 训练负荷维度 =====
@@ -480,7 +481,7 @@ def compute_weekly_review(db: Session, athlete_id: Optional[int] = None) -> dict
         athlete = profile_store.get_or_create_athlete(db)
         athlete_id = athlete.id
 
-    now = datetime.utcnow()
+    now = local_now()
     week_start = (now - timedelta(days=now.weekday() + 7)).replace(hour=0, minute=0, second=0, microsecond=0)  # 上周一
     this_week_start = week_start + timedelta(days=7)
     last_week_start = week_start

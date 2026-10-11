@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 from dataclasses import dataclass
+from cycling_coach.core.time_utils import local_now, local_today
 from datetime import date, datetime, timedelta
 from typing import Optional
 
@@ -237,7 +238,7 @@ def compute_training_state(db: Session, athlete_id: int) -> TrainingState:
     # 比 insights 那个 95 分更荒唐 —— 那个至少只是"良好", 这个是"恢复优秀"。
     has_load_data = bool(pcm.get("has_load_data"))
 
-    now = datetime.utcnow()
+    now = local_now()
     cutoff_7d = now - timedelta(days=7)
     cutoff_14d = now - timedelta(days=14)
 

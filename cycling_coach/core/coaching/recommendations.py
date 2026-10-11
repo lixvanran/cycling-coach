@@ -16,6 +16,7 @@
 from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
+from cycling_coach.core.time_utils import local_now, local_today
 from datetime import date as _date, datetime, timedelta
 from typing import Optional
 
@@ -192,7 +193,7 @@ def _acwr_history_is_real_impl(db: Session, athlete_id: int) -> bool:
         return False
     if isinstance(first, str):
         first = datetime.fromisoformat(first)
-    return (datetime.utcnow() - first).days >= MIN_TRAINING_HISTORY_DAYS_FOR_ACWR
+    return (local_now() - first).days >= MIN_TRAINING_HISTORY_DAYS_FOR_ACWR
 
 # 训练负荷是 readiness 的地基: 不知道最近骑了多少, 就没资格说今天该上什么强度
 REQUIRED_READINESS_DIMENSION = "tsb"

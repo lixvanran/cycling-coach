@@ -16,6 +16,7 @@
 from __future__ import annotations
 import io
 import logging
+from cycling_coach.core.time_utils import local_now, local_today
 from datetime import date as _date, datetime, timedelta
 from io import BytesIO
 
@@ -304,7 +305,7 @@ def generate_weekly_report(
     story.append(PageBreak())
     story.append(Paragraph(f"{days}天活动明细", h2))
     
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = local_now() - timedelta(days=days)
     activities = (
         db.query(Activity)
         .filter(Activity.athlete_id == athlete_id)

@@ -20,6 +20,7 @@ import csv
 import io
 import logging
 import re
+from cycling_coach.core.time_utils import local_now
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
@@ -225,7 +226,10 @@ class WkoCsvParser:
 
         duration_s = samples[-1].t_offset
         if start_time is None:
-            start_time = datetime.utcnow()
+            # 🔴 V0.9.1: 原来用 utcnow()。库里 start_time 是**本地时间**语义
+            # (FIT 导入时剥掉了 tzinfo), 所以这里也必须是本地时间 ——
+            # 否则用户手动补录的训练会被归到前一天(东八区每天差 8 小时)。
+            start_time = local_now()
 
         avg_power = round(sum_p / n_p) if n_p else None
         avg_hr = round(sum_h / n_h) if n_h else None
@@ -343,7 +347,7 @@ class WkoCsvParser:
 
         return Activity(
             source="csv",
-            start_time=start_time or datetime.utcnow(),
+            start_time=start_time or local_now(),
             duration_s=duration_s,
             distance_m=distance_m,
             avg_power=avg_power,
@@ -425,7 +429,7 @@ class WkoCsvParser:
         duration_s = samples[-1].t_offset
         return Activity(
             source="csv",
-            start_time=datetime.utcnow(),
+            start_time=local_now(),
             duration_s=duration_s,
             avg_power=round(sum_p / n_p) if n_p else None,
             max_power=max_power if max_power > 0 else None,

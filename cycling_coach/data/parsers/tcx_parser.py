@@ -10,6 +10,7 @@ TCX 是 Garmin Training Center 标准导出格式, V0.7 起支持上传
 from __future__ import annotations
 import logging
 import re
+from cycling_coach.core.time_utils import local_now
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
@@ -249,7 +250,7 @@ class TcxParser:
             raise ValueError("TCX 文件不含任何 Trackpoint")
 
         if start_time is None:
-            start_time = first_time or datetime.utcnow()
+            start_time = first_time or local_now()
 
         # 时长
         duration_s = int((samples[-1].t_offset)) if samples else 0

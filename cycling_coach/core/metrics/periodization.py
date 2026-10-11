@@ -19,6 +19,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, date as _date
+from cycling_coach.core.time_utils import local_now, local_today
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -144,7 +145,7 @@ def derive_phase(db: Session, athlete_id: int) -> PhaseDerivation:
         db.query(TrainingPhase)
         .filter(TrainingPhase.athlete_id == athlete_id)
         .filter(TrainingPhase.is_race == True)  # noqa: E712
-        .filter(TrainingPhase.end_date >= datetime.utcnow())
+        .filter(TrainingPhase.end_date >= local_now())
         .order_by(TrainingPhase.start_date.asc())
         .first()
     )
@@ -155,7 +156,7 @@ def derive_phase(db: Session, athlete_id: int) -> PhaseDerivation:
         weeks_to_race = max(0, days_to // 7)
 
     # 找当前是否在 phase 内
-    now = datetime.utcnow()
+    now = local_now()
     current_phase = (
         db.query(TrainingPhase)
         .filter(TrainingPhase.athlete_id == athlete_id)
@@ -547,12 +548,12 @@ def analyze_polarized(db: Session, athlete_id: int, days: int = 30, ftp_w: int =
     if latest_ftp:
         ftp_w = latest_ftp.ftp_w
 
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = local_now() - timedelta(days=days)
     activities = (
         db.query(Activity)
         .filter(Activity.athlete_id == athlete_id)
         .filter(Activity.start_time >= cutoff)
-        .filter(Activity.start_time <= datetime.utcnow())
+        .filter(Activity.start_time <= local_now())
         .all()
     )
 

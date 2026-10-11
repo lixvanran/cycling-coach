@@ -46,6 +46,10 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.6",  # linter
     "mypy>=1.10",  # type check
+    # 🔴 V0.9.1: 验证"零数据时不打印 CTL 0.0"的测试原本调 pdftotext
+    # (poppler 的外部二进制), Windows 上默认没有 → 用户机器上直接失败。
+    # 换 pypdf, 纯 Python, 跨平台一致。
+    "pypdf>=4.0",
 ]
 ai-rag = [
 ]
