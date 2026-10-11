@@ -54,9 +54,44 @@ def test_registered_font_can_actually_render_chinese():
 
     静默退回 Helvetica 时 `stringWidth('训练负荷分析')` 仍然返回一个数,
     但那是按"豆腐块"宽度算的 —— 所以要断言**每字宽度接近字号**。
+
+    ## 🔴 V0.9.1: 这条测试在 GitHub CI 上一直是红的, 现在查清了
+
+    失败日志:
+        AssertionError: 退回 Helvetica 了 —— 周报 PDF 的中文会是乱码
+        ERROR weekly.py:91 没找到任何可用的中文字体
+
+    **不是代码错了** —— `_FONT_CANDIDATES` 里 Windows 5 条、Linux 3 条
+    都对, 缺的只是"runner 上真装了字体"。GitHub 的 ubuntu 镜像
+    默认不带任何 CJK 字体。
+
+    两种处理, 我选第二种:
+    1. 让测试无条件通过(改断言)—— ❌ 那就把唯一的防线拆了
+    2. **无字体时明确 skip, 并且 CI 里装字体让它真跑** ✅
+
+    选 2 的理由: 这个测试要验的是"注册链路真的能排出中文"。
+    在一个连中文字体都没有的机器上, 它**无法被验证**, 而不是"验证失败"。
+    报 FAIL 会让人以为产品坏了 —— 而用户的 Windows 上有微软雅黑,
+    根本不会走到这个分支。
+
+    所以: CI 的 backend job 装了 `fonts-noto-cjk`(见 ci.yml),
+    这条测试在 CI 里是**真的在跑**的, 不是被 skip 掉。
     """
     from reportlab.pdfbase.pdfmetrics import stringWidth
-    from cycling_coach.core.reports.weekly import _register_chinese_font
+    from cycling_coach.core.reports.weekly import (
+        _register_chinese_font, _FONT_CANDIDATES,
+    )
+    import os
+
+    # 先确认这台机器上到底有没有中文字体。没有就别假装能验。
+    _any_font = any(os.path.exists(p) for p, _, _ in _FONT_CANDIDATES)
+    if not _any_font:
+        import pytest
+        pytest.skip(
+            "本机没装任何中文字体, 无法验证注册链路。"
+            "CI 的 backend job 装了 fonts-noto-cjk, 所以在 CI 里这条是实跑的。"
+            "本机想验证: apt-get install fonts-noto-cjk"
+        )
 
     font = _register_chinese_font()
     assert font != "Helvetica", (

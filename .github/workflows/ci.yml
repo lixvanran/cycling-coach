@@ -35,6 +35,17 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+      # 🔴 GitHub 的 ubuntu 镜像**不带任何中文字体**, 于是
+      # `_register_chinese_font()` 退回 Helvetica, 周报 PDF 中文全是豆腐块。
+      # 2026-10-10 那次 CI 就是挂在这里(backend job 唯一的失败)。
+      #
+      # 装上它, test_cjk_font_v090 里那条"字体真能排出中文"的测试
+      # 才是**真的在跑**, 而不是被 skip 掉。
+      - name: 安装中文字体 (周报 PDF)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-cjk fonts-wqy-zenhei
+          fc-cache -f || true
       - name: 安装依赖
         run: |
           python -m pip install --upgrade pip
