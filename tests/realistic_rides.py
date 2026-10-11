@@ -346,13 +346,39 @@ def textbook_zone_seconds(
 # ---------------------------------------------------------------- 训练课库
 # 真实训练计划里的课型。返回 (名称, intent, 分段, 目标TSS系数)
 WORKOUT_LIBRARY: list[tuple[str, str, list[Segment]]] = [
+    # 🔴 V0.9.1: intent 必须用**系统标准值**, 否则前端映射表查不到,
+    #    悬停提示会显示 "甜点课 · undefined · 90min"。
+    #
+    #    标准值见 `data/sqlite/models.py:135` 的注释:
+    #        recovery / endurance / tempo / threshold / vo2max / race
+    #
+    #    这里原来写的是 `sweet_spot` 和 `vo2` —— 两个都不是标准值。
+    #    `vo2` 只在 tags 里作为搜索关键字出现(那是另一回事),
+    #    `sweet_spot` 则是 ACWR 的负荷区间名(acwr.py), 和训练意图无关。
+    #
+    #    **同一个概念三套拼法, 任何按 intent 分组的统计都会漏掉一部分。**
     ("恢复骑", "recovery", [(15, 120), (45, 140), (10, 100)]),
     ("耐力骑", "endurance", [(20, 180), (90, 195), (15, 140)]),
     ("长耐力", "endurance", [(25, 180), (180, 200), (20, 130)]),
-    ("甜点课", "sweet_spot", [(20, 150), (10, 220), (20, 235), (10, 150)] * 2),
+    ("甜点课", "tempo", [(20, 150), (10, 220), (20, 235), (10, 150)] * 2),
     ("阈值课", "threshold", [(20, 160), (40, 265), (10, 150), (40, 265), (15, 120)]),
-    ("VO2max 间歇", "vo2", [(20, 150), (5, 320), (5, 150)] * 5 + [(15, 120)]),
-    ("冲刺", "vo2", [(20, 160), (1, 700), (4, 160), (1, 700), (4, 160),
+    ("VO2max 间歇", "vo2max", [(20, 150), (5, 320), (5, 150)] * 5 + [(15, 120)]),
+    ("冲刺", "vo2max", [(20, 160), (1, 700), (4, 160), (1, 700), (4, 160),
                      (1, 700), (4, 160), (1, 700), (4, 160), (10, 100)]),
     ("爬坡耐力", "endurance", [(10, 150), (60, 230), (10, 130)]),
 ]
+
+# 标准 intent 全集 —— 数据源产出时必须自检, 别靠前端映射表兜底。
+# 前端 CalendarPage.INTENT_LABEL / INTENT_ICON / INTENT_DEFAULT 是同一份契约。
+VALID_WORKOUT_INTENTS = frozenset(
+    {"recovery", "endurance", "tempo", "threshold", "vo2max", "race"}
+)
+
+_bad = {name: it for name, it, _s in WORKOUT_LIBRARY if it not in VALID_WORKOUT_INTENTS}
+if _bad:  # pragma: no cover - import 期就炸, 比运行期静默出错强
+    raise ValueError(
+        f"WORKOUT_LIBRARY 里有非标准 intent: {_bad}\n"
+        f"标准值: {sorted(VALID_WORKOUT_INTENTS)}\n"
+        f"前端映射表 CalendarPage.INTENT_LABEL 只有这些键, "
+        f"对不上会让悬停提示显示 undefined。"
+    )

@@ -185,7 +185,10 @@ class TestInsufficientDataNoFakeScore:
 
         rec = generate_recommendations(fresh_db, 1)
 
-        assert "vo2" not in rec.recommended_workout_type
+        # 🔴 V0.9.1: 标准值是 "vo2max"。
+        #    注意子串陷阱: "vo2" in "vo2max" 是 True —— 用短的那个
+        #    反而会误伤。这里用完整的 vo2max, 语义才准。
+        assert "vo2max" not in rec.recommended_workout_type
         assert "高强度" not in rec.recommended_intensity
         assert "VO2max" not in rec.recommended_intensity
 

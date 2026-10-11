@@ -83,6 +83,11 @@ jobs:
       # bat 不进 pytest, 所以只能靠这个显式检查。
       - name: Windows 脚本编码
         run: python tools/check_bat_encoding.py
+      # workout intent 在后端/前端/种子数据里共五处, 曾经同时存在
+      # vo2max / vo2 / sweet_spot 三套拼法。后果是静默的:
+      # 悬停显示 undefined, 或者把"高强度日"fallback 成"轻松日"。
+      - name: intent 词汇表一致性
+        run: python tools/check_intent_vocab.py
 
   frontend:
     name: 前端 (tsc + vitest + build)

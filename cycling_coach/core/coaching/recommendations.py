@@ -55,7 +55,7 @@ class DailyRecommendation:
     # 语义 = "算不出来"。前端据此显示"需要数据"而不是"危险"。
     readiness_score: Optional[int]  # 0-100, None = 数据不足算不出
     readiness_label: str  # "极佳" / "良好" / "中等" / "低迷" / "危险" / "数据不足"
-    recommended_workout_type: str  # "rest" | "recovery" | "endurance" | "tempo" | "threshold" | "vo2" | "none"
+    recommended_workout_type: str  # "rest" | "recovery" | "endurance" | "tempo" | "threshold" | "vo2max" | "none"
     recommended_intensity: str  # 描述: "轻松骑 60-90min Z1-Z2" 等
     target_tss: int | None  # 今日目标 TSS; **算不出时是 None, 不是 0**
     recommendations: list[Recommendation] = field(default_factory=list)
@@ -124,12 +124,16 @@ READINESS_WEIGHTS = {"hrv": 30, "acwr": 25, "tsb": 20, "phase": 15, "rpe": 10}
 MIN_DIMENSIONS_FOR_READINESS = 2
 
 # 覆盖度不完整时的档位封顶。缺 HRV 不该被派去做 VO2max 间歇。
-_TIER_ORDER = ["rest", "recovery", "endurance", "threshold", "vo2"]
+# 🔴 V0.9.1: 原来是 "vo2"。但 workouts.intensity / PlannedWorkout.intent
+#    的标准值是 **vo2max**(models.py:135 的注释写明了),
+#    前端 CalendarPage.INTENT_LABEL 和 WORKOUT_META 现在也都是 vo2max。
+#    两套拼法意味着"按 intent 匹配课程"永远匹配不上。
+_TIER_ORDER = ["rest", "recovery", "endurance", "threshold", "vo2max"]
 
 # 封顶提示里用的中文档位名
 _TIER_CN = {
     "rest": "完全休息", "recovery": "恢复骑", "endurance": "轻松骑",
-    "threshold": "阈值间歇", "vo2": "VO2max 间歇",
+    "threshold": "阈值间歇", "vo2max": "VO2max 间歇",
 }
 
 # 覆盖度 -> 强度封顶。单调阶梯: 知道得越少, 能给的强度越保守。
@@ -594,7 +598,7 @@ def generate_recommendations(
         target = 0
     elif readiness >= 80:
         readiness_label = "极佳"
-        rec_type = "vo2"
+        rec_type = "vo2max"
         intensity = "高强度日: VO2max 间歇 (4-6×3min @ 110-120% FTP, 间歇 3min Z1)"
         target = 120
     elif readiness >= 60:

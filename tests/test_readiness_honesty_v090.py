@@ -598,8 +598,10 @@ def test_tier_is_capped_when_coverage_incomplete(fresh):
     assert mod.MAX_TIER_BY_COVERAGE[3] == "endurance"
     assert mod.MAX_TIER_BY_COVERAGE[4] == "threshold"
     assert mod.MAX_TIER_BY_COVERAGE[5] is None
-    # vo2 只能出现在"不封顶"那一档
-    assert "vo2" not in mod.MAX_TIER_BY_COVERAGE.values()
+    # vo2max 只能出现在"不封顶"那一档
+    # 🔴 V0.9.1: 标准 intent 从 "vo2" 统一成 "vo2max"
+    #    (和 models.py:135 / CalendarPage.INTENT_LABEL 对齐)
+    assert "vo2max" not in mod.MAX_TIER_BY_COVERAGE.values()
 
 
 def test_tier_cap_cannot_be_bypassed(fresh, short_history_athlete):

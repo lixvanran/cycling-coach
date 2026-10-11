@@ -284,7 +284,9 @@ def test_W平衡符合Skiba模型语义(rides):
     checked = 0
 
     # 1. 间歇课必须有显著消耗
-    intervals = [r for r in rides if r[1] == "vo2" or r[0] == "VO2max 间歇"]
+    # 🔴 V0.9.1: WORKOUT_LIBRARY 的标准 intent 已是 "vo2max"
+    intervals = [r for r in rides
+                if r[1] == "vo2max" or r[0] == "VO2max 间歇"]
     for name, intent, path, gt in intervals:
         c = curve_of(path)
         if not c:

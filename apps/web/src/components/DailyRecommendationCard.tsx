@@ -70,7 +70,16 @@ interface DailyRecommendation {
 }
 
 const WORKOUT_META: Record<string, { label: string; icon: any; color: string; tssHint: string }> = {
-  vo2: { label: "VO2max", icon: Zap, color: "text-accent-danger bg-status-danger border-border", tssHint: "高强度日" },
+  // 🔴 V0.9.1: 原来这里是 `vo2`。后端 recommendations.py 的 _TIER_ORDER 也用
+  // `vo2`, 而 **workouts.intensity / PlannedWorkout.intent 的标准值是 `vo2max`**
+  // (见 data/sqlite/models.py:135 和 CalendarPage.INTENT_LABEL)。
+  //
+  // 同一个概念两套拼法。目前没炸, 是因为 WORKOUT_META 只做**展示**,
+  // 不拿去查库 —— 但它是 Record<string,...>, 少一个键就静默 fallback,
+  // 谁拿它匹配课程库就会全查不到。
+  //
+  // 统一成 `vo2max`, 和数据库、日历、课程库对齐。
+  vo2max: { label: "VO2max", icon: Zap, color: "text-accent-danger bg-status-danger border-border", tssHint: "高强度日" },
   threshold: { label: "Threshold", icon: Target, color: "text-accent-warning bg-status-warning border-border", tssHint: "阈值日" },
   tempo: { label: "Tempo", icon: TrendingUp, color: "text-accent-warning bg-status-warning border-border", tssHint: "节奏日" },
   endurance: { label: "Endurance", icon: Activity, color: "text-accent-success bg-status-success border-border", tssHint: "轻松日" },
