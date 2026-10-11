@@ -19,10 +19,16 @@ export function Profile() {
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [loadError, setLoadError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    api.getAthlete().then(setAthlete);
+    // 🔴 V0.9.1: 原来是无条件的裸 .then(), 没有 .catch。
+    // 请求失败时 athlete 永远是 null -> 永远停在"加载中…", 用户只看到一个
+    // 转圈的页面, 没有任何错误提示。失败必须**说出来**。
+    api.getAthlete()
+      .then(setAthlete)
+      .catch((e) => setLoadError(e instanceof Error ? e.message : String(e)));
   }, []);
 
   // U-3 离开页面前警告
@@ -43,10 +49,6 @@ export function Profile() {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, []);
-
-  if (!athlete) {
-    return <div className="p-6 text-text-muted">加载中…</div>;
-  }
 
   const dirtyKeys = Object.keys(editing);
 
@@ -119,6 +121,31 @@ export function Profile() {
       setRefreshing(false);
     }
   };
+
+  // 🔴 V0.9.1: 这个 early return 原来在第 47 行 —— **在防抖自动保存的
+  // useEffect(第 93 行)之前**。
+  //
+  // 于是首次渲染(athlete 还是 null)只跑 2 个 hook, 数据回来后跑 3 个,
+  // React 直接抛 **error #310 (Rendered more hooks than during the
+  // previous render)**, 整页被 ErrorBoundary 接管 —— 用户看到的就是
+  // "个人画像无法加载"。**这个页面从来没有成功渲染过一次。**
+  //
+  // React 硬规则: 所有 hook 必须在任何条件 return 之前无条件调用。
+  if (loadError) {
+    // 加载失败要说人话, 不能永远停在"加载中…"
+    return (
+      <div className="p-6 space-y-3">
+        <div className="text-sm font-medium text-text-primary">个人画像加载失败</div>
+        <div className="text-xs text-text-muted font-mono break-all">{loadError}</div>
+        <div className="text-xs text-text-muted">
+          确认服务已启动(tools\\start.bat), 然后刷新页面。
+        </div>
+      </div>
+    );
+  }
+  if (!athlete) {
+    return <div className="p-6 text-text-muted">加载中…</div>;
+  }
 
   const fields: Array<{ key: keyof Athlete; label: string; unit?: string }> = [
     { key: "name", label: "姓名" },

@@ -19,7 +19,18 @@ export function ImportPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    api.listMockProfiles().then((d) => setMockProfiles(d.profiles));
+    // 🔴 V0.9.1: 原来是无条件的裸 .then(), **没有 .catch**。
+    //
+    // `/dev/mock-profiles` 属于 dev router, 只在 settings.dev_mode=True 时挂载。
+    // 而 Windows 正式用户跑的是 --desktop 模式, **dev_mode 默认 False** ——
+    // 于是每次打开「导入」页必定 404, unhandled rejection, 整页被
+    // ErrorBoundary 接管。Playwright 实测: 侧边栏 16 个页面里唯独它挂。
+    //
+    // 修法: 404 是**预期内**的(dev 模式关闭), 静默降级为空列表,
+    // 并让下面那块 mock UI 在列表为空时不渲染。真正的 FIT 上传不受影响。
+    api.listMockProfiles()
+      .then((d) => setMockProfiles(d.profiles))
+      .catch(() => setMockProfiles([]));
   }, []);
 
   // U-15: 上传后查重 (按日期 + 时长, 客户端简单实现)
@@ -182,7 +193,10 @@ export function ImportPage() {
         )}
       </section>
 
-      {/* Mock 数据 */}
+      {/* Mock 数据 —— 只在 dev 模式可用时渲染。
+          正式模式(dev_mode=False)下这个接口 404, 列表是空的,
+          与其显示一个空的"模拟数据"标题, 不如整块不出现。 */}
+      {mockProfiles.length > 0 && (
       <section>
         <div className="flex items-center justify-between mb-3">
           <div>
@@ -217,6 +231,7 @@ export function ImportPage() {
           ))}
         </div>
       </section>
+      )}
     </div>
   );
 }
