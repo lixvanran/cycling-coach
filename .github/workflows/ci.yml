@@ -142,5 +142,11 @@ jobs:
       #
       # 根路径 "/" 恰好正常, 所以首页好好的, 一进子页面就空了 ——
       # 躲过了好几轮 review。必须查构建产物, 不是查配置。
+      # ⚠️ 这个 job 有 `defaults.run.working-directory: apps/web`,
+      #    它作用于**所有** run 步骤 —— 不写 `working-directory` 的话,
+      #    脚本会在 apps/web 下找 cycling_coach/static/, 必然找不到。
+      #
+      #    我第一版就是漏了这个, CI 直接红了。**加新步骤必须确认执行目录。**
       - name: 产物资源路径 (绝对路径 + 文件存在)
+        working-directory: .
         run: node tools/check_frontend_asset_paths.mjs
