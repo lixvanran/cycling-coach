@@ -100,7 +100,16 @@ SECURITY.md
 .env.local
 
 # Screenshot temp
-screenshots/
+#
+# ⚠️ V0.9.1: 原来是 `screenshots/`, 它会匹配**任何层级**的同名目录 ——
+#    连 `docs/screenshots/` 一起挡掉了。
+#    结果: README 里写了 <img src="docs/screenshots/dashboard.png">,
+#    但图片从没进过 git -> 打包脚本(git ls-files)自然收不到 ->
+#    **用户拿到的包里 README 是裂图**。
+#
+# 这类"文档引用了资源但资源没入库"的问题不会报错, 只会静默裂开。
+# 所以精确成只挡根目录: `/screenshots/`
+/screenshots/
 
 # V0.9.0: tsc 产物的编译中间物 (tsc --noEmit 也会吐 tsbuildinfo)
 # vite.config.js / .d.ts 也是 tsc 把配置当源码编译出来的产物

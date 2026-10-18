@@ -99,6 +99,10 @@ jobs:
       # 悬停显示 undefined, 或者把"高强度日"fallback 成"轻松日"。
       - name: intent 词汇表一致性
         run: python tools/check_intent_vocab.py
+      # README 里引用了图, 但图没进 git -> 打包收不到 -> 用户拿到的包里是裂图。
+      # 整条链没有一步会报错: Markdown 合法、图片在本地、打包器没缺失告警。
+      - name: 文档资源引用完整性
+        run: python tools/check_doc_assets.py
 
   frontend:
     name: 前端 (tsc + vitest + build)

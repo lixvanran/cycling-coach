@@ -13,6 +13,19 @@
 
 **它不会在你没测 FTP 时假装知道你的 FTP，也不会在数据不足时给你一个看起来很权威的分数。**
 
+![Dashboard](docs/screenshots/dashboard.png)
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/calendar.png" alt="训练日历"></td>
+<td width="50%"><img src="docs/screenshots/trust.png" alt="数据可信度"></td>
+</tr>
+<tr>
+<td align="center"><b>训练日历</b>——拖动即可改期</td>
+<td align="center"><b>数据可信度</b>——缺什么、为什么，一目了然</td>
+</tr>
+</table>
+
 ---
 
 ## 核心原则：缺数据 ≠ 编一个像样的值
